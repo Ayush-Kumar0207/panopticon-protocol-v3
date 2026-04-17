@@ -34,14 +34,15 @@ My problem statement is:
    - A16Z Request for Startups (`site:a16z.com`)
    *(Feel free to expand the search to relevant academic or industry whitepapers if necessary).*
 
-3. **Synthesis & Adaptation**: Analyze the scraped data and adapt the best concepts into the OpenEnv framework. Remember that the OpenEnv toolkit requires turn-based mechanics, discrete agent actions (like `ActionType.PROCESS`, `INSPECT`, `REPAIR`, etc.), and programmatic task grading.
+3. **Synthesis & Adaptation (Top 1% Uniqueness)**: You are competing against 800 teams, so do NOT provide generic, obvious, or uninspired solutions. Analyze the scraped data and creatively pivot or combine concepts to engineer highly unique, "wow-factor" environments that will guarantee a top 15 finish. The environment must be technically impressive and non-obvious to standard hackers, while perfectly adapting to the OpenEnv framework (turn-based mechanics, discrete agent actions like `ActionType.PROCESS`, `INSPECT`, `REPAIR`, and complex programmatic task grading).
 
-4. **Deliverables**: Present the **Top 10 Environment Ideas**. For each idea, provide:
+4. **Deliverables**: Present the **Top 10 Ultra-Creative Environment Ideas**. For each idea, provide:
    - **Idea Title & Inspiration**: The name of the environment and the specific scraped source(s) that inspired it.
    - **Core Concept**: A 2-sentence summary of the environment.
+   - **The "Wow" Factor**: Exactly why this specific idea is unique enough to beat 800 other teams and impress the judges. What makes it unconventional or technically profound?
    - **Agent Goal & Optimization**: What is the RL agent trying to maximize or balance?
    - **Entities & State Space**: What are the key entities (e.g., Nodes, Customers, Resources) and their tiers/states?
    - **Action Space**: What discrete actions can the agent take?
-   - **Difficulty Scaling (Levels 1 to 5)**: How the environment scales from easy to level 5 (e.g., adding cascading failures, time limits, or hidden entity states as seen in `environment.py`).
+   - **Difficulty Scaling (Levels 1 to 5)**: How the environment scales from easy to an insanely complex master level (e.g., compounding chaos, hidden adversarial factors, dynamic cascading priorities).
 
 **Action Required from AI**: Begin your deep web research *right now* using the Firecrawl MCP tools. Take your time to gather high-quality data from the requested sources, then output the Top 10 customized OpenEnv ideas.
