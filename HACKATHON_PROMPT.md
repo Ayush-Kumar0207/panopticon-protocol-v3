@@ -34,11 +34,12 @@ My problem statement is:
    - A16Z Request for Startups (`site:a16z.com`)
    *(Feel free to expand the search to relevant academic or industry whitepapers if necessary).*
 
-3. **Synthesis & Adaptation (Top 1% Uniqueness)**: You are competing against 800 teams, so do NOT provide generic, obvious, or uninspired solutions. Analyze the scraped data and creatively pivot or combine concepts to engineer highly unique, "wow-factor" environments that will guarantee a top 15 finish. The environment must be technically impressive and non-obvious to standard hackers, while perfectly adapting to the OpenEnv framework (turn-based mechanics, discrete agent actions like `ActionType.PROCESS`, `INSPECT`, `REPAIR`, and complex programmatic task grading).
+3. **Synthesis & Adaptation (Top 1% Uniqueness & 24hr Feasibility)**: You are competing against 800 teams, so do NOT provide generic, obvious, or uninspired solutions. Analyze the scraped data and creatively pivot or combine concepts to engineer highly unique, "wow-factor" environments that will guarantee a top 15 finish. The environment must be technically impressive and non-obvious to standard hackers, while perfectly adapting to the OpenEnv framework (turn-based mechanics, discrete agent actions like `ActionType.PROCESS`, `INSPECT`, `REPAIR`, and complex programmatic task grading). **CRITICAL CONSTRAINT: The hackathon is strictly 24 hours long. The core logic of the environment MUST be implementable within a 24-hour limit by a small team. Avoid ideas that require excessive external API integrations, massive 3rd party dataset cleaning, or building complex graphical simulations. The complexity should lie entirely within the OpenEnv mathematical/Pydantic state engine.**
 
-4. **Deliverables**: Present the **Top 10 Ultra-Creative Environment Ideas**. For each idea, provide:
+4. **Deliverables**: Present the **Top 10 Ultra-Creative & Feasible Environment Ideas**. For each idea, provide:
    - **Idea Title & Inspiration**: The name of the environment and the specific scraped source(s) that inspired it.
    - **Core Concept**: A 2-sentence summary of the environment.
+   - **24-Hour Implementation Strategy**: A brief sentence on why the core logic of this environment can be fully coded and tested within the 24-hour time limit.
    - **The "Wow" Factor**: Exactly why this specific idea is unique enough to beat 800 other teams and impress the judges. What makes it unconventional or technically profound?
    - **Agent Goal & Optimization**: What is the RL agent trying to maximize or balance?
    - **Entities & State Space**: What are the key entities (e.g., Nodes, Customers, Resources) and their tiers/states?
