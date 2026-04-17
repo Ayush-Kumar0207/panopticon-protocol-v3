@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-starter-kit"
+version = "1.0.0"
+description = "OpenEnv-compliant RL environment starter kit"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.11"
+authors = [{name = "Your Team Name"}]
+keywords = ["openenv", "reinforcement-learning", "hackathon"]
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+    "httpx>=0.26.0",
+    "openai>=1.10.0",
+    "openenv-core>=0.2.0",
+    "gymnasium>=0.29.0",
+    "stable-baselines3>=2.2.0",
+]
+
+[project.entry-points."openenv.server"]
+starter = "server:app"
+
+[project.scripts]
+server = "server.app:main"
+
+[project.urls]
+Repository = "https://github.com/YOUR_USER/YOUR_REPO"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.setuptools.packages.find]
+include = ["server*", "tasks*"]
+exclude = ["results*", "static*", "tests*"]

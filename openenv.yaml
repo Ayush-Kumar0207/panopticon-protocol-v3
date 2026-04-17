@@ -1,0 +1,119 @@
+# =============================================================================
+# OpenEnv Configuration — TODO: Customize for your problem
+# =============================================================================
+
+spec_version: 1
+name: openenv-starter              # TODO: Change
+type: space
+runtime: fastapi
+app: server:app
+port: 8000
+
+display_name: "OpenEnv Starter Kit"  # TODO: Change
+version: "1.0.0"
+description: |
+  TODO: Describe your environment. What does the agent control?
+  What is it optimizing for? What makes it interesting?
+
+author: "Your Team Name"            # TODO: Change
+license: "Apache-2.0"
+repository: "https://github.com/YOUR_USER/YOUR_REPO"  # TODO: Change
+
+grader_module: grader
+grader_class: TaskGrader
+
+tasks:
+  - id: easy
+    name: "Easy Mode"
+    description: "TODO: Easy scenario description"
+    max_turns: 30
+    difficulty: 1
+    has_grader: true
+    grader:
+      type: programmatic
+      module: grader
+      class: EasyGrader
+      function: grade
+      description: "Multi-dimensional grader — completion (40%), efficiency (20%), safety (20%), strategy (20%)"
+      success_threshold: 0.5
+
+  - id: medium
+    name: "Medium Mode"
+    description: "TODO: Medium scenario description"
+    max_turns: 50
+    difficulty: 2
+    has_grader: true
+    grader:
+      type: programmatic
+      module: grader
+      class: MediumGrader
+      function: grade
+      success_threshold: 0.6
+
+  - id: hard
+    name: "Hard Mode"
+    description: "TODO: Hard scenario description"
+    max_turns: 100
+    difficulty: 3
+    has_grader: true
+    grader:
+      type: programmatic
+      module: grader
+      class: HardGrader
+      function: grade
+      success_threshold: 0.7
+
+  - id: level_4
+    name: "Level 4"
+    description: "TODO: Level 4 description"
+    max_turns: 60
+    difficulty: 4
+    has_grader: true
+    grader:
+      type: programmatic
+      module: grader
+      class: Level4Grader
+      function: grade
+      success_threshold: 0.5
+
+  - id: level_5
+    name: "Level 5"
+    description: "TODO: Level 5 description"
+    max_turns: 80
+    difficulty: 5
+    has_grader: true
+    grader:
+      type: programmatic
+      module: grader
+      class: Level5Grader
+      function: grade
+      success_threshold: 0.6
+
+evaluation:
+  default_task: "medium"
+  metrics:
+    - name: "composite_score"
+      description: "Weighted multi-dimensional score"
+      higher_is_better: true
+      primary: true
+
+action_schema:
+  type: "object"
+  properties:
+    action_type:
+      type: "string"
+      enum: ["inspect", "process", "repair", "wait", "noop"]
+    target:
+      type: "string"
+    reason:
+      type: "string"
+  required: ["action_type"]
+
+tags:
+  - openenv
+  - hackathon
+  - turn-based
+  - json-observation
+  - json-action
+  - llm-agent
+  - multi-dimensional-grading
