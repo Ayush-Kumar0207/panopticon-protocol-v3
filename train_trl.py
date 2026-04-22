@@ -265,8 +265,6 @@ def train_on_level(
         save_strategy="epoch",
         fp16=torch.cuda.is_available(),
         report_to="none",
-        max_seq_length=1024,
-        dataset_text_field="text",
     )
 
     # Step 5: Load dataset
