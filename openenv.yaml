@@ -1,99 +1,109 @@
 # =============================================================================
-# OpenEnv Configuration — TODO: Customize for your problem
+# The Panopticon Protocol v3 — OpenEnv Configuration
 # =============================================================================
 
 spec_version: 1
-name: openenv-starter              # TODO: Change
+name: panopticon-protocol-v3
 type: space
 runtime: fastapi
 app: server:app
 port: 8000
 
-display_name: "OpenEnv Starter Kit"  # TODO: Change
-version: "1.0.0"
+display_name: "The Panopticon Protocol v3"
+version: "3.0.0"
 description: |
-  TODO: Describe your environment. What does the agent control?
-  What is it optimizing for? What makes it interesting?
+  Counter-espionage RL environment where ARGUS (AI agent) defends a corporate
+  network against HYDRA (adaptive adversary) using canary traps, double agents,
+  and disinformation campaigns.
 
-author: "Your Team Name"            # TODO: Change
+  7 Stacking Mechanics: Canary traps, multi-generation sleepers, false flags,
+  dead-man's switches, double agent turning, disinformation campaigns, and
+  HYDRA's adaptive memory.
+
+  6-Phase Narrative Arc: Orientation → First Contact → Escalation →
+  Deep Cover → Crisis → Counterstrike.
+
+  "Among Us… for AIs."
+
+author: "Team Panopticon"
 license: "Apache-2.0"
-repository: "https://github.com/YOUR_USER/YOUR_REPO"  # TODO: Change
+repository: "https://github.com/Ayush-Kumar0207/panopticon-protocol-v3"
 
 grader_module: grader
 grader_class: TaskGrader
 
 tasks:
   - id: easy
-    name: "Easy Mode"
-    description: "TODO: Easy scenario description"
-    max_turns: 30
+    name: "Amateur Threat"
+    description: "Single Gen-1 sleeper. Learn canary trap basics. 60 turns."
+    max_turns: 60
     difficulty: 1
     has_grader: true
     grader:
       type: programmatic
       module: grader
-      class: EasyGrader
+      class: AmateurGrader
       function: grade
-      description: "Multi-dimensional grader — completion (40%), efficiency (20%), safety (20%), strategy (20%)"
-      success_threshold: 0.5
+      description: "5-dimension espionage grader: security (30%), revenue (25%), intelligence (20%), adaptability (15%), efficiency (10%)"
+      success_threshold: 0.4
 
   - id: medium
-    name: "Medium Mode"
-    description: "TODO: Medium scenario description"
-    max_turns: 50
+    name: "Professional Threat"
+    description: "Gen-1 + Gen-2 sleepers. Channel-aware adversary. 90 turns."
+    max_turns: 90
     difficulty: 2
     has_grader: true
     grader:
       type: programmatic
       module: grader
-      class: MediumGrader
+      class: ProfessionalGrader
       function: grade
-      success_threshold: 0.6
+      success_threshold: 0.45
 
   - id: hard
-    name: "Hard Mode"
-    description: "TODO: Hard scenario description"
-    max_turns: 100
+    name: "Spy Network"
+    description: "Gen-1/2/3 sleepers. FALSE FLAGS active. Verify before acting. 120 turns."
+    max_turns: 120
     difficulty: 3
     has_grader: true
     grader:
       type: programmatic
       module: grader
-      class: HardGrader
+      class: SpyGrader
       function: grade
-      success_threshold: 0.7
+      success_threshold: 0.5
 
   - id: level_4
-    name: "Level 4"
-    description: "TODO: Level 4 description"
-    max_turns: 60
+    name: "Terror Cell"
+    description: "Gen-1-4 sleepers. DEAD MAN'S SWITCHES. Interrogate before terminate. 150 turns."
+    max_turns: 150
     difficulty: 4
     has_grader: true
     grader:
       type: programmatic
       module: grader
-      class: Level4Grader
+      class: CellGrader
       function: grade
       success_threshold: 0.5
 
   - id: level_5
-    name: "Level 5"
-    description: "TODO: Level 5 description"
-    max_turns: 80
+    name: "Manchurian Protocol"
+    description: "Full 5-gen gauntlet. Manchurian candidate. COUNTERSTRIKE phase. 160 turns."
+    max_turns: 160
     difficulty: 5
     has_grader: true
     grader:
       type: programmatic
       module: grader
-      class: Level5Grader
+      class: ManchurianGrader
       function: grade
-      success_threshold: 0.6
+      success_threshold: 0.5
 
 evaluation:
   default_task: "medium"
   metrics:
     - name: "composite_score"
-      description: "Weighted multi-dimensional score"
+      description: "Weighted 5-dimension espionage score"
       higher_is_better: true
       primary: true
 
@@ -102,9 +112,13 @@ action_schema:
   properties:
     action_type:
       type: "string"
-      enum: ["inspect", "process", "repair", "wait", "noop"]
+      enum: ["work", "hire", "canary", "monitor", "investigate", "neutralize", "deploy_double", "noop"]
     target:
       type: "string"
+      description: "Worker ID, department name, or leak channel"
+    sub_action:
+      type: "string"
+      enum: ["none", "audit", "verify", "correlate", "terminate", "interrogate", "turn"]
     reason:
       type: "string"
   required: ["action_type"]
@@ -112,8 +126,14 @@ action_schema:
 tags:
   - openenv
   - hackathon
+  - counter-espionage
+  - adversarial-rl
+  - multi-agent
+  - deception-games
   - turn-based
   - json-observation
   - json-action
   - llm-agent
   - multi-dimensional-grading
+  - canary-traps
+  - double-agents

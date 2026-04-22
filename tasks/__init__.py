@@ -1,4 +1,4 @@
-"""Task registry — 5 tasks with graders (exceeds the 3-task minimum)."""
+"""Task registry — 5 Panopticon Protocol difficulty tiers with graders."""
 from __future__ import annotations
 from tasks.easy import EASY_TASK
 from tasks.medium import MEDIUM_TASK

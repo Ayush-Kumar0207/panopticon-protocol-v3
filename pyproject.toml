@@ -3,14 +3,18 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "openenv-starter-kit"
-version = "1.0.0"
-description = "OpenEnv-compliant RL environment starter kit"
+name = "panopticon-protocol-v3"
+version = "3.0.0"
+description = "Counter-espionage RL environment — Among Us for AIs"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.11"
-authors = [{name = "Your Team Name"}]
-keywords = ["openenv", "reinforcement-learning", "hackathon"]
+authors = [{name = "Team Panopticon"}]
+keywords = [
+    "openenv", "reinforcement-learning", "hackathon",
+    "counter-espionage", "adversarial-rl", "multi-agent",
+    "canary-traps", "double-agents", "deception-games",
+]
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
@@ -19,17 +23,24 @@ dependencies = [
     "openai>=1.10.0",
     "openenv-core>=0.2.0",
     "gymnasium>=0.29.0",
+    "numpy>=1.26.0",
+]
+
+[project.optional-dependencies]
+train = [
+    "torch>=2.2.0",
     "stable-baselines3>=2.2.0",
+    "tqdm>=4.66.0",
 ]
 
 [project.entry-points."openenv.server"]
-starter = "server:app"
+panopticon = "server:app"
 
 [project.scripts]
 server = "server.app:main"
 
 [project.urls]
-Repository = "https://github.com/YOUR_USER/YOUR_REPO"
+Repository = "https://github.com/Ayush-Kumar0207/panopticon-protocol-v3"
 
 [tool.ruff]
 target-version = "py311"

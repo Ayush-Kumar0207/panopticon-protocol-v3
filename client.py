@@ -1,7 +1,6 @@
 """
-OpenEnv Starter Kit — HTTP Client
-===================================
-
+The Panopticon Protocol v3 — HTTP Client
+==========================================
 Connects to the environment server for inference and testing.
 """
 from __future__ import annotations
@@ -9,7 +8,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 import httpx
-from models import AgentAction, EnvironmentObservation, ActionType
+from models import AgentAction, EnvironmentObservation, ActionType, SubAction
 
 
 @dataclass
@@ -22,7 +21,7 @@ class StepResult:
 
 
 class EnvClient:
-    """HTTP client for the OpenEnv environment server."""
+    """Async HTTP client for the Panopticon Protocol server."""
 
     def __init__(self, base_url: str = "http://localhost:8000", timeout: float = 30.0):
         self._base_url = base_url.rstrip("/")
@@ -37,8 +36,12 @@ class EnvClient:
         return EnvironmentObservation(**resp.json()["observation"])
 
     async def step(self, action: AgentAction) -> StepResult:
-        payload = {"action_type": action.action_type, "target": action.target,
-                    "task_id": action.task_id, "reason": action.reason}
+        payload = {
+            "action_type": action.action_type,
+            "target": action.target,
+            "sub_action": action.sub_action,
+            "reason": action.reason,
+        }
         resp = await self._client.post("/step", json=payload)
         resp.raise_for_status()
         data = resp.json()
@@ -70,5 +73,7 @@ class LocalClient:
 
     def step(self, action: AgentAction) -> StepResult:
         result = self._env.step(action)
-        return StepResult(observation=result.observation, reward=result.reward,
-                          done=result.done, truncated=result.truncated, info=result.info)
+        return StepResult(
+            observation=result.observation, reward=result.reward,
+            done=result.done, truncated=result.truncated, info=result.info,
+        )
