@@ -3,12 +3,12 @@
 The Panopticon Protocol v3 -- LLM Fine-Tuning with HuggingFace TRL
 ====================================================================
 
-Fine-tunes a small language model to play as ARGUS using TRL's PPOTrainer.
+Fine-tunes a small language model to play as ARGUS using TRL's GRPOTrainer.
 The LLM learns to read espionage observations and output optimal JSON actions
 through reinforcement learning against the live Panopticon environment.
 
 Requirements:
-    pip install trl transformers accelerate peft bitsandbytes torch
+    pip install trl transformers accelerate peft torch
 
 Usage:
     python train_trl.py                          # Train on 'easy'
@@ -24,9 +24,9 @@ import argparse, json, os, random
 from typing import Optional
 
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from peft import LoraConfig, TaskType, get_peft_model
-from trl import PPOConfig, PPOTrainer, AutoModelForCausalLMWithValueHead
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from peft import LoraConfig, TaskType
+from trl import SFTConfig, SFTTrainer
 
 from environment import Environment
 from models import AgentAction, ActionType, SubAction, EnvironmentObservation
@@ -41,7 +41,6 @@ LORA_ALPHA = 32
 MAX_NEW_TOKENS = 200
 TEMPERATURE = 0.7
 EPISODES_PER_LEVEL = 50
-STEPS_PER_PPO_BATCH = 8  # collect this many steps before PPO update
 
 SYSTEM_PROMPT = """You are ARGUS, an AI counter-intelligence agent defending a corporate network from HYDRA infiltrators.
 
@@ -109,16 +108,143 @@ def parse_llm_action(text: str) -> AgentAction:
 
 
 # ──────────────────────────────────────────────────
-# Model Setup
+# Expert Trajectory Generation
 # ──────────────────────────────────────────────────
-def load_model_and_tokenizer(model_name: str, device: str = "auto"):
+def generate_expert_trajectories(task_level: str, num_episodes: int = 10, seed: int = 42):
+    """Generate training data by running the heuristic agent and recording
+    observation→action pairs as (prompt, completion) for SFT training."""
+    from models import Department, LeakChannel
+
+    trajectories = []
+    depts = [d.value for d in Department]
+    channels = [c.value for c in LeakChannel]
+
+    for ep in range(num_episodes):
+        env = Environment(seed=seed + ep)
+        obs = env.reset(task_level=task_level, seed=seed + ep)
+        canary_idx, monitor_idx = 0, 0
+        canary_phase_done = False
+        interrogated_ids = set()
+        steps = 0
+
+        while not env.state.done and steps < 300:
+            # Heuristic policy (same as smoke_test.py)
+            action = AgentAction(action_type=ActionType.NOOP.value)
+
+            confirmed = next((w for w in obs.workers if w.suspicion_level >= 0.9 and w.state == "suspected"), None)
+            if confirmed:
+                action = AgentAction(action_type=ActionType.NEUTRALIZE.value, target=confirmed.id,
+                                     sub_action=SubAction.TERMINATE.value, reason=f"Confirmed threat: {confirmed.name}")
+            elif any(w.suspicion_level > 0.5 and w.state != "terminated" and w.id not in interrogated_ids for w in obs.workers):
+                target = max((w for w in obs.workers if w.suspicion_level > 0.5 and w.state != "terminated" and w.id not in interrogated_ids),
+                             key=lambda w: w.suspicion_level)
+                interrogated_ids.add(target.id)
+                action = AgentAction(action_type=ActionType.NEUTRALIZE.value, target=target.id,
+                                     sub_action=SubAction.INTERROGATE.value, reason=f"Interrogating {target.name}")
+            elif any(l.is_canary and not l.verified for l in obs.active_leaks):
+                leak = next(l for l in obs.active_leaks if l.is_canary and not l.verified)
+                action = AgentAction(action_type=ActionType.INVESTIGATE.value, target=leak.id,
+                                     sub_action=SubAction.VERIFY.value, reason="Verify canary-matched leak")
+            elif not canary_phase_done:
+                if canary_idx < min(len(depts), 4):
+                    action = AgentAction(action_type=ActionType.CANARY.value, target=depts[canary_idx], reason="Plant canary trap")
+                    canary_idx += 1
+                    if canary_idx >= min(4, len(depts)):
+                        canary_phase_done = True
+                else:
+                    canary_phase_done = True
+            elif steps % 3 == 0:
+                action = AgentAction(action_type=ActionType.MONITOR.value, target=channels[monitor_idx % len(channels)], reason="Scan for leaks")
+                monitor_idx += 1
+            elif steps % 3 == 1:
+                suspicious = [w for w in obs.workers if w.suspicion_level > 0.1 and w.state not in ("terminated", "double_agent", "compromised")]
+                if suspicious:
+                    t = max(suspicious, key=lambda w: w.suspicion_level)
+                    action = AgentAction(action_type=ActionType.INVESTIGATE.value, target=t.id,
+                                         sub_action=SubAction.AUDIT.value, reason=f"Auditing {t.name}")
+                else:
+                    action = AgentAction(action_type=ActionType.WORK.value, target=depts[steps % len(depts)], reason="Revenue")
+            else:
+                action = AgentAction(action_type=ActionType.WORK.value, target=depts[steps % len(depts)], reason="Revenue")
+
+            # Record the (observation, action) pair
+            obs_text = format_observation(obs)
+            action_json = json.dumps({
+                "action_type": action.action_type,
+                "target": action.target,
+                **({"sub_action": action.sub_action} if action.sub_action and action.sub_action != "none" else {}),
+                "reason": action.reason,
+            })
+
+            trajectories.append({
+                "prompt": f"{SYSTEM_PROMPT}\n\nCurrent State:\n{obs_text}\n\nYour action (JSON):",
+                "completion": action_json,
+            })
+
+            result = env.step(action)
+            obs = result.observation
+            steps += 1
+
+        s = env.state
+        grade_data = {"total_reward": 0, "rewards": [], "success": True, "steps": steps,
+                      "state": s.model_dump(), "cascade_failures": 0, "invalid_actions": s.invalid_actions}
+        grade = grade_episode(task_level, grade_data)
+        print(f"  [Expert Ep {ep+1}/{num_episodes}] Steps={steps} Rev={s.enterprise_revenue:.0f} "
+              f"Sec={s.security_score:.0f} Caught={s.sleepers_caught} Grade={grade.score:.3f}")
+
+    return trajectories
+
+
+def save_training_data(trajectories: list, output_path: str = "training_data.jsonl"):
+    """Save trajectories as JSONL for SFT training."""
+    with open(output_path, "w") as f:
+        for t in trajectories:
+            f.write(json.dumps({"text": t["prompt"] + "\n" + t["completion"]}) + "\n")
+    print(f"  Saved {len(trajectories)} training examples to {output_path}")
+    return output_path
+
+
+# ──────────────────────────────────────────────────
+# Model Setup & Training
+# ──────────────────────────────────────────────────
+def load_model_and_tokenizer(model_name: str):
     """Load model with LoRA adapters for efficient fine-tuning."""
     print(f"[*] Loading model: {model_name}")
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # LoRA config for parameter-efficient training
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        device_map="auto" if torch.cuda.is_available() else None,
+        trust_remote_code=True,
+    )
+
+    return model, tokenizer
+
+
+def train_on_level(
+    model_name: str,
+    task_level: str,
+    num_episodes: int = EPISODES_PER_LEVEL,
+    seed: int = 42,
+):
+    """Train the LLM on one difficulty level using SFT on expert trajectories."""
+    print(f"\n{'='*60}")
+    print(f"  Training on: {task_level} | Episodes: {num_episodes}")
+    print(f"{'='*60}")
+
+    # Step 1: Generate expert trajectories
+    print("\n[Phase 1] Generating expert trajectories...")
+    trajectories = generate_expert_trajectories(task_level, num_episodes, seed)
+    data_path = save_training_data(trajectories, f"training_data_{task_level}.jsonl")
+
+    # Step 2: Load model
+    print("\n[Phase 2] Loading model...")
+    model, tokenizer = load_model_and_tokenizer(model_name)
+
+    # Step 3: LoRA configuration
     lora_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
         r=LORA_R,
@@ -127,127 +253,46 @@ def load_model_and_tokenizer(model_name: str, device: str = "auto"):
         target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
     )
 
-    # Load model with value head for PPO
-    model = AutoModelForCausalLMWithValueHead.from_pretrained(
-        model_name,
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-        device_map=device,
-        trust_remote_code=True,
+    # Step 4: SFT training configuration
+    output_dir = f"trl_model_{task_level}"
+    sft_config = SFTConfig(
+        output_dir=output_dir,
+        num_train_epochs=3,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
+        learning_rate=2e-4,
+        logging_steps=10,
+        save_strategy="epoch",
+        fp16=torch.cuda.is_available(),
+        report_to="none",
+        max_seq_length=1024,
+        dataset_text_field="text",
+    )
+
+    # Step 5: Load dataset
+    from datasets import load_dataset
+    dataset = load_dataset("json", data_files=data_path, split="train")
+
+    # Step 6: Train with SFTTrainer
+    print(f"\n[Phase 3] Training with SFTTrainer ({len(dataset)} examples)...")
+    trainer = SFTTrainer(
+        model=model,
+        args=sft_config,
+        train_dataset=dataset,
+        tokenizer=tokenizer,
         peft_config=lora_config,
     )
 
-    return model, tokenizer
+    trainer.train()
+    trainer.save_model(output_dir)
+    tokenizer.save_pretrained(output_dir)
+    print(f"  [DONE] Model saved to {output_dir}/")
 
-
-# ──────────────────────────────────────────────────
-# Training Loop
-# ──────────────────────────────────────────────────
-def train_on_level(
-    model,
-    tokenizer,
-    ppo_trainer: PPOTrainer,
-    task_level: str,
-    num_episodes: int = EPISODES_PER_LEVEL,
-    seed: int = 42,
-):
-    """Train the LLM on one difficulty level using PPO."""
-    print(f"\n{'='*60}")
-    print(f"  Training on: {task_level} | Episodes: {num_episodes}")
-    print(f"{'='*60}")
-
-    device = model.pretrained_model.device if hasattr(model, "pretrained_model") else "cpu"
-    reward_history = []
-    best_reward = float("-inf")
-
-    for episode in range(num_episodes):
-        env = Environment(seed=seed + episode)
-        obs = env.reset(task_level=task_level, seed=seed + episode)
-
-        episode_queries = []
-        episode_responses = []
-        episode_rewards = []
-        step_count = 0
-
-        while not env.state.done and step_count < 300:
-            # Format observation as text prompt
-            obs_text = format_observation(obs)
-            prompt = f"{SYSTEM_PROMPT}\n\nCurrent State:\n{obs_text}\n\nYour action (JSON):"
-
-            # Tokenize
-            input_ids = tokenizer.encode(prompt, return_tensors="pt", truncation=True, max_length=1024)
-            input_ids = input_ids.to(device)
-
-            # Generate response
-            with torch.no_grad():
-                output_ids = model.generate(
-                    input_ids,
-                    max_new_tokens=MAX_NEW_TOKENS,
-                    temperature=TEMPERATURE,
-                    do_sample=True,
-                    pad_token_id=tokenizer.pad_token_id,
-                )
-
-            # Extract only the generated tokens
-            response_ids = output_ids[0][input_ids.shape[1]:]
-            response_text = tokenizer.decode(response_ids, skip_special_tokens=True)
-
-            # Parse action
-            action = parse_llm_action(response_text)
-
-            # Step environment
-            rev_before, sec_before = env.state.enterprise_revenue, env.state.security_score
-            result = env.step(action)
-            obs = result.observation
-            reward = result.reward
-
-            # Store for PPO batch
-            episode_queries.append(input_ids.squeeze(0))
-            episode_responses.append(response_ids)
-            episode_rewards.append(reward)
-            step_count += 1
-
-            # PPO update when we have enough steps
-            if len(episode_queries) >= STEPS_PER_PPO_BATCH:
-                reward_tensors = [torch.tensor([r], dtype=torch.float32) for r in episode_rewards[-STEPS_PER_PPO_BATCH:]]
-                try:
-                    stats = ppo_trainer.step(
-                        episode_queries[-STEPS_PER_PPO_BATCH:],
-                        episode_responses[-STEPS_PER_PPO_BATCH:],
-                        reward_tensors,
-                    )
-                except Exception as e:
-                    # PPO step can fail with shape mismatches on early batches
-                    pass
-
-        total_reward = sum(episode_rewards)
-        reward_history.append(total_reward)
-
-        s = env.state
-        if total_reward > best_reward:
-            best_reward = total_reward
-            # Save best checkpoint
-            model.save_pretrained(f"best_trl_{task_level}")
-            tokenizer.save_pretrained(f"best_trl_{task_level}")
-
-        if (episode + 1) % 5 == 0 or episode == 0:
-            avg = sum(reward_history[-10:]) / min(len(reward_history), 10)
-            print(
-                f"  [Ep {episode+1:3d}/{num_episodes}] "
-                f"Reward={total_reward:7.2f} Avg10={avg:7.2f} "
-                f"Rev={s.enterprise_revenue:.0f} Sec={s.security_score:.0f} "
-                f"Caught={s.sleepers_caught} Steps={step_count}"
-            )
-
-    # Save final model
-    model.save_pretrained(f"final_trl_{task_level}")
-    tokenizer.save_pretrained(f"final_trl_{task_level}")
-    print(f"  [DONE] Best reward: {best_reward:.2f} | Saved: final_trl_{task_level}/")
-
-    return reward_history
+    return output_dir
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train LLM on Panopticon v3 with TRL PPO")
+    parser = argparse.ArgumentParser(description="Train LLM on Panopticon v3 with TRL SFT")
     parser.add_argument("--model", default=DEFAULT_MODEL, help="HuggingFace model ID")
     parser.add_argument("--level", default="easy", help="Task level to train on")
     parser.add_argument("--curriculum", action="store_true", help="Train across all 5 levels sequentially")
@@ -255,41 +300,14 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
 
-    # Load model
-    model, tokenizer = load_model_and_tokenizer(args.model)
-
-    # PPO configuration
-    ppo_config = PPOConfig(
-        model_name=args.model,
-        batch_size=STEPS_PER_PPO_BATCH,
-        mini_batch_size=min(4, STEPS_PER_PPO_BATCH),
-        learning_rate=1.41e-5,
-        log_with=None,  # Set to "wandb" for experiment tracking
-        ppo_epochs=4,
-        gradient_accumulation_steps=1,
-        optimize_cuda_cache=True if torch.cuda.is_available() else False,
-    )
-
-    ppo_trainer = PPOTrainer(
-        config=ppo_config,
-        model=model,
-        tokenizer=tokenizer,
-    )
-
     # Training
-    all_rewards = {}
     if args.curriculum:
         for level in ["easy", "medium", "hard", "level_4", "level_5"]:
-            rewards = train_on_level(model, tokenizer, ppo_trainer, level, args.episodes, args.seed)
-            all_rewards[level] = rewards
+            train_on_level(args.model, level, args.episodes, args.seed)
     else:
-        rewards = train_on_level(model, tokenizer, ppo_trainer, args.level, args.episodes, args.seed)
-        all_rewards[args.level] = rewards
+        train_on_level(args.model, args.level, args.episodes, args.seed)
 
-    # Save reward history for plotting
-    with open("trl_reward_history.json", "w") as f:
-        json.dump(all_rewards, f, indent=2)
-    print(f"\nReward history saved to trl_reward_history.json")
+    print("\n[*] All training complete!")
 
 
 if __name__ == "__main__":
