@@ -1,0 +1,80 @@
+.container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px;
+  gap: 32px;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.titleAccent {
+  color: var(--argus-primary);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  max-width: 800px;
+}
+
+.card {
+  padding: 28px 24px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.card:hover {
+  border-color: var(--border-glow);
+  box-shadow: 0 4px 20px rgba(0, 240, 255, 0.08);
+}
+
+.cardIcon {
+  font-size: 36px;
+  flex-shrink: 0;
+}
+
+.cardContent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cardTitle {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cardDesc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.footer {
+  padding: 12px 24px;
+  border-radius: var(--radius-md);
+  background: var(--argus-bg);
+  border: 1px solid var(--argus-dim);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--argus-primary);
+  text-align: center;
+}

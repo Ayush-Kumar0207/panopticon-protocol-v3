@@ -1,0 +1,113 @@
+/* ============================================================
+   ARGUS COMMAND CENTER — Global Design System
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@600;700;800&display=swap');
+
+:root {
+  /* Backgrounds */
+  --bg-void:        #05060a;
+  --bg-primary:     #0a0e1a;
+  --bg-surface:     #111827;
+  --bg-glass:       rgba(17, 24, 39, 0.65);
+
+  /* ARGUS — Cyan */
+  --argus-primary:  #00f0ff;
+  --argus-glow:     rgba(0, 240, 255, 0.3);
+  --argus-dim:      #0e7490;
+  --argus-bg:       rgba(0, 240, 255, 0.08);
+
+  /* HYDRA — Crimson */
+  --hydra-primary:  #ff2d55;
+  --hydra-glow:     rgba(255, 45, 85, 0.3);
+  --hydra-dim:      #9f1239;
+  --hydra-bg:       rgba(255, 45, 85, 0.08);
+
+  /* Canary — Gold */
+  --canary-primary: #fbbf24;
+  --canary-glow:    rgba(251, 191, 36, 0.3);
+
+  /* Double Agent — Purple */
+  --double-primary: #a855f7;
+  --double-glow:    rgba(168, 85, 247, 0.3);
+
+  /* Semantic */
+  --success:        #22c55e;
+  --warning:        #f59e0b;
+  --danger:         #ef4444;
+
+  /* Text */
+  --text-primary:   #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted:     #475569;
+
+  /* Borders */
+  --border-subtle:  rgba(148, 163, 184, 0.1);
+  --border-glow:    rgba(0, 240, 255, 0.2);
+
+  /* Typography */
+  --font-display:   'Outfit', sans-serif;
+  --font-body:      'Inter', sans-serif;
+  --font-mono:      'JetBrains Mono', monospace;
+
+  /* Spacing */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+}
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Utility Classes ── */
+.glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4),
+              inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.glow-argus {
+  box-shadow: 0 0 20px var(--argus-glow), 0 0 60px var(--argus-glow);
+}
+
+.glow-hydra {
+  box-shadow: 0 0 20px var(--hydra-glow), 0 0 60px var(--hydra-glow);
+}
+
+.glow-canary {
+  box-shadow: 0 0 15px var(--canary-glow);
+}
+
+.glow-double {
+  box-shadow: 0 0 15px var(--double-glow);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 3px; }
+
+/* Selection */
+::selection {
+  background: var(--argus-primary);
+  color: var(--bg-void);
+}

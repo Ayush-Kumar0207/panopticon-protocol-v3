@@ -1,0 +1,175 @@
+.container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 56px 32px 52px;
+  gap: 8px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+}
+
+.phaseTitle {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.metrics {
+  display: flex;
+  gap: 20px;
+}
+
+.metric {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+.metricValue {
+  font-weight: 600;
+  font-size: 18px;
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+  min-height: 0;
+}
+
+.workersPanel {
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.panelTitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 4px;
+}
+
+.worker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
+.workerDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.centerPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.eventFeed {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.event {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  border-left: 3px solid;
+}
+
+.eventArgus {
+  border-color: var(--argus-primary);
+  background: var(--argus-bg);
+  color: var(--argus-primary);
+}
+
+.eventHydra {
+  border-color: var(--hydra-primary);
+  background: var(--hydra-bg);
+  color: var(--hydra-primary);
+}
+
+.eventCanary {
+  border-color: var(--canary-primary);
+  background: rgba(251, 191, 36, 0.08);
+  color: var(--canary-primary);
+}
+
+.eventSuccess {
+  border-color: var(--success);
+  background: rgba(34, 197, 94, 0.08);
+  color: var(--success);
+}
+
+.eventDouble {
+  border-color: var(--double-primary);
+  background: rgba(168, 85, 247, 0.08);
+  color: var(--double-primary);
+}
+
+.phaseTimeline {
+  display: flex;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.phaseStep {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-surface);
+  transition: background 0.5s ease;
+}
+
+.phaseStepActive {
+  background: var(--argus-primary);
+  box-shadow: 0 0 8px var(--argus-glow);
+}
+
+.phaseStepDone {
+  background: var(--argus-dim);
+}
+
+.bigAlert {
+  text-align: center;
+  padding: 16px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  animation: pulseAlert 1.5s ease-in-out infinite;
+}
+
+@keyframes pulseAlert {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}

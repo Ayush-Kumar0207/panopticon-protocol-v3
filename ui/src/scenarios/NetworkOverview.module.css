@@ -1,0 +1,95 @@
+.container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 40px;
+  position: relative;
+}
+
+.graph {
+  position: relative;
+  width: 700px;
+  height: 500px;
+}
+
+.node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+}
+
+.circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  border: 2px solid;
+  transition: all 0.6s ease;
+}
+
+.circleSafe {
+  background: var(--argus-bg);
+  border-color: var(--argus-dim);
+  box-shadow: 0 0 15px var(--argus-glow);
+}
+
+.circleInfected {
+  background: var(--hydra-bg);
+  border-color: var(--hydra-primary);
+  box-shadow: 0 0 20px var(--hydra-glow);
+  animation: glitch 0.3s ease-in-out 3;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.tagline {
+  position: absolute;
+  bottom: 80px;
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--text-primary);
+  text-align: center;
+  opacity: 0;
+  animation: fadeUp 1s 2s forwards;
+}
+
+.taglineAccent {
+  color: var(--argus-primary);
+  text-shadow: 0 0 30px var(--argus-glow);
+}
+
+.connections {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+@keyframes glitch {
+  0%, 100% { transform: translate(0); }
+  25% { transform: translate(-2px, 1px) skew(1deg); }
+  75% { transform: translate(2px, -1px) skew(-1deg); }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}

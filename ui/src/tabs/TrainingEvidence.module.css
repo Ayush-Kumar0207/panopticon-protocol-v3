@@ -1,0 +1,111 @@
+.container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 10px;
+}
+
+.header {
+  padding: 12px 20px;
+  flex-shrink: 0;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--argus-primary);
+}
+
+.subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.charts {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-height: 0;
+}
+
+.chartPanel {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.chartTitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.chartArea {
+  flex: 1;
+  min-height: 0;
+}
+
+.statsRow {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.stat {
+  flex: 1;
+  padding: 14px 16px;
+  text-align: center;
+}
+
+.statLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.statValue {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.statSub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.legend {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 4px 0;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.legendDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}

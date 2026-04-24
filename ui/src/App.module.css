@@ -1,0 +1,142 @@
+/* ============================================================
+   ARGUS COMMAND CENTER v3 — Unified Dashboard Layout
+   ============================================================ */
+
+.app {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-void);
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Animated Background ── */
+.bgGrid {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+.scanline {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 240, 255, 0.008) 2px,
+    rgba(0, 240, 255, 0.008) 4px
+  );
+}
+
+/* ── Top Bar ── */
+.topbar {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: rgba(5, 6, 10, 0.9);
+  border-bottom: 1px solid var(--border-subtle);
+  z-index: 50;
+  flex-shrink: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--argus-primary);
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.brandDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--argus-primary);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.brandDotOffline {
+  background: var(--text-muted);
+  animation: none;
+}
+
+.topCenter {
+  display: flex;
+  gap: 2px;
+}
+
+.tabBtn {
+  padding: 8px 18px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.5px;
+}
+
+.tabBtn:hover {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tabBtnActive {
+  color: var(--argus-primary);
+  background: rgba(0, 240, 255, 0.06);
+  border-color: var(--border-subtle);
+  border-bottom-color: transparent;
+}
+
+.statusBadge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* ── Main Content ── */
+.main {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.tabContent {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--argus-glow); }
+  50% { opacity: 0.4; box-shadow: none; }
+}

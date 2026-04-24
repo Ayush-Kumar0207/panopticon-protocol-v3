@@ -1,0 +1,149 @@
+.container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 8px;
+}
+
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; flex-shrink: 0;
+}
+.title { font-family: var(--font-display); font-size: 20px; font-weight: 700; }
+.controls { display: flex; gap: 8px; align-items: center; }
+
+.autoBtn {
+  padding: 7px 20px; font-family: var(--font-mono); font-size: 12px;
+  border-radius: 8px; cursor: pointer; border: 1px solid; transition: all 0.3s;
+  font-weight: 600;
+}
+.autoBtnPlay {
+  background: linear-gradient(135deg, rgba(0,240,255,0.15), rgba(0,240,255,0.05));
+  border-color: var(--argus-primary); color: var(--argus-primary);
+}
+.autoBtnPlay:hover { box-shadow: 0 0 20px var(--argus-glow); }
+.autoBtnPause { background: rgba(255,45,85,0.1); border-color: var(--hydra-primary); color: var(--hydra-primary); }
+.autoBtnPause:hover { background: rgba(255,45,85,0.2); }
+
+.phaseNav { display: flex; gap: 4px; }
+.phaseBtn {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 2px solid var(--border-subtle); background: transparent; color: var(--text-muted);
+  font-family: var(--font-display); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center;
+}
+.phaseBtn:hover { border-color: var(--text-secondary); }
+.phaseBtnActive {
+  border-color: var(--argus-primary); color: var(--argus-primary);
+  background: var(--argus-bg); box-shadow: 0 0 10px var(--argus-glow);
+}
+.phaseBtnDone { border-color: var(--success); color: var(--success); background: rgba(34,197,94,0.06); }
+
+/* ── Body Grid ── */
+.body {
+  flex: 1; display: grid;
+  grid-template-columns: 260px 1fr 260px;
+  gap: 8px; min-height: 0;
+}
+
+/* ── Left: Narrative ── */
+.narrative { padding: 14px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.narrativePhase { font-family: var(--font-display); font-size: 16px; font-weight: 700; }
+.narrativeDesc { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+
+/* ── Center: Visualization ── */
+.vizPanel {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; border-radius: var(--radius-lg);
+}
+.vizCenterLabel {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  font-family: var(--font-mono); font-size: 9px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 2px; z-index: 5;
+}
+.vizNode {
+  position: absolute; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  z-index: 2;
+}
+.vizNodeCircle {
+  width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; border: 2px solid; position: relative;
+  transition: all 0.5s ease;
+}
+.vizNodeName {
+  font-family: var(--font-mono); font-size: 8px; text-transform: uppercase;
+  letter-spacing: 0.5px; text-align: center;
+}
+.vizNodeBadge {
+  position: absolute; top: -6px; right: -10px; font-size: 14px;
+  filter: drop-shadow(0 0 5px currentColor);
+}
+
+.vizWorker {
+  position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  z-index: 3;
+}
+.vizWorkerCircle {
+  width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; border: 2px solid;
+}
+.vizWorkerName { font-family: var(--font-mono); font-size: 7px; }
+.vizWorkerStatus {
+  font-family: var(--font-mono); font-size: 7px; padding: 1px 4px;
+  border-radius: 3px; font-weight: 600;
+}
+
+/* Connection lines */
+.vizLines {
+  position: absolute; inset: 0; pointer-events: none; z-index: 1;
+}
+
+/* Floating effects */
+.floatingAlert {
+  position: absolute; z-index: 10;
+  padding: 8px 16px; border-radius: 8px;
+  font-family: var(--font-display); font-size: 13px; font-weight: 700;
+  text-align: center; max-width: 200px;
+  box-shadow: 0 4px 30px rgba(0,0,0,0.5);
+}
+.floatingParticle {
+  position: absolute; width: 4px; height: 4px; border-radius: 50%;
+  z-index: 4; pointer-events: none;
+}
+
+/* ── Right: Event Feed ── */
+.eventPanel { padding: 12px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.eventTitle {
+  font-family: var(--font-mono); font-size: 9px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 2px; flex-shrink: 0;
+}
+.eventItem {
+  padding: 6px 10px; border-radius: 4px; border-left: 3px solid;
+  font-family: var(--font-mono); font-size: 10px; line-height: 1.4;
+}
+.eventArgus { border-color: var(--argus-primary); color: var(--argus-primary); background: var(--argus-bg); }
+.eventHydra { border-color: var(--hydra-primary); color: var(--hydra-primary); background: var(--hydra-bg); }
+.eventSuccess { border-color: var(--success); color: var(--success); background: rgba(34,197,94,0.06); }
+.eventCanary { border-color: var(--canary-primary); color: var(--canary-primary); background: rgba(251,191,36,0.06); }
+.eventDouble { border-color: var(--double-primary); color: var(--double-primary); background: rgba(168,85,247,0.06); }
+.eventDanger { border-color: var(--danger); color: var(--danger); background: rgba(239,68,68,0.06); }
+
+/* ── Bottom: Metrics ── */
+.metricsRow { display: flex; gap: 8px; flex-shrink: 0; }
+.miniMetric { flex: 1; padding: 10px 14px; text-align: center; }
+.miniLabel {
+  font-family: var(--font-mono); font-size: 9px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+.miniValue { font-family: var(--font-display); font-size: 22px; font-weight: 700; margin-top: 2px; }
+
+.bigAlert {
+  padding: 8px 14px; border-radius: var(--radius-md);
+  font-family: var(--font-display); font-size: 13px; font-weight: 700;
+  text-align: center; animation: alertPulse 1.5s ease-in-out infinite;
+}
+@keyframes alertPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
