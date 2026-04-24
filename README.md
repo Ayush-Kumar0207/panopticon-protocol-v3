@@ -76,6 +76,24 @@ Phase 6: Counterstrike  (T140-160)— Double agent payoff, REWARD SURGE
 
 ---
 
+## 📈 Training Results (PPO Curriculum)
+
+The environment produces highly measurable capability improvements. Below is the evidence of training across all 5 difficulty tiers (random baseline → fully trained curriculum).
+
+### 1. Episode Rewards
+*Shows consistent learning convergence across all tiers. Level 5 introduces extreme volatility due to Manchurian candidate mechanics, but the agent successfully learns to stabilize rewards.*
+![Reward Curves](training_results/reward_curves.png)
+
+### 2. Security & Revenue Trade-offs
+*Demonstrates the agent learning to balance the core game tension: aggressive security measures (interrogations) hurt short-term revenue, but failing to catch sleepers destroys long-term stability.*
+![Security and Revenue Metrics](training_results/metrics_curves.png)
+
+### 3. Sleepers Caught
+*The absolute measure of success. The agent progresses from catching ~1 amateur sleeper per episode to consistently neutralizing 3+ advanced sleepers (Gen 4/5) with dead-man switches and false flags.*
+![Sleepers Caught Curves](training_results/caught_curves.png)
+
+---
+
 ## ⚡ Quick Start
 
 ```bash
