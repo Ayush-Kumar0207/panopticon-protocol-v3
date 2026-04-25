@@ -256,7 +256,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     print("\n[Phase 2] Loading model...")
     sys.stdout.flush()
     model, tokenizer = load_model_and_tokenizer(model_name)
-    tokenizer.model_max_length = 512
+    tokenizer.model_max_length = 1024
 
     # LoRA config
     lora_config = LoraConfig(
@@ -269,23 +269,31 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     sft_config = SFTConfig(
         output_dir=output_dir,
         num_train_epochs=3,
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=2,
         learning_rate=5e-5,
-        warmup_steps=30,
-        logging_steps=1,
+        warmup_steps=20,
+        logging_steps=5,
         save_strategy="epoch",
-        save_total_limit=1,                                          # FIX: don't hoard checkpoints
+        save_total_limit=1,
         fp16=torch.cuda.is_available(),
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},      # FIX: prevent PEFT deadlock
+        gradient_checkpointing=False,            # Disabled: only 3/22 GB VRAM used, avoids PEFT issues
         report_to="none",
         dataset_text_field="text",
-        max_seq_length=512,
+        max_seq_length=1024,                     # Must be large enough to include assistant response
     )
 
     from datasets import load_dataset
     dataset = load_dataset("json", data_files=data_path, split="train")
+
+    # Diagnostic: check tokenized sequence lengths
+    sample_lengths = []
+    for i in range(min(10, len(dataset))):
+        toks = tokenizer(dataset[i]["text"], truncation=False)
+        sample_lengths.append(len(toks["input_ids"]))
+    print(f"\n  [DATA] Sample token lengths (first 10): {sample_lengths}")
+    print(f"  [DATA] Max: {max(sample_lengths)}, Min: {min(sample_lengths)}, Avg: {sum(sample_lengths)/len(sample_lengths):.0f}")
+    sys.stdout.flush()
 
     # GPU memory diagnostic
     if torch.cuda.is_available():
