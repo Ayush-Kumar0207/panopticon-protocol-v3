@@ -196,7 +196,7 @@ def load_model_and_tokenizer(model_name: str):
         print(f"  → Merging LoRA from previous checkpoint: {model_name}")
         from peft import AutoPeftModelForCausalLM
         model = AutoPeftModelForCausalLM.from_pretrained(
-            model_name, torch_dtype=torch.float16, device_map="auto", trust_remote_code=True,
+            model_name, dtype=torch.float16, device_map="auto", trust_remote_code=True,
         )
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         model = model.merge_and_unload()
@@ -204,7 +204,7 @@ def load_model_and_tokenizer(model_name: str):
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+            dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
             device_map="auto" if torch.cuda.is_available() else None,
             trust_remote_code=True,
         )
@@ -256,7 +256,6 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         save_strategy="epoch",
         fp16=torch.cuda.is_available(),
         gradient_checkpointing=True,
-        max_seq_length=1024,
         report_to="none",
     )
 
@@ -267,6 +266,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     trainer = SFTTrainer(
         model=model, args=sft_config, train_dataset=dataset,
         processing_class=tokenizer, peft_config=lora_config,
+        max_seq_length=1024,
     )
     trainer.train()
     trainer.save_model(output_dir)
@@ -290,7 +290,7 @@ def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int 
 
     from peft import AutoPeftModelForCausalLM
     model = AutoPeftModelForCausalLM.from_pretrained(
-        model_path, torch_dtype=torch.float16, device_map="auto", trust_remote_code=True,
+        model_path, dtype=torch.float16, device_map="auto", trust_remote_code=True,
     )
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     if tokenizer.pad_token is None:
