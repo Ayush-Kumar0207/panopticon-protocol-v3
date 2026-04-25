@@ -223,7 +223,8 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     # Load tokenizer first for chat template
     tokenizer = AutoTokenizer.from_pretrained(
         model_name if not os.path.exists(os.path.join(model_name, "adapter_config.json")) else model_name,
-        trust_remote_code=True
+        trust_remote_code=True,
+        model_max_length=1024,
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -236,6 +237,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     # Load model (merging previous LoRA if curriculum)
     print("\n[Phase 2] Loading model...")
     model, tokenizer = load_model_and_tokenizer(model_name)
+    tokenizer.model_max_length = 1024  # Enforce truncation at 1024 tokens
 
     # LoRA config
     lora_config = LoraConfig(
@@ -257,7 +259,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         fp16=torch.cuda.is_available(),
         gradient_checkpointing=True,
         report_to="none",
-        max_seq_length=1024,
+        dataset_text_field="text",
     )
 
     from datasets import load_dataset
