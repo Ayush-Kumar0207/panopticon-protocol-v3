@@ -195,8 +195,7 @@ def load_model_and_tokenizer(model_name: str):
 
     is_local_checkpoint = os.path.exists(os.path.join(model_name, "adapter_config.json"))
 
-    # FIX: Use {"": 0} instead of "auto" to avoid Trainer/accelerate conflicts on single GPU
-    device_map = {"": 0} if torch.cuda.is_available() else None
+    # For training: do NOT use device_map — let HF Trainer handle device placement
     model_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
     if is_local_checkpoint:
@@ -210,7 +209,6 @@ def load_model_and_tokenizer(model_name: str):
         base_model = AutoModelForCausalLM.from_pretrained(
             base_model_name,
             torch_dtype=model_dtype,
-            device_map=device_map,
             trust_remote_code=True,
         )
         model = PeftModel.from_pretrained(base_model, model_name)
@@ -221,7 +219,6 @@ def load_model_and_tokenizer(model_name: str):
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=model_dtype,
-            device_map=device_map,
             trust_remote_code=True,
         )
 
@@ -303,12 +300,26 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         print(f"  [GPU] VRAM Reserved:  {torch.cuda.memory_reserved() / 1024**3:.2f} GB")
     sys.stdout.flush()
 
+    # Sanity check: tokenize first example and verify labels
+    _sample = tokenizer(dataset[0]["text"], return_tensors="pt", truncation=True, max_length=1024)
+    print(f"\n  [SANITY] First example: {_sample['input_ids'].shape[1]} tokens")
+    print(f"  [SANITY] First 20 token IDs: {_sample['input_ids'][0][:20].tolist()}")
+    print(f"  [SANITY] Pad token ID: {tokenizer.pad_token_id}, EOS token ID: {tokenizer.eos_token_id}")
+    sys.stdout.flush()
+
     print(f"\n[Phase 3] SFT Training ({len(dataset)} examples, {sft_config.num_train_epochs} epochs)...")
     sys.stdout.flush()
     trainer = SFTTrainer(
         model=model, args=sft_config, train_dataset=dataset,
-        processing_class=tokenizer, peft_config=lora_config,
+        tokenizer=tokenizer, peft_config=lora_config,
     )
+
+    # Ensure gradients flow through LoRA adapters
+    if hasattr(trainer.model, 'enable_input_require_grads'):
+        trainer.model.enable_input_require_grads()
+        print("  [FIX] Enabled input_require_grads for PEFT")
+        sys.stdout.flush()
+
     trainer.train()
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
