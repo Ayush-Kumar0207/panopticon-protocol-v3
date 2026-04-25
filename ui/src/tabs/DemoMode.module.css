@@ -52,6 +52,17 @@
 .narrative { padding: 14px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 .narrativePhase { font-family: var(--font-display); font-size: 16px; font-weight: 700; }
 .narrativeDesc { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+.rewardBox {
+  padding: 10px 12px; border-radius: var(--radius-md);
+  background: rgba(0,240,255,0.04); border: 1px solid rgba(0,240,255,0.15);
+  margin-top: auto;
+}
+.rewardBoxTitle {
+  font-family: var(--font-mono); font-size: 9px; color: var(--argus-primary);
+  text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;
+}
+.rewardBoxText { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); line-height: 1.5; }
+.eventSystem { border-color: var(--text-muted); color: var(--text-secondary); background: rgba(255,255,255,0.02); }
 
 /* ── Center: Visualization ── */
 .vizPanel {

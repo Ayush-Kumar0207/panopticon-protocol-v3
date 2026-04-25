@@ -135,6 +135,7 @@ class Environment:
         self._report_counter = 0
         self._pending_sleepers: dict[int, int] = {}  # turn -> generation
         self._turning_workers: dict[str, int] = {}   # worker_id -> turns remaining
+        self._shuffled_names: list[str] = list(WORKER_NAMES)  # shuffled per episode
 
     @property
     def state(self) -> EnvironmentState:
@@ -146,8 +147,11 @@ class Environment:
 
     def reset(self, task_level: str = "easy", seed: int | None = None) -> EnvironmentObservation:
         """Reset environment to a new episode."""
+        # Always re-seed RNG for genuine randomness between episodes
         if seed is not None:
             self._rng = random.Random(seed)
+        else:
+            self._rng = random.Random()  # true random each episode
 
         difficulty = LEVEL_MAP.get(task_level, "amateur")
         self._task_level = task_level
@@ -158,6 +162,10 @@ class Environment:
         self._report_counter = 0
         self._pending_sleepers = dict(self._config["sleeper_schedule"])
         self._turning_workers = {}
+
+        # Shuffle the name pool so workers get different names each episode
+        self._shuffled_names = list(WORKER_NAMES)
+        self._rng.shuffle(self._shuffled_names)
 
         # Generate initial workforce
         workers = []
@@ -751,7 +759,7 @@ class Environment:
             audit_counts = s.hydra_memory.agent_audit_pattern
             depts.sort(key=lambda d: audit_counts.get(d, 0))
 
-        target_dept = depts[0] if depts else self._rng.choice(s.departments_active)
+        target_dept = self._rng.choice(depts) if depts else self._rng.choice(s.departments_active)
 
         # Disinformation degrades recruitment quality
         quality = s.hydra_memory.recruitment_accuracy
@@ -1129,7 +1137,7 @@ class Environment:
     def _create_worker(self, department: str, hire_turn: int) -> Worker:
         """Create a new clean worker."""
         self._worker_counter += 1
-        name = WORKER_NAMES[(self._worker_counter - 1) % len(WORKER_NAMES)]
+        name = self._shuffled_names[(self._worker_counter - 1) % len(self._shuffled_names)]
 
         return Worker(
             id=f"w-{self._worker_counter:03d}",
