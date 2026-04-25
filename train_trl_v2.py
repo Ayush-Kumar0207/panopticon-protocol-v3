@@ -251,12 +251,13 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
         learning_rate=5e-5,
-        warmup_ratio=0.1,
+        warmup_steps=50,
         logging_steps=10,
         save_strategy="epoch",
         fp16=torch.cuda.is_available(),
         gradient_checkpointing=True,
         report_to="none",
+        max_seq_length=1024,
     )
 
     from datasets import load_dataset
@@ -266,7 +267,6 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     trainer = SFTTrainer(
         model=model, args=sft_config, train_dataset=dataset,
         processing_class=tokenizer, peft_config=lora_config,
-        max_seq_length=1024,
     )
     trainer.train()
     trainer.save_model(output_dir)
