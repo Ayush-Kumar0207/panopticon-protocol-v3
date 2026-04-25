@@ -259,24 +259,33 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     output_dir = f"trl_model_{task_level}"
     sft_config = SFTConfig(
         output_dir=output_dir,
-        num_train_epochs=5,
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=4,
+        num_train_epochs=3,
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=8,
         learning_rate=5e-5,
-        warmup_steps=50,
-        logging_steps=10,
+        warmup_steps=30,
+        logging_steps=1,
         save_strategy="epoch",
         fp16=torch.cuda.is_available(),
         gradient_checkpointing=True,
         report_to="none",
         dataset_text_field="text",
-        max_seq_length=1024,
+        max_seq_length=512,
     )
 
     from datasets import load_dataset
     dataset = load_dataset("json", data_files=data_path, split="train")
 
+    # GPU memory diagnostic
+    if torch.cuda.is_available():
+        print(f"\n  [GPU] {torch.cuda.get_device_name(0)}")
+        print(f"  [GPU] VRAM: {torch.cuda.get_device_properties(0).total_mem / 1024**3:.1f} GB")
+        print(f"  [GPU] Allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
+        print(f"  [GPU] Reserved:  {torch.cuda.memory_reserved() / 1024**3:.2f} GB")
+    import sys; sys.stdout.flush()
+
     print(f"\n[Phase 3] SFT Training ({len(dataset)} examples, {sft_config.num_train_epochs} epochs)...")
+    sys.stdout.flush()
     trainer = SFTTrainer(
         model=model, args=sft_config, train_dataset=dataset,
         processing_class=tokenizer, peft_config=lora_config,
