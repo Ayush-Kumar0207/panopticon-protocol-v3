@@ -13,7 +13,7 @@ Usage:
     python train_trl_v2.py --curriculum --model Qwen/Qwen2.5-1.5B-Instruct --episodes 50
 """
 from __future__ import annotations
-import argparse, json, os, random, gc
+import argparse, json, os, random, gc, sys
 from typing import Optional
 
 import torch
@@ -27,6 +27,9 @@ from models import (
     Department, LeakChannel,
 )
 from grader import grade_episode
+
+# ── Force unbuffered output so HF Space logs appear in real-time ──
+os.environ["PYTHONUNBUFFERED"] = "1"
 
 # ── Config ──
 DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
@@ -192,19 +195,22 @@ def load_model_and_tokenizer(model_name: str):
 
     is_local_checkpoint = os.path.exists(os.path.join(model_name, "adapter_config.json"))
 
+    # FIX: Use {"": 0} instead of "auto" to avoid Trainer/accelerate conflicts on single GPU
+    device_map = {"": 0} if torch.cuda.is_available() else None
+    model_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+
     if is_local_checkpoint:
         print(f"  → Merging LoRA from previous checkpoint: {model_name}")
         from peft import PeftModel
         # Read adapter config to find the base model name
-        import json as _json
         adapter_cfg_path = os.path.join(model_name, "adapter_config.json")
         with open(adapter_cfg_path) as _f:
-            _adapter_cfg = _json.load(_f)
+            _adapter_cfg = json.load(_f)
         base_model_name = _adapter_cfg["base_model_name_or_path"]
         base_model = AutoModelForCausalLM.from_pretrained(
             base_model_name,
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            device_map="auto" if torch.cuda.is_available() else None,
+            torch_dtype=model_dtype,
+            device_map=device_map,
             trust_remote_code=True,
         )
         model = PeftModel.from_pretrained(base_model, model_name)
@@ -214,8 +220,8 @@ def load_model_and_tokenizer(model_name: str):
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            device_map="auto" if torch.cuda.is_available() else None,
+            torch_dtype=model_dtype,
+            device_map=device_map,
             trust_remote_code=True,
         )
 
@@ -229,25 +235,28 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     print(f"\n{'='*60}")
     print(f"  TRAINING: {task_level} | Episodes: {num_episodes} | Base: {model_name}")
     print(f"{'='*60}")
+    sys.stdout.flush()
 
     # Load tokenizer first for chat template
     tokenizer = AutoTokenizer.from_pretrained(
         model_name if not os.path.exists(os.path.join(model_name, "adapter_config.json")) else model_name,
         trust_remote_code=True,
-        model_max_length=1024,
+        model_max_length=512,
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     # Generate expert data
     print("\n[Phase 1] Generating expert trajectories...")
+    sys.stdout.flush()
     trajectories = generate_expert_trajectories(task_level, num_episodes)
     data_path = save_training_data_with_template(trajectories, f"training_data_{task_level}.jsonl", tokenizer)
 
     # Load model (merging previous LoRA if curriculum)
     print("\n[Phase 2] Loading model...")
+    sys.stdout.flush()
     model, tokenizer = load_model_and_tokenizer(model_name)
-    tokenizer.model_max_length = 1024  # Enforce truncation at 1024 tokens
+    tokenizer.model_max_length = 512
 
     # LoRA config
     lora_config = LoraConfig(
@@ -260,14 +269,16 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     sft_config = SFTConfig(
         output_dir=output_dir,
         num_train_epochs=3,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=8,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
         learning_rate=5e-5,
         warmup_steps=30,
         logging_steps=1,
         save_strategy="epoch",
+        save_total_limit=1,                                          # FIX: don't hoard checkpoints
         fp16=torch.cuda.is_available(),
         gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},      # FIX: prevent PEFT deadlock
         report_to="none",
         dataset_text_field="text",
         max_seq_length=512,
@@ -279,10 +290,10 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     # GPU memory diagnostic
     if torch.cuda.is_available():
         print(f"\n  [GPU] {torch.cuda.get_device_name(0)}")
-        print(f"  [GPU] VRAM: {torch.cuda.get_device_properties(0).total_mem / 1024**3:.1f} GB")
-        print(f"  [GPU] Allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
-        print(f"  [GPU] Reserved:  {torch.cuda.memory_reserved() / 1024**3:.2f} GB")
-    import sys; sys.stdout.flush()
+        print(f"  [GPU] VRAM Total:     {torch.cuda.get_device_properties(0).total_mem / 1024**3:.1f} GB")
+        print(f"  [GPU] VRAM Allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
+        print(f"  [GPU] VRAM Reserved:  {torch.cuda.memory_reserved() / 1024**3:.2f} GB")
+    sys.stdout.flush()
 
     print(f"\n[Phase 3] SFT Training ({len(dataset)} examples, {sft_config.num_train_epochs} epochs)...")
     sys.stdout.flush()
@@ -294,6 +305,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
     print(f"  [DONE] Model saved to {output_dir}/")
+    sys.stdout.flush()
 
     # Free memory
     del model, trainer
@@ -304,24 +316,54 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     return output_dir
 
 
+def merge_and_save_final_model(adapter_path: str, output_path: str = "merged_model"):
+    """Merge LoRA adapter into base model and save a standalone model for upload."""
+    print(f"\n[Phase 4] Merging adapter into standalone model...")
+    sys.stdout.flush()
+    from peft import PeftModel
+
+    adapter_cfg_path = os.path.join(adapter_path, "adapter_config.json")
+    with open(adapter_cfg_path) as f:
+        adapter_cfg = json.load(f)
+    base_model_name = adapter_cfg["base_model_name_or_path"]
+
+    device_map = {"": 0} if torch.cuda.is_available() else None
+    model_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base_model_name, torch_dtype=model_dtype, device_map=device_map, trust_remote_code=True,
+    )
+    model = PeftModel.from_pretrained(base_model, adapter_path)
+    model = model.merge_and_unload()
+    model.save_pretrained(output_path)
+
+    tokenizer = AutoTokenizer.from_pretrained(adapter_path, trust_remote_code=True)
+    tokenizer.save_pretrained(output_path)
+
+    print(f"  [DONE] Merged model saved to {output_path}/")
+    sys.stdout.flush()
+    return output_path
+
+
 def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int = 5):
     """Evaluate the trained model on unseen seeds."""
     print(f"\n{'='*60}")
     print(f"  EVALUATING: {model_path} on {task_level} ({num_games} games)")
     print(f"{'='*60}")
+    sys.stdout.flush()
 
     from peft import PeftModel
     # Load base model config to find the base model name
-    import json as _json
     adapter_cfg_path = os.path.join(model_path, "adapter_config.json")
     with open(adapter_cfg_path) as _f:
-        _adapter_cfg = _json.load(_f)
+        _adapter_cfg = json.load(_f)
     base_model_name = _adapter_cfg["base_model_name_or_path"]
+
+    device_map = {"": 0} if torch.cuda.is_available() else None
+    model_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+
     base_model = AutoModelForCausalLM.from_pretrained(
-        base_model_name,
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-        device_map="auto" if torch.cuda.is_available() else None,
-        trust_remote_code=True,
+        base_model_name, torch_dtype=model_dtype, device_map=device_map, trust_remote_code=True,
     )
     model = PeftModel.from_pretrained(base_model, model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -346,7 +388,7 @@ def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int 
             except Exception:
                 prompt = f"{SYSTEM_PROMPT}\n\nCurrent State:\n{format_observation(obs)}\n\nYour action (JSON):"
 
-            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024).to(model.device)
+            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to(model.device)
             with torch.no_grad():
                 output = model.generate(**inputs, max_new_tokens=200, temperature=0.3, do_sample=True, pad_token_id=tokenizer.pad_token_id)
             response = tokenizer.decode(output[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
@@ -385,6 +427,7 @@ def main():
     parser.add_argument("--episodes", type=int, default=EPISODES_PER_LEVEL)
     parser.add_argument("--eval", action="store_true", help="Evaluate after training")
     parser.add_argument("--eval-games", type=int, default=5)
+    parser.add_argument("--merge", action="store_true", help="Merge final adapter into standalone model")
     args = parser.parse_args()
 
     if args.curriculum:
@@ -395,10 +438,17 @@ def main():
     else:
         final_model = train_on_level(args.model, args.level, args.episodes)
 
+    # Merge adapter into standalone model for clean upload
+    if args.merge or args.curriculum:
+        merged_path = merge_and_save_final_model(final_model, "merged_model")
+    else:
+        merged_path = final_model
+
     if args.eval:
         evaluate_model(final_model, "level_5" if args.curriculum else args.level, args.eval_games)
 
     print("\n[*] All training complete!")
+    sys.stdout.flush()
 
 
 if __name__ == "__main__":
