@@ -23,11 +23,13 @@ import json
 import os
 import random
 import sys
+from pathlib import Path
 
 import torch
 from datasets import load_dataset
 from peft import LoraConfig, PeftModel, TaskType
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.trainer_utils import get_last_checkpoint
 from trl import SFTConfig, SFTTrainer
 
 from environment import Environment
@@ -48,6 +50,30 @@ LORA_R = 16
 LORA_ALPHA = 32
 EPISODES_PER_LEVEL = 50
 MAX_SEQ_LENGTH = 1024
+LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
+
+# Persistent storage root — set TRAIN_ROOT env var to a durable path on HF Spaces
+RUN_ROOT = Path(os.environ.get("TRAIN_ROOT", "/data/panopticon"))
+RUN_ROOT.mkdir(parents=True, exist_ok=True)
+STATE_PATH = RUN_ROOT / "curriculum_state.json"
+
+
+def load_state():
+    """Load curriculum progress from persistent storage."""
+    if STATE_PATH.exists():
+        with open(STATE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"completed_levels": [], "current_model": DEFAULT_MODEL}
+
+
+def save_state(state):
+    """Atomically save curriculum progress."""
+    tmp_path = STATE_PATH.with_suffix(".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(state, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, STATE_PATH)
 
 
 def resolve_precision():
@@ -341,7 +367,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     trajectories = generate_expert_trajectories(task_level, num_episodes)
     data_path = save_training_data_with_template(
         trajectories,
-        f"training_data_{task_level}.jsonl",
+        str(RUN_ROOT / f"training_data_{task_level}.jsonl"),
         tokenizer,
     )
 
@@ -366,7 +392,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         ],
     )
 
-    output_dir = f"trl_model_{task_level}"
+    output_dir = str(RUN_ROOT / f"trl_model_{task_level}")
     sft_config = SFTConfig(
         output_dir=output_dir,
         num_train_epochs=3,
@@ -451,7 +477,13 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
             "First batch has zero valid labels. Training would be invalid."
         )
 
-    trainer.train()
+    # Resume from checkpoint if a previous run was interrupted
+    last_checkpoint = get_last_checkpoint(output_dir) if os.path.isdir(output_dir) else None
+    if last_checkpoint:
+        print(f"  [RESUME] Found checkpoint: {last_checkpoint}")
+        sys.stdout.flush()
+
+    trainer.train(resume_from_checkpoint=last_checkpoint)
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
 
@@ -621,15 +653,38 @@ def main():
     args = parser.parse_args()
 
     if args.curriculum:
-        current_model = args.model
-        for level in ["easy", "medium", "hard", "level_4", "level_5"]:
+        # Load saved progress — skip already-completed levels
+        state = load_state()
+        current_model = state.get("current_model", args.model)
+        completed_levels = set(state.get("completed_levels", []))
+
+        if completed_levels:
+            print(f"[*] Resuming curriculum. Already completed: {completed_levels}")
+            sys.stdout.flush()
+
+        for level in LEVELS:
+            if level in completed_levels:
+                print(f"[*] Skipping completed level: {level}")
+                current_model = str(RUN_ROOT / f"trl_model_{level}")
+                continue
+
             current_model = train_on_level(current_model, level, args.episodes)
+
+            # Persist progress after each level completes
+            completed_levels.add(level)
+            state["completed_levels"] = list(completed_levels)
+            state["current_model"] = current_model
+            save_state(state)
+            print(f"[*] Progress saved: {level} complete")
+            sys.stdout.flush()
+
         final_model = current_model
     else:
         final_model = train_on_level(args.model, args.level, args.episodes)
 
     if args.merge or args.curriculum:
-        merge_and_save_final_model(final_model, "merged_model")
+        merged_path = str(RUN_ROOT / "merged_model")
+        merge_and_save_final_model(final_model, merged_path)
 
     if args.eval:
         eval_level = "level_5" if args.curriculum else args.level
