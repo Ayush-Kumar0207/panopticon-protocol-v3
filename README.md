@@ -1,19 +1,21 @@
 # 👁️ The Panopticon Protocol v3
-
-> **Counter-Espionage RL Environment — "Among Us… for AIs"**
->
+> **"Among Us… for AIs" — A Counter-Espionage RL Environment**
+> 
 > *Meta PyTorch OpenEnv Hackathon x Scaler — Grand Finale*
-> *Theme: Multi-Agent Interactions | Sub-theme: Fleet AI Scalable Oversight*
 
-[![HF Space](https://img.shields.io/badge/🤗_HuggingFace-Space-blue)](https://huggingface.co/spaces/)
+[![HF Space](https://img.shields.io/badge/🤗_HuggingFace-Space-Live_Demo-blue)](https://huggingface.co/spaces/)
+[![Colab](https://colab.research.google.com/assets/colab-badge.svg)](Panopticon_TRL_Training.ipynb)
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-v0.2.1-green)](https://github.com/OpenEnvs/openenv)
 [![License](https://img.shields.io/badge/License-Apache_2.0-red)](LICENSE)
 
-An OpenEnv-compliant reinforcement learning environment where an AI security agent (**ARGUS**) defends a corporate network against an adaptive adversary (**HYDRA**) that infiltrates multi-generational sleeper agents of escalating sophistication.
+## 📖 The Story (Theme #1 & #2 Alignment)
+**The Problem:** Current LLMs fail at deep theory-of-mind, long-horizon deception, and handling imperfect information. Most environments are simple grid-worlds that don't test these limits.
 
-**This environment trains the exact capabilities needed for Scalable AI Oversight: theory-of-mind, deception detection, strategic planning, and adaptive response.**
+**The Solution:** The Panopticon Protocol. You play as **ARGUS**, an AI security chief defending a corporate network. Your adversary is **HYDRA**, an adaptive AI that infiltrates your workforce with multi-generational sleeper agents. 
 
----
+You must balance **Enterprise Revenue** against **Security**. If you fire everyone, the company goes bankrupt. If you ignore the spies, they detonate "dead-man's switches" and leak critical data. You must use canary traps, interrogations, and disinformation campaigns to deduce the hidden truth over a 160-turn narrative arc.
+
+This environment directly tackles **Theme #1: Multi-Agent Interactions** (competition, deception) and **Theme #2: Super Long-Horizon Planning** (delayed rewards, tracking hidden states over 100+ turns).
 
 ## 🎯 Why This Environment?
 
@@ -76,26 +78,31 @@ Phase 6: Counterstrike  (T140-160)— Double agent payoff, REWARD SURGE
 
 ---
 
-## 📈 Training Results (PPO Curriculum)
+## 📈 Training Results & Improvement Evidence
 
-The environment produces highly measurable capability improvements. Below is the evidence of training across all 5 difficulty tiers (random baseline → fully trained curriculum).
+We trained agents using both **Native PPO** and **HuggingFace TRL (LLM Fine-tuning)**. Below is the evidence of training across all 5 difficulty tiers, showing clear progression from random behavior (false accusations, security breaches) to surgical precision (identifying false flags, neutralizing Gen-5 sleepers).
 
-### 1. Episode Rewards
-*Shows consistent learning convergence across all tiers. Level 5 introduces extreme volatility due to Manchurian candidate mechanics, but the agent successfully learns to stabilize rewards.*
+### 1. Episode Rewards (Convergence)
+*Shows consistent learning convergence. Level 5 (Manchurian) introduces extreme volatility, but the agent successfully learns to stabilize rewards.*
 ![Reward Curves](training_results/reward_curves.png)
 
-### 2. Security & Revenue Trade-offs
-*Demonstrates the agent learning to balance the core game tension: aggressive security measures (interrogations) hurt short-term revenue, but failing to catch sleepers destroys long-term stability.*
+### 2. Security vs. Revenue Trade-offs
+*Demonstrates the agent learning to balance the core game tension. Aggressive early security measures (interrogations) hurt short-term revenue, but failing to catch sleepers destroys long-term stability.*
 ![Security and Revenue Metrics](training_results/metrics_curves.png)
 
 ### 3. Sleepers Caught
-*The absolute measure of success. The agent progresses from catching ~1 amateur sleeper per episode to consistently neutralizing 3+ advanced sleepers (Gen 4/5) with dead-man switches and false flags.*
+*The absolute measure of success. The agent progresses from catching ~1 amateur sleeper per episode to consistently neutralizing 3+ advanced sleepers (Gen 4/5).*
 ![Sleepers Caught Curves](training_results/caught_curves.png)
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Quick Start & Training Pipeline
 
+We provide a **Google Colab Notebook** for Judges to execute the LLM Supervised Fine-Tuning (SFT) pipeline using HuggingFace TRL and `Qwen/Qwen2.5-1.5B-Instruct`.
+
+👉 **[Run the TRL Training in Colab](Panopticon_TRL_Training.ipynb)** 👈
+
+Or run locally:
 ```bash
 # Install dependencies
 pip install -r requirements.txt
@@ -106,20 +113,11 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 # Verify all 5 levels pass
 python smoke_test.py
 
-# Train with native PPO (fast)
+# Train LLM with HuggingFace TRL (The Official Pipeline)
+python train_trl.py --curriculum --model Qwen/Qwen2.5-1.5B-Instruct
+
+# Train with native PPO (Alternative Pipeline)
 python train_rl.py --curriculum
-
-# Train LLM with HuggingFace TRL (fine-tune Qwen 0.5B)
-python train_trl.py --curriculum
-
-# Generate training reward curves
-python plot_training.py
-
-# Run LLM inference
-HF_TOKEN=your_token python inference.py
-
-# Full E2E pipeline verification
-python e2e_verify.py
 ```
 
 ## 🕹️ Action Space
