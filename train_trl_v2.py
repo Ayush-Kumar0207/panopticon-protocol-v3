@@ -290,7 +290,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     # GPU memory diagnostic
     if torch.cuda.is_available():
         print(f"\n  [GPU] {torch.cuda.get_device_name(0)}")
-        print(f"  [GPU] VRAM Total:     {torch.cuda.get_device_properties(0).total_mem / 1024**3:.1f} GB")
+        print(f"  [GPU] VRAM Total:     {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
         print(f"  [GPU] VRAM Allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
         print(f"  [GPU] VRAM Reserved:  {torch.cuda.memory_reserved() / 1024**3:.2f} GB")
     sys.stdout.flush()
