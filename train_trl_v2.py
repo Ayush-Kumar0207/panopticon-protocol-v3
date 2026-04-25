@@ -194,10 +194,20 @@ def load_model_and_tokenizer(model_name: str):
 
     if is_local_checkpoint:
         print(f"  → Merging LoRA from previous checkpoint: {model_name}")
-        from peft import AutoPeftModelForCausalLM
-        model = AutoPeftModelForCausalLM.from_pretrained(
-            model_name, torch_dtype=torch.float16, device_map="auto", trust_remote_code=True,
+        from peft import PeftModel
+        # Read adapter config to find the base model name
+        import json as _json
+        adapter_cfg_path = os.path.join(model_name, "adapter_config.json")
+        with open(adapter_cfg_path) as _f:
+            _adapter_cfg = _json.load(_f)
+        base_model_name = _adapter_cfg["base_model_name_or_path"]
+        base_model = AutoModelForCausalLM.from_pretrained(
+            base_model_name,
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+            device_map="auto" if torch.cuda.is_available() else None,
+            trust_remote_code=True,
         )
+        model = PeftModel.from_pretrained(base_model, model_name)
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         model = model.merge_and_unload()
     else:
@@ -260,6 +270,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         gradient_checkpointing=True,
         report_to="none",
         dataset_text_field="text",
+        max_seq_length=1024,
     )
 
     from datasets import load_dataset
@@ -290,10 +301,20 @@ def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int 
     print(f"  EVALUATING: {model_path} on {task_level} ({num_games} games)")
     print(f"{'='*60}")
 
-    from peft import AutoPeftModelForCausalLM
-    model = AutoPeftModelForCausalLM.from_pretrained(
-        model_path, dtype=torch.float16, device_map="auto", trust_remote_code=True,
+    from peft import PeftModel
+    # Load base model config to find the base model name
+    import json as _json
+    adapter_cfg_path = os.path.join(model_path, "adapter_config.json")
+    with open(adapter_cfg_path) as _f:
+        _adapter_cfg = _json.load(_f)
+    base_model_name = _adapter_cfg["base_model_name_or_path"]
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base_model_name,
+        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        device_map="auto" if torch.cuda.is_available() else None,
+        trust_remote_code=True,
     )
+    model = PeftModel.from_pretrained(base_model, model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
