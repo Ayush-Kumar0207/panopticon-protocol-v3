@@ -196,7 +196,7 @@ def load_model_and_tokenizer(model_name: str):
         print(f"  → Merging LoRA from previous checkpoint: {model_name}")
         from peft import AutoPeftModelForCausalLM
         model = AutoPeftModelForCausalLM.from_pretrained(
-            model_name, dtype=torch.float16, device_map="auto", trust_remote_code=True,
+            model_name, torch_dtype=torch.float16, device_map="auto", trust_remote_code=True,
         )
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         model = model.merge_and_unload()
@@ -204,7 +204,7 @@ def load_model_and_tokenizer(model_name: str):
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
             device_map="auto" if torch.cuda.is_available() else None,
             trust_remote_code=True,
         )
