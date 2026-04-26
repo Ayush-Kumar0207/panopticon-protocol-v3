@@ -8,7 +8,10 @@ Key fixes:
 3. Lowers LR for stability
 4. Disables loss NaN filtering in logs so failures are visible
 5. Adds a first-batch label sanity check
-6. Keeps clean adapter merge for Hub upload
+6. Saves outputs under a persistent root
+7. Resumes interrupted level training from checkpoints
+8. Skips already completed curriculum levels
+9. Saves merged model to the persistent root for upload
 
 Usage:
     python train_trl_v2.py --level easy --episodes 5
@@ -22,6 +25,7 @@ import gc
 import json
 import os
 import random
+import shutil
 import sys
 from pathlib import Path
 
@@ -52,28 +56,11 @@ EPISODES_PER_LEVEL = 50
 MAX_SEQ_LENGTH = 1024
 LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
 
-# Persistent storage root — set TRAIN_ROOT env var to a durable path on HF Spaces
+# Persistent root. On HF Spaces with persistent storage, /data persists across restarts.
 RUN_ROOT = Path(os.environ.get("TRAIN_ROOT", "/data/panopticon"))
 RUN_ROOT.mkdir(parents=True, exist_ok=True)
+
 STATE_PATH = RUN_ROOT / "curriculum_state.json"
-
-
-def load_state():
-    """Load curriculum progress from persistent storage."""
-    if STATE_PATH.exists():
-        with open(STATE_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {"completed_levels": [], "current_model": DEFAULT_MODEL}
-
-
-def save_state(state):
-    """Atomically save curriculum progress."""
-    tmp_path = STATE_PATH.with_suffix(".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(state, f)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_path, STATE_PATH)
 
 
 def resolve_precision():
@@ -101,6 +88,81 @@ Channels: market_chatter, dark_web, competitor_filing, press_leak, insider_trade
 
 RULES: Interrogate before terminating Gen-4+. Verify leaks before accusing. Plant canaries early.
 Respond ONLY with a JSON object."""
+
+
+def cleanup_memory(*objects):
+    for obj in objects:
+        del obj
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def ordered_completed_levels(levels):
+    return [level for level in LEVELS if level in set(levels)]
+
+
+def load_state():
+    if not STATE_PATH.exists():
+        return {"completed_levels": [], "current_model": DEFAULT_MODEL}
+
+    try:
+        with open(STATE_PATH, "r", encoding="utf-8") as f:
+            state = json.load(f)
+    except Exception:
+        return {"completed_levels": [], "current_model": DEFAULT_MODEL}
+
+    state.setdefault("completed_levels", [])
+    state.setdefault("current_model", DEFAULT_MODEL)
+    state["completed_levels"] = ordered_completed_levels(state["completed_levels"])
+    return state
+
+
+def save_state(state):
+    tmp_path = STATE_PATH.with_suffix(".tmp")
+    state_to_save = {
+        "completed_levels": ordered_completed_levels(state.get("completed_levels", [])),
+        "current_model": state.get("current_model", DEFAULT_MODEL),
+    }
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(state_to_save, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, STATE_PATH)
+
+
+def load_data_meta(meta_path: Path):
+    if not meta_path.exists():
+        return None
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def save_data_meta(meta_path: Path, task_level: str, num_episodes: int, num_examples: int):
+    tmp_path = meta_path.with_suffix(".tmp")
+    payload = {
+        "task_level": task_level,
+        "num_episodes": num_episodes,
+        "num_examples": num_examples,
+        "max_seq_length": MAX_SEQ_LENGTH,
+    }
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, meta_path)
+
+
+def data_matches(meta, task_level: str, num_episodes: int):
+    return (
+        meta is not None
+        and meta.get("task_level") == task_level
+        and meta.get("num_episodes") == num_episodes
+        and meta.get("max_seq_length") == MAX_SEQ_LENGTH
+    )
 
 
 def format_observation(obs: EnvironmentObservation) -> str:
@@ -285,12 +347,14 @@ def generate_expert_trajectories(task_level: str, num_episodes: int = 50):
             f"  [Expert Ep {ep + 1}/{num_episodes}] Steps={steps} Rev={s.enterprise_revenue:.0f} "
             f"Sec={s.security_score:.0f} Caught={s.sleepers_caught} Grade={grade.score:.3f}"
         )
+        sys.stdout.flush()
 
     return trajectories
 
 
-def save_training_data_with_template(trajectories, output_path, tokenizer):
-    with open(output_path, "w", encoding="utf-8") as f:
+def save_training_data_with_template(trajectories, output_path: str, tokenizer):
+    tmp_path = f"{output_path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
         for t in trajectories:
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -309,19 +373,24 @@ def save_training_data_with_template(trajectories, output_path, tokenizer):
                 )
             f.write(json.dumps({"text": text}) + "\n")
 
+    os.replace(tmp_path, output_path)
     print(f"  Saved {len(trajectories)} examples to {output_path}")
+    sys.stdout.flush()
     return output_path
 
 
 def load_model_and_tokenizer(model_name: str):
     print(f"[*] Loading model: {model_name}")
+    sys.stdout.flush()
 
     is_local_checkpoint = os.path.exists(os.path.join(model_name, "adapter_config.json"))
 
     if is_local_checkpoint:
         print(f"  -> Merging LoRA from previous checkpoint: {model_name}")
+        sys.stdout.flush()
+
         adapter_cfg_path = os.path.join(model_name, "adapter_config.json")
-        with open(adapter_cfg_path, encoding="utf-8") as f:
+        with open(adapter_cfg_path, "r", encoding="utf-8") as f:
             adapter_cfg = json.load(f)
 
         base_model_name = adapter_cfg["base_model_name_or_path"]
@@ -362,14 +431,30 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    print("\n[Phase 1] Generating expert trajectories...")
-    sys.stdout.flush()
-    trajectories = generate_expert_trajectories(task_level, num_episodes)
-    data_path = save_training_data_with_template(
-        trajectories,
-        str(RUN_ROOT / f"training_data_{task_level}.jsonl"),
-        tokenizer,
-    )
+    output_dir = RUN_ROOT / f"trl_model_{task_level}"
+    data_path = RUN_ROOT / f"training_data_{task_level}.jsonl"
+    data_meta_path = RUN_ROOT / f"training_data_{task_level}.meta.json"
+
+    last_checkpoint = get_last_checkpoint(str(output_dir)) if output_dir.is_dir() else None
+    data_meta = load_data_meta(data_meta_path)
+    has_matching_data = data_path.exists() and data_matches(data_meta, task_level, num_episodes)
+
+    if last_checkpoint and not has_matching_data:
+        raise RuntimeError(
+            f"Found checkpoint '{last_checkpoint}' for level '{task_level}', but matching "
+            f"training data was not found at '{data_path}'. Restore that data file or delete "
+            f"the level output directory and restart the level cleanly."
+        )
+
+    if has_matching_data:
+        print(f"\n[Phase 1] Reusing existing training data: {data_path}")
+        sys.stdout.flush()
+    else:
+        print("\n[Phase 1] Generating expert trajectories...")
+        sys.stdout.flush()
+        trajectories = generate_expert_trajectories(task_level, num_episodes)
+        save_training_data_with_template(trajectories, str(data_path), tokenizer)
+        save_data_meta(data_meta_path, task_level, num_episodes, len(trajectories))
 
     print("\n[Phase 2] Loading model...")
     sys.stdout.flush()
@@ -392,17 +477,17 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         ],
     )
 
-    output_dir = str(RUN_ROOT / f"trl_model_{task_level}")
     sft_config = SFTConfig(
-        output_dir=output_dir,
+        output_dir=str(output_dir),
         num_train_epochs=3,
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
         learning_rate=2e-5,
         warmup_ratio=0.03,
         logging_steps=5,
-        save_strategy="epoch",
-        save_total_limit=1,
+        save_strategy="steps",
+        save_steps=100,
+        save_total_limit=2,
         bf16=USE_BF16,
         fp16=USE_FP16,
         gradient_checkpointing=False,
@@ -412,7 +497,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         logging_nan_inf_filter=False,
     )
 
-    dataset = load_dataset("json", data_files=data_path, split="train")
+    dataset = load_dataset("json", data_files=str(data_path), split="train")
 
     sample_lengths = []
     for i in range(min(10, len(dataset))):
@@ -435,7 +520,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         )
         print(f"  [GPU] VRAM Allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
         print(f"  [GPU] VRAM Reserved:  {torch.cuda.memory_reserved() / 1024**3:.2f} GB")
-    sys.stdout.flush()
+        sys.stdout.flush()
 
     sample = tokenizer(
         dataset[0]["text"],
@@ -473,37 +558,38 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     sys.stdout.flush()
 
     if valid_labels == 0:
-        raise RuntimeError(
-            "First batch has zero valid labels. Training would be invalid."
-        )
+        raise RuntimeError("First batch has zero valid labels. Training would be invalid.")
 
-    # Resume from checkpoint if a previous run was interrupted
-    last_checkpoint = get_last_checkpoint(output_dir) if os.path.isdir(output_dir) else None
     if last_checkpoint:
         print(f"  [RESUME] Found checkpoint: {last_checkpoint}")
         sys.stdout.flush()
 
     trainer.train(resume_from_checkpoint=last_checkpoint)
-    trainer.save_model(output_dir)
-    tokenizer.save_pretrained(output_dir)
+    trainer.save_model(str(output_dir))
+    tokenizer.save_pretrained(str(output_dir))
 
     print(f"  [DONE] Model saved to {output_dir}/")
     sys.stdout.flush()
 
-    del model, trainer
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-    return output_dir
+    cleanup_memory(model, trainer)
+    return str(output_dir)
 
 
-def merge_and_save_final_model(adapter_path: str, output_path: str = "merged_model"):
+def merge_and_save_final_model(adapter_path: str, output_path: str):
     print("\n[Phase 4] Merging adapter into standalone model...")
     sys.stdout.flush()
 
+    output_dir = Path(output_path)
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    if output_dir.exists():
+        if output_dir.is_dir():
+            shutil.rmtree(output_dir)
+        else:
+            output_dir.unlink()
+
     adapter_cfg_path = os.path.join(adapter_path, "adapter_config.json")
-    with open(adapter_cfg_path, encoding="utf-8") as f:
+    with open(adapter_cfg_path, "r", encoding="utf-8") as f:
         adapter_cfg = json.load(f)
 
     base_model_name = adapter_cfg["base_model_name_or_path"]
@@ -517,14 +603,16 @@ def merge_and_save_final_model(adapter_path: str, output_path: str = "merged_mod
     )
     model = PeftModel.from_pretrained(base_model, adapter_path)
     model = model.merge_and_unload()
-    model.save_pretrained(output_path)
+    model.save_pretrained(str(output_dir))
 
     tokenizer = AutoTokenizer.from_pretrained(adapter_path, trust_remote_code=True)
-    tokenizer.save_pretrained(output_path)
+    tokenizer.save_pretrained(str(output_dir))
 
-    print(f"  [DONE] Merged model saved to {output_path}/")
+    print(f"  [DONE] Merged model saved to {output_dir}/")
     sys.stdout.flush()
-    return output_path
+
+    cleanup_memory(model, base_model)
+    return str(output_dir)
 
 
 def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int = 5):
@@ -534,7 +622,7 @@ def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int 
     sys.stdout.flush()
 
     adapter_cfg_path = os.path.join(model_path, "adapter_config.json")
-    with open(adapter_cfg_path, encoding="utf-8") as f:
+    with open(adapter_cfg_path, "r", encoding="utf-8") as f:
         adapter_cfg = json.load(f)
 
     base_model_name = adapter_cfg["base_model_name_or_path"]
@@ -633,11 +721,7 @@ def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int 
     print(f"\n  Average Grade: {avg:.3f}")
     sys.stdout.flush()
 
-    del model
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
+    cleanup_memory(model, base_model)
     return avg
 
 
@@ -653,28 +737,28 @@ def main():
     args = parser.parse_args()
 
     if args.curriculum:
-        # Load saved progress — skip already-completed levels
         state = load_state()
-        current_model = state.get("current_model", args.model)
         completed_levels = set(state.get("completed_levels", []))
+        current_model = state.get("current_model", args.model)
 
         if completed_levels:
-            print(f"[*] Resuming curriculum. Already completed: {completed_levels}")
+            print(f"[*] Resuming curriculum. Already completed: {ordered_completed_levels(completed_levels)}")
             sys.stdout.flush()
 
         for level in LEVELS:
             if level in completed_levels:
                 print(f"[*] Skipping completed level: {level}")
                 current_model = str(RUN_ROOT / f"trl_model_{level}")
+                sys.stdout.flush()
                 continue
 
             current_model = train_on_level(current_model, level, args.episodes)
 
-            # Persist progress after each level completes
             completed_levels.add(level)
-            state["completed_levels"] = list(completed_levels)
+            state["completed_levels"] = ordered_completed_levels(completed_levels)
             state["current_model"] = current_model
             save_state(state)
+
             print(f"[*] Progress saved: {level} complete")
             sys.stdout.flush()
 
@@ -691,6 +775,7 @@ def main():
         evaluate_model(final_model, eval_level, args.eval_games)
 
     print("\n[*] All training complete!")
+    print(f"[*] Persistent root: {RUN_ROOT}")
     sys.stdout.flush()
 
 
