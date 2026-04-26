@@ -214,6 +214,9 @@ class LocalArgusModel:
         }
         if deterministic:
             generation_kwargs["do_sample"] = False
+            generation_kwargs["temperature"] = 1.0
+            generation_kwargs["top_p"] = 1.0
+            generation_kwargs["top_k"] = 50
         else:
             generation_kwargs["do_sample"] = True
             generation_kwargs["temperature"] = temperature

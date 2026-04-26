@@ -24,6 +24,23 @@
 
 ---
 
+## 🖥️ Interactive Dashboard Preview
+
+The project ships with a full operator-facing dashboard, not just a backend API. Judges can see the trained model reasoning live in the **Command Center**, inspect a curated phase-by-phase walkthrough in **AI Agent Demo**, and review the systems story in **Architecture**.
+
+<table>
+  <tr>
+    <td width="50%"><img src="plots/command_center_live.jpeg" alt="Live command center dashboard"></td>
+    <td width="50%"><img src="plots/ai_agent_demo_playthrough.jpeg" alt="AI agent demo playthrough"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Live Command Center.</b> The fine-tuned ARGUS model drives the environment turn by turn, exposing actions, reward deltas, security, revenue, and operational context in real time.</sub></td>
+    <td><sub><b>AI Agent Demo.</b> A narrative replay surface that explains why a specific espionage scenario matters, what the model observed, and how each counter-intelligence action changed the state.</sub></td>
+  </tr>
+</table>
+
+---
+
 ## 🎯 The Problem: Why This Environment Exists
 
 > _"How do you train an AI to detect when other AIs are being deceptive?"_
@@ -302,6 +319,16 @@ We trained **Qwen/Qwen2.5-1.5B-Instruct** with **TRL SFT + LoRA** across the ful
   </tr>
 </table>
 
+### How to Read the Training Plots
+
+- **Figure 1 - Curriculum Loss Overview:** read this as the high-level stability plot. A smooth downward trajectory across level spans means the adapter chain is learning without blowing up when difficulty increases.
+- **Figure 2 - Per-Level Convergence:** this is the best place to compare learning efficiency per tier. Start loss, final loss, and half-loss step together show which levels were easy to absorb and which ones demanded longer adaptation.
+- **Figure 3 - Expert Grade Distribution:** this tells you how strong and how consistent the demonstration policy was before fine-tuning. Tight violins and narrow boxes indicate stable supervision; wider shapes indicate noisier expert behavior.
+- **Figure 4 - Expert Operational Metrics:** use this to connect grade to actual gameplay outcomes. It shows whether expert success comes from balanced security discipline or from brute-force revenue growth.
+- **Figure 5 - Optimization Diagnostics:** this is the health monitor for the training run itself. Gradient norms and learning-rate behavior reveal whether the optimization process stayed controlled and numerically stable.
+- **Figure 6 - Dataset Scaling:** this plot explains curriculum pressure. As examples and sequence lengths rise with difficulty, the model is being asked to reason over richer and longer contexts.
+- **Figure 7 - Curriculum Heatmap:** this is the one-glance summary. It lets a reader compare data scale, expert quality, optimization efficiency, and terminal loss across all five stages without scanning every earlier figure.
+
 ### Reproducibility
 
 The plot pipeline now lives in `generate_plots.py` and emits both figures and machine-readable summaries:
@@ -385,6 +412,16 @@ The gallery below is rendered from the April 26 benchmark snapshot captured from
   </tr>
 </table>
 
+### How to Read the Evaluation Plots
+
+- **Figure 8 - Comparison Grades:** this is the main headline metric. It shows overall task quality by agent family and reveals that the trained model underperforms once grading accounts for more than raw reward.
+- **Figure 9 - Comparison Operations:** use this to separate *why* an agent scored the way it did. Reward, revenue, security, and sleepers caught are split apart so hidden tradeoffs become visible.
+- **Figure 10 - Comparison Radar:** this is the balanced-performance view. It makes it easy to see whether an agent is broadly competent or only strong on one or two axes.
+- **Figure 11 - Reward Distributions:** this exposes variance and brittleness. If an agent has a high average reward but a wide or unstable distribution, it is not reliably solving the task.
+- **Figure 12 - Reward Frontier:** this is the clearest reward-misalignment figure. It shows whether higher reward is being bought by sacrificing security, which is exactly the failure mode the trained model exhibits.
+- **Figure 13 - Reward Turn Dynamics:** this figure is about escalation behavior. It shows how reward and security move as scenario difficulty intensifies, rather than only reporting final means.
+- **Figure 14 - Scenario Timeline:** this is the episode-level panorama. It helps readers see that the trained model can accumulate revenue and dense reward while still failing the core sleeper-detection objective.
+
 ### Evaluation Reproducibility
 
 To rerun the full benchmark and generate the reward-analysis figures:
@@ -466,8 +503,8 @@ curl -X POST http://localhost:7860/reset \
 # Install dependencies
 pip install -r requirements.txt
 
-# Start the server (OpenEnv-compliant)
-uvicorn server:app --host 0.0.0.0 --port 8000
+# Start the backend (OpenEnv-compliant)
+python _server.py
 
 # Verify all 5 levels pass
 python smoke_test.py
@@ -475,6 +512,37 @@ python smoke_test.py
 # Run a benchmark across all levels
 python benchmark_suite.py
 ```
+
+### Option 2B: Run the Trained-Model Dashboard Locally
+
+The live **Command Center** dashboard can now drive the environment with the fine-tuned ARGUS model instead of the old browser-side heuristic. Use the inference venv so the backend sees the correct `transformers` + `huggingface-hub` stack for `trained_model/`.
+
+In one terminal:
+
+```bash
+.venv-infer\Scripts\python.exe _server.py
+```
+
+In a second terminal:
+
+```bash
+cd ui
+npm run dev
+```
+
+Then open the frontend at:
+
+- `http://localhost:5173` for the Vite dev app
+- `http://localhost:8000/dashboard/` for the built static dashboard served by the backend
+
+Quick backend checks:
+
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/agent/status
+```
+
+Once the backend is online, open **Command Center** and press **START MODEL** to watch the trained agent operate live.
 
 ### Option 3: Train the LLM Agent
 
@@ -582,6 +650,12 @@ graph TB
     style PPO fill:#17a2b8,color:white
     style GYM fill:#6610f2,color:white
 ```
+
+<p align="center">
+  <img src="plots/architecture_tab_overview.jpeg" alt="Architecture tab overview" width="100%">
+</p>
+
+<sub><b>Architecture Surface.</b> The dashboard includes a dedicated architecture tab that explains the seven espionage mechanics, the grading layer, and the toolchain used to train, serve, and visualize the ARGUS agent.</sub>
 
 | Component | Purpose | LOC |
 |-----------|---------|:---:|

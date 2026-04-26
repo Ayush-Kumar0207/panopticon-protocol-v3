@@ -68,6 +68,7 @@ class HealthResponse(BaseModel):
 
 
 class AgentStatusResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}
     status: str
     policy: str
     model_ref: str
@@ -77,6 +78,7 @@ class AgentStatusResponse(BaseModel):
 
 
 class AgentStepResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}
     observation: dict
     reward: float
     done: bool
