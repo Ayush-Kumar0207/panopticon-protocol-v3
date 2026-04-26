@@ -1,0 +1,97 @@
+===== Application Startup at 2026-04-26 08:15:53 =====
+
+
+==========
+== CUDA ==
+==========
+
+CUDA Version 12.1.1
+
+Container image Copyright (c) 2016-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+This container image and its contents are governed by the NVIDIA Deep Learning Container License.
+By pulling and using the container, you accept the terms and conditions of this license:
+https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license
+
+A copy of this license is made available in this container at /NGC-DL-CONTAINER-LICENSE for your convenience.
+
+=== RUNNING EVALUATION ===
+
+[Agent] Random
+  Level: easy
+    Ep 1/2 | seed=670487 | grade=0.579 | reward=-1.54 | rev=88.5 | sec=100.0
+    Ep 2/2 | seed=116739 | grade=0.610 | reward=0.91 | rev=170.2 | sec=100.0
+  Level: medium
+    Ep 1/2 | seed=26225 | grade=0.616 | reward=0.04 | rev=162.1 | sec=99.0
+    Ep 2/2 | seed=777572 | grade=0.765 | reward=1.46 | rev=230.9 | sec=75.7
+  Level: hard
+    Ep 1/2 | seed=288389 | grade=0.809 | reward=0.67 | rev=240.3 | sec=58.6
+    Ep 2/2 | seed=256787 | grade=0.694 | reward=5.52 | rev=363.8 | sec=100.0
+  Level: level_4
+    Ep 1/2 | seed=234053 | grade=0.764 | reward=-1.93 | rev=226.9 | sec=0.3
+    Ep 2/2 | seed=146316 | grade=0.838 | reward=0.17 | rev=205.8 | sec=100.0
+  Level: level_5
+    Ep 1/2 | seed=772246 | grade=0.817 | reward=112.82 | rev=386.0 | sec=21.0
+    Ep 2/2 | seed=107473 | grade=0.754 | reward=-5.36 | rev=97.7 | sec=-2.2
+
+[Agent] Heuristic
+  Level: easy
+    Ep 1/2 | seed=670487 | grade=0.729 | reward=4.30 | rev=283.2 | sec=100.0
+    Ep 2/2 | seed=116739 | grade=0.729 | reward=4.20 | rev=280.0 | sec=100.0
+  Level: medium
+    Ep 1/2 | seed=26225 | grade=0.727 | reward=7.82 | rev=420.8 | sec=100.0
+    Ep 2/2 | seed=777572 | grade=0.726 | reward=8.05 | rev=428.2 | sec=100.0
+  Level: hard
+    Ep 1/2 | seed=288389 | grade=0.664 | reward=11.81 | rev=573.7 | sec=100.0
+    Ep 2/2 | seed=256787 | grade=0.694 | reward=11.96 | rev=578.8 | sec=100.0
+  Level: level_4
+    Ep 1/2 | seed=234053 | grade=0.684 | reward=17.37 | rev=803.9 | sec=73.0
+    Ep 2/2 | seed=146316 | grade=0.692 | reward=16.02 | rev=758.8 | sec=73.0
+  Level: level_5
+    Ep 1/2 | seed=772246 | grade=0.672 | reward=19.97 | rev=893.4 | sec=77.0
+    Ep 2/2 | seed=107473 | grade=0.615 | reward=18.49 | rev=885.9 | sec=31.3
+
+[Agent] Trained
+  Level: easy
+/opt/conda/lib/python3.10/site-packages/transformers/generation/configuration_utils.py:590: UserWarning: `do_sample` is set to `False`. However, `temperature` is set to `0.7` -- this flag is only used in sample-based generation modes. You should set `do_sample=True` or unset `temperature`.
+  warnings.warn(
+/opt/conda/lib/python3.10/site-packages/transformers/generation/configuration_utils.py:595: UserWarning: `do_sample` is set to `False`. However, `top_p` is set to `0.8` -- this flag is only used in sample-based generation modes. You should set `do_sample=True` or unset `top_p`.
+  warnings.warn(
+/opt/conda/lib/python3.10/site-packages/transformers/generation/configuration_utils.py:612: UserWarning: `do_sample` is set to `False`. However, `top_k` is set to `20` -- this flag is only used in sample-based generation modes. You should set `do_sample=True` or unset `top_k`.
+  warnings.warn(
+    Ep 1/2 | seed=670487 | grade=0.423 | reward=10.21 | rev=502.3 | sec=76.0
+    Ep 2/2 | seed=116739 | grade=0.423 | reward=8.74 | rev=453.4 | sec=76.0
+  Level: medium
+    Ep 1/2 | seed=26225 | grade=0.407 | reward=7.57 | rev=488.5 | sec=16.8
+    Ep 2/2 | seed=777572 | grade=0.393 | reward=9.59 | rev=557.7 | sec=14.8
+  Level: hard
+    Ep 1/2 | seed=288389 | grade=0.351 | reward=10.42 | rev=618.8 | sec=0.3
+    Ep 2/2 | seed=256787 | grade=0.351 | reward=12.34 | rev=682.8 | sec=0.3
+  Level: level_4
+    Ep 1/2 | seed=234053 | grade=0.380 | reward=21.28 | rev=1000.7 | sec=0.3
+    Ep 2/2 | seed=146316 | grade=0.380 | reward=14.66 | rev=780.0 | sec=0.3
+  Level: level_5
+    Ep 1/2 | seed=772246 | grade=0.426 | reward=18.42 | rev=912.1 | sec=0.3
+    Ep 2/2 | seed=107473 | grade=0.426 | reward=21.94 | rev=1029.3 | sec=0.3
+
+============================================================================================
+AGENT        | LEVEL    | GRADE (+/- STD)    |   REWARD |     REV |     SEC |  CAUGHT
+--------------------------------------------------------------------------------------------
+Random       | easy     | 0.595 +/- 0.015 |    -0.32 |   129.4 |   100.0 |    1.00
+Random       | medium   | 0.691 +/- 0.075 |     0.75 |   196.5 |    87.4 |    2.50
+Random       | hard     | 0.752 +/- 0.057 |     3.09 |   302.1 |    79.3 |    4.00
+Random       | level_4  | 0.801 +/- 0.037 |    -0.88 |   216.4 |    50.1 |    6.50
+Random       | level_5  | 0.785 +/- 0.031 |    53.73 |   241.9 |     9.4 |    7.50
+--------------------------------------------------------------------------------------------
+Heuristic    | easy     | 0.729 +/- 0.000 |     4.25 |   281.6 |   100.0 |    1.00
+Heuristic    | medium   | 0.726 +/- 0.000 |     7.94 |   424.5 |   100.0 |    2.00
+Heuristic    | hard     | 0.679 +/- 0.015 |    11.89 |   576.3 |   100.0 |    3.00
+Heuristic    | level_4  | 0.688 +/- 0.004 |    16.70 |   781.3 |    73.0 |    3.00
+Heuristic    | level_5  | 0.643 +/- 0.029 |    19.23 |   889.7 |    54.1 |    3.50
+--------------------------------------------------------------------------------------------
+Trained      | easy     | 0.423 +/- 0.000 |     9.48 |   477.8 |    76.0 |    0.00
+Trained      | medium   | 0.400 +/- 0.007 |     8.58 |   523.1 |    15.8 |    0.00
+Trained      | hard     | 0.351 +/- 0.000 |    11.38 |   650.8 |     0.3 |    0.00
+Trained      | level_4  | 0.380 +/- 0.000 |    17.97 |   890.3 |     0.3 |    0.00
+Trained      | level_5  | 0.426 +/- 0.000 |    20.18 |   970.7 |     0.3 |    0.00
+--------------------------------------------------------------------------------------------
