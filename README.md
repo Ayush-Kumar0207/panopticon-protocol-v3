@@ -68,6 +68,11 @@ The optimal strategy lives in the narrow corridor between paranoia and negligenc
 
 No single mechanic is complex — but **together they create emergent strategic depth** that demands genuine multi-step reasoning:
 
+<p align="center">
+  <img src="static/ui_architecture.png" alt="Architecture Dashboard showing 7 Stacking Mechanics" width="100%">
+</p>
+<sub><b>Architecture Dashboard.</b> The UI visualizes the 7 core mechanics and meta-innovations that force the agent to adapt its counter-intelligence strategies dynamically.</sub>
+
 | # | Mechanic | Description | Unlocks At |
 |---|----------|-------------|:----------:|
 | 1 | **🎣 Canary Traps** | Plant unique tracking data in departments to trace leaks back to their source | Gen 1+ |
@@ -83,6 +88,11 @@ No single mechanic is complex — but **together they create emergent strategic 
 ### 6-Phase Narrative Arc
 
 Every episode follows a dramatic arc from calm to crisis to triumph:
+
+<p align="center">
+  <img src="static/ui_agent_demo.png" alt="AI Agent Demo Dashboard showing First Contact Phase" width="100%">
+</p>
+<sub><b>Live Agent Playthrough.</b> The AI Agent Demo dashboard visualizes the network state, active leaks, and step-by-step actions taken by the fine-tuned ARGUS model during the critical 'First Contact' phase.</sub>
 
 ```
 Phase 1: Orientation    (T0-30)   — Build baseline, plant canaries
