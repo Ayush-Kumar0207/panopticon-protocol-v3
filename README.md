@@ -329,6 +329,12 @@ This is exactly why we added a dedicated reward-analysis pass: the raw scalar re
 
 The gallery below is rendered from the April 26 benchmark snapshot captured from the A10G Space console. Once the repaired `evaluationResults.json` export is rerun, the same README slots can be refreshed from the full structured payload.
 
+<p align="center">
+  <img src="plots/benchmark_summary_table.png" alt="Benchmark summary table" width="100%">
+</p>
+
+<sub><b>Console Snapshot.</b> Benchmark scoreboard from the April 26, 2026 A10G evaluation run, included here because the reward story only becomes obvious when grade, reward, revenue, security, and sleepers caught are read side by side.</sub>
+
 ### Evaluation & Reward Plot Gallery
 
 <table>

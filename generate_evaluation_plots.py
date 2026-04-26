@@ -33,6 +33,8 @@ AGENT_ORDER = ["random", "heuristic", "trained"]
 AGENT_LABELS = {"random": "Random", "heuristic": "Heuristic", "trained": "Trained"}
 AGENT_COLORS = {"random": "#ff5a5f", "heuristic": "#f59e0b", "trained": "#06b6d4"}
 DIMENSIONS = ["security", "revenue", "intelligence", "adaptability", "efficiency"]
+FULL_MODE = "full"
+SNAPSHOT_MODE = "snapshot"
 
 
 def to_builtin(value: Any) -> Any:
@@ -89,19 +91,63 @@ def ensure_plot_dir(plot_dir: Path) -> None:
     plot_dir.mkdir(parents=True, exist_ok=True)
 
 
-def level_summary(payload: dict[str, Any], agent_key: str, level: str) -> dict[str, Any]:
-    return payload["agents"][agent_key]["summary"][level]
+def detect_payload_mode(payload: dict[str, Any]) -> str:
+    if "agents" in payload:
+        summaries = payload.get("agents", {})
+        try:
+            if all(level in summaries[agent]["summary"] for agent in AGENT_ORDER for level in LEVELS):
+                return FULL_MODE
+        except KeyError:
+            pass
+        raise ValueError(
+            "This file looks like the placeholder `ui/src/data/evaluationResults.json`, not a real benchmark payload. "
+            "Upload the actual `evaluationResults.json` produced by `full_evaluation.py`, or upload `evaluation_snapshot_apr26.json`."
+        )
+    if "summary" in payload and "episodes" in payload and all(agent in payload["summary"] for agent in AGENT_ORDER):
+        return SNAPSHOT_MODE
+    raise ValueError(
+        "Unsupported evaluation payload schema. Expected the full `evaluationResults.json` export from `full_evaluation.py` "
+        "or the repo snapshot file `evaluation_snapshot_apr26.json`."
+    )
 
 
-def level_episodes(payload: dict[str, Any], agent_key: str, level: str) -> list[dict[str, Any]]:
-    return payload["agents"][agent_key]["episodes"][level]
+def level_summary(payload: dict[str, Any], payload_mode: str, agent_key: str, level: str) -> dict[str, Any]:
+    if payload_mode == FULL_MODE:
+        return payload["agents"][agent_key]["summary"][level]
+    return payload["summary"][agent_key][level]
 
 
-def representative_episode(payload: dict[str, Any], agent_key: str, level: str) -> dict[str, Any]:
-    episodes = level_episodes(payload, agent_key, level)
+def level_episodes(payload: dict[str, Any], payload_mode: str, agent_key: str, level: str) -> list[dict[str, Any]]:
+    if payload_mode == FULL_MODE:
+        return payload["agents"][agent_key]["episodes"][level]
+    return [
+        episode
+        for episode in payload["episodes"]
+        if episode["agent"] == agent_key and episode["level"] == level
+    ]
+
+
+def episode_grade(episode: dict[str, Any], payload_mode: str) -> float:
+    return episode["grade"]["score"] if payload_mode == FULL_MODE else episode["grade"]
+
+
+def episode_reward(episode: dict[str, Any], payload_mode: str) -> float:
+    return episode["total_reward"] if payload_mode == FULL_MODE else episode["reward"]
+
+
+def episode_revenue(episode: dict[str, Any], payload_mode: str) -> float:
+    return episode["final_state"]["enterprise_revenue"] if payload_mode == FULL_MODE else episode["revenue"]
+
+
+def episode_security(episode: dict[str, Any], payload_mode: str) -> float:
+    return episode["final_state"]["security_score"] if payload_mode == FULL_MODE else episode["security"]
+
+
+def representative_episode(payload: dict[str, Any], payload_mode: str, agent_key: str, level: str) -> dict[str, Any]:
+    episodes = level_episodes(payload, payload_mode, agent_key, level)
     if not episodes:
         return {}
-    return max(episodes, key=lambda episode: episode["grade"]["score"])
+    return max(episodes, key=lambda episode: episode_grade(episode, payload_mode))
 
 
 def mean_std_band(series_collection: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
@@ -140,15 +186,15 @@ def build_plot_manifest(plot_dir: Path) -> dict[str, str]:
     }
 
 
-def plot_grade_comparison(payload: dict[str, Any], output_path: Path) -> None:
+def plot_grade_comparison(payload: dict[str, Any], payload_mode: str, output_path: Path) -> None:
     setup_style()
     fig, ax = plt.subplots(figsize=(11, 6))
     width = 0.24
     x_positions = list(range(len(LEVELS)))
 
     for idx, agent_key in enumerate(AGENT_ORDER):
-        means = [level_summary(payload, agent_key, level)["grade_mean"] for level in LEVELS]
-        stds = [level_summary(payload, agent_key, level)["grade_std"] for level in LEVELS]
+        means = [level_summary(payload, payload_mode, agent_key, level)["grade_mean"] for level in LEVELS]
+        stds = [level_summary(payload, payload_mode, agent_key, level)["grade_std"] for level in LEVELS]
         shifted = [x + (idx - 1) * width for x in x_positions]
         ax.bar(
             shifted,
@@ -172,7 +218,7 @@ def plot_grade_comparison(payload: dict[str, Any], output_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_operations_comparison(payload: dict[str, Any], output_path: Path) -> None:
+def plot_operations_comparison(payload: dict[str, Any], payload_mode: str, output_path: Path) -> None:
     setup_style()
     metrics = [
         ("reward_mean", "Reward", "Mean episode reward"),
@@ -187,7 +233,7 @@ def plot_operations_comparison(payload: dict[str, Any], output_path: Path) -> No
 
     for ax, (metric_key, short_label, title) in zip(axes_flat, metrics):
         for idx, agent_key in enumerate(AGENT_ORDER):
-            means = [level_summary(payload, agent_key, level)[metric_key] for level in LEVELS]
+            means = [level_summary(payload, payload_mode, agent_key, level)[metric_key] for level in LEVELS]
             shifted = [x + (idx - 1) * width for x in x_positions]
             ax.bar(
                 shifted,
@@ -210,72 +256,138 @@ def plot_operations_comparison(payload: dict[str, Any], output_path: Path) -> No
     plt.close(fig)
 
 
-def plot_radar_comparison(payload: dict[str, Any], output_path: Path) -> None:
+def plot_radar_comparison(payload: dict[str, Any], payload_mode: str, output_path: Path) -> None:
     setup_style()
-    angles = [idx / float(len(DIMENSIONS)) * 2 * np.pi for idx in range(len(DIMENSIONS))]
+    if payload_mode == FULL_MODE:
+        metric_names = DIMENSIONS
+        metric_labels = [dimension.title() for dimension in DIMENSIONS]
+        values_by_agent = {}
+        for agent_key in AGENT_ORDER:
+            overall = payload["agents"][agent_key]["overall"]["grader_dimensions"]
+            values_by_agent[agent_key] = [overall[dimension]["mean"] * 100 for dimension in DIMENSIONS]
+    else:
+        metric_names = ["grade_mean", "reward_mean", "revenue_mean", "security_mean", "sleepers_caught_mean"]
+        metric_labels = ["Grade", "Reward", "Revenue", "Security", "Caught"]
+        overall = {}
+        for agent_key in AGENT_ORDER:
+            overall[agent_key] = {}
+            for metric_name in metric_names:
+                values = [level_summary(payload, payload_mode, agent_key, level)[metric_name] for level in LEVELS]
+                overall[agent_key][metric_name] = float(np.mean(values))
+
+        normalized: dict[str, dict[str, float]] = {}
+        for metric_name in metric_names:
+            column = np.array([overall[agent_key][metric_name] for agent_key in AGENT_ORDER], dtype=float)
+            lo = column.min()
+            hi = column.max()
+            if np.isclose(lo, hi):
+                for agent_key in AGENT_ORDER:
+                    normalized.setdefault(agent_key, {})[metric_name] = 50.0
+            else:
+                for agent_key, value in zip(AGENT_ORDER, column):
+                    normalized.setdefault(agent_key, {})[metric_name] = float((value - lo) / (hi - lo) * 100.0)
+        values_by_agent = {agent_key: [normalized[agent_key][metric_name] for metric_name in metric_names] for agent_key in AGENT_ORDER}
+
+    angles = [idx / float(len(metric_names)) * 2 * np.pi for idx in range(len(metric_names))]
     angles += angles[:1]
 
     fig = plt.figure(figsize=(8, 8))
     ax = plt.subplot(111, polar=True)
 
     for agent_key in AGENT_ORDER:
-        overall = payload["agents"][agent_key]["overall"]["grader_dimensions"]
-        values = [overall[dimension]["mean"] * 100 for dimension in DIMENSIONS]
-        values += values[:1]
+        values = values_by_agent[agent_key] + values_by_agent[agent_key][:1]
         ax.plot(angles, values, color=AGENT_COLORS[agent_key], linewidth=2, label=AGENT_LABELS[agent_key])
         ax.fill(angles, values, color=AGENT_COLORS[agent_key], alpha=0.14)
 
-    ax.set_xticks(angles[:-1], [dimension.title() for dimension in DIMENSIONS])
+    ax.set_xticks(angles[:-1], metric_labels)
     ax.set_ylim(0, 100)
     ax.set_yticks([20, 40, 60, 80, 100])
     ax.set_yticklabels(["20", "40", "60", "80", "100"])
-    ax.set_title("Average grader dimensions across all evaluated episodes", pad=25)
+    ax.set_title("Average benchmark dimensions across all evaluated episodes", pad=25)
     ax.legend(loc="upper right", bbox_to_anchor=(1.18, 1.08), frameon=False)
     fig.tight_layout()
     fig.savefig(output_path, dpi=240)
     plt.close(fig)
 
 
-def plot_timeline_comparison(payload: dict[str, Any], output_path: Path, level: str) -> None:
+def plot_timeline_comparison(payload: dict[str, Any], payload_mode: str, output_path: Path, level: str) -> None:
     setup_style()
-    fig, axes = plt.subplots(4, 1, figsize=(12, 13), sharex=True)
-    metric_titles = [
-        "Per-turn reward",
-        "Cumulative reward",
-        "Enterprise revenue",
-        "Security score",
-    ]
+    if payload_mode == FULL_MODE:
+        fig, axes = plt.subplots(4, 1, figsize=(12, 13), sharex=True)
+        metric_titles = [
+            "Per-turn reward",
+            "Cumulative reward",
+            "Enterprise revenue",
+            "Security score",
+        ]
 
-    for agent_key in AGENT_ORDER:
-        episode = representative_episode(payload, agent_key, level)
-        timeline = episode.get("timeline", [])
-        x_values = [item["turn"] for item in timeline]
-        reward_values = [item["reward"] for item in timeline]
-        cumulative_values = np.cumsum(reward_values) if reward_values else []
-        revenue_values = [item["metrics_after"]["enterprise_revenue"] for item in timeline]
-        security_values = [item["metrics_after"]["security_score"] for item in timeline]
-        series = [reward_values, cumulative_values, revenue_values, security_values]
+        for agent_key in AGENT_ORDER:
+            episode = representative_episode(payload, payload_mode, agent_key, level)
+            timeline = episode.get("timeline", [])
+            x_values = [item["turn"] for item in timeline]
+            reward_values = [item["reward"] for item in timeline]
+            cumulative_values = np.cumsum(reward_values) if reward_values else []
+            revenue_values = [item["metrics_after"]["enterprise_revenue"] for item in timeline]
+            security_values = [item["metrics_after"]["security_score"] for item in timeline]
+            series = [reward_values, cumulative_values, revenue_values, security_values]
 
-        for ax, values, title in zip(axes, series, metric_titles):
-            ax.plot(
-                x_values,
-                values,
-                label=AGENT_LABELS[agent_key],
-                color=AGENT_COLORS[agent_key],
-                linewidth=2,
-            )
+            for ax, values, title in zip(axes, series, metric_titles):
+                ax.plot(
+                    x_values,
+                    values,
+                    label=AGENT_LABELS[agent_key],
+                    color=AGENT_COLORS[agent_key],
+                    linewidth=2,
+                )
+                ax.set_title(title)
+                ax.grid(alpha=0.25)
+
+        axes[-1].set_xlabel(f"Turn ({LEVEL_LABELS[level]})")
+        axes[0].legend(frameon=False, ncol=3, loc="upper right")
+        fig.suptitle(f"Representative turn-by-turn comparison on {LEVEL_LABELS[level]}", y=0.98)
+    else:
+        fig, axes = plt.subplots(3, 1, figsize=(13, 10), sharex=True)
+        metric_specs = [("reward", "Episode reward"), ("revenue", "Final revenue"), ("security", "Final security")]
+        x_labels = []
+        x_positions = []
+        cursor = 0
+
+        for level_name in LEVELS:
+            for agent_key in AGENT_ORDER:
+                episodes = level_episodes(payload, payload_mode, agent_key, level_name)
+                for episode in episodes:
+                    x_positions.append(cursor)
+                    x_labels.append(f"{LEVEL_LABELS[level_name]}\n{AGENT_LABELS[agent_key][0]}{episode['episode']}")
+                    cursor += 1
+
+        for ax, (metric_key, title) in zip(axes, metric_specs):
+            cursor = 0
+            for level_name in LEVELS:
+                for agent_key in AGENT_ORDER:
+                    episodes = level_episodes(payload, payload_mode, agent_key, level_name)
+                    values = [episode[metric_key] for episode in episodes]
+                    positions = list(range(cursor, cursor + len(episodes)))
+                    ax.plot(
+                        positions,
+                        values,
+                        marker="o",
+                        linewidth=1.4,
+                        color=AGENT_COLORS[agent_key],
+                        alpha=0.95,
+                    )
+                    cursor += len(episodes)
             ax.set_title(title)
-            ax.grid(alpha=0.25)
+            ax.grid(True, axis="y")
 
-    axes[-1].set_xlabel(f"Turn ({LEVEL_LABELS[level]})")
-    axes[0].legend(frameon=False, ncol=3, loc="upper right")
-    fig.suptitle(f"Representative turn-by-turn comparison on {LEVEL_LABELS[level]}", y=0.98)
+        axes[-1].set_xticks(x_positions, x_labels, rotation=60, ha="right")
+        fig.suptitle("Episode-outcome panorama across the benchmark snapshot", y=0.98)
+
     fig.tight_layout()
     fig.savefig(output_path, dpi=240)
     plt.close(fig)
 
 
-def plot_reward_distributions(payload: dict[str, Any], output_path: Path) -> None:
+def plot_reward_distributions(payload: dict[str, Any], payload_mode: str, output_path: Path) -> None:
     setup_style()
     fig, axes = plt.subplots(2, 1, figsize=(14, 10), height_ratios=[2.2, 1.2])
 
@@ -286,7 +398,7 @@ def plot_reward_distributions(payload: dict[str, Any], output_path: Path) -> Non
     for idx, agent_key in enumerate(AGENT_ORDER):
         agent_offset = (idx - 1) * width
         for level_idx, level in enumerate(LEVELS):
-            rewards = [episode["total_reward"] for episode in level_episodes(payload, agent_key, level)]
+            rewards = [episode_reward(episode, payload_mode) for episode in level_episodes(payload, payload_mode, agent_key, level)]
             position = level_idx + agent_offset
             if rewards:
                 box = axes[0].boxplot(
@@ -316,8 +428,8 @@ def plot_reward_distributions(payload: dict[str, Any], output_path: Path) -> Non
                     zorder=3,
                 )
 
-        means = [level_summary(payload, agent_key, level)["reward_mean"] for level in LEVELS]
-        stds = [level_summary(payload, agent_key, level)["reward_std"] for level in LEVELS]
+        means = [level_summary(payload, payload_mode, agent_key, level)["reward_mean"] for level in LEVELS]
+        stds = [level_summary(payload, payload_mode, agent_key, level).get("reward_std", 0.0) for level in LEVELS]
         axes[1].plot(
             x_positions,
             means,
@@ -350,17 +462,17 @@ def plot_reward_distributions(payload: dict[str, Any], output_path: Path) -> Non
     plt.close(fig)
 
 
-def plot_reward_frontier(payload: dict[str, Any], output_path: Path) -> None:
+def plot_reward_frontier(payload: dict[str, Any], payload_mode: str, output_path: Path) -> None:
     setup_style()
     fig, axes = plt.subplots(1, 3, figsize=(15, 5.4), sharex=True, sharey=True)
     legend_handles: dict[str, Any] = {}
 
     for ax, agent_key in zip(axes, AGENT_ORDER):
         for level in LEVELS:
-            episodes = level_episodes(payload, agent_key, level)
-            x_values = [episode["final_state"]["security_score"] for episode in episodes]
-            y_values = [episode["total_reward"] for episode in episodes]
-            sizes = [max(40.0, episode["final_state"]["enterprise_revenue"] * 0.12) for episode in episodes]
+            episodes = level_episodes(payload, payload_mode, agent_key, level)
+            x_values = [episode_security(episode, payload_mode) for episode in episodes]
+            y_values = [episode_reward(episode, payload_mode) for episode in episodes]
+            sizes = [max(40.0, episode_revenue(episode, payload_mode) * 0.12) for episode in episodes]
             scatter = ax.scatter(
                 x_values,
                 y_values,
@@ -394,58 +506,78 @@ def plot_reward_frontier(payload: dict[str, Any], output_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_reward_turn_dynamics(payload: dict[str, Any], output_path: Path, level: str) -> None:
+def plot_reward_turn_dynamics(payload: dict[str, Any], payload_mode: str, output_path: Path, level: str) -> None:
     setup_style()
     fig, axes = plt.subplots(2, 1, figsize=(12, 9), sharex=True)
-    x_axis = np.linspace(0.0, 100.0, num=100)
 
-    for agent_key in AGENT_ORDER:
-        reward_curves = []
-        cumulative_curves = []
-        for episode in level_episodes(payload, agent_key, level):
-            reward_series = interpolate_series(episode.get("reward_history", []), target_points=100)
-            reward_curves.append(rolling_mean(reward_series, 7))
-            cumulative_curves.append(np.cumsum(reward_series))
+    if payload_mode == FULL_MODE:
+        x_axis = np.linspace(0.0, 100.0, num=100)
 
-        if not reward_curves:
-            continue
+        for agent_key in AGENT_ORDER:
+            reward_curves = []
+            cumulative_curves = []
+            for episode in level_episodes(payload, payload_mode, agent_key, level):
+                reward_series = interpolate_series(episode.get("reward_history", []), target_points=100)
+                reward_curves.append(rolling_mean(reward_series, 7))
+                cumulative_curves.append(np.cumsum(reward_series))
 
-        reward_mean, reward_std = mean_std_band(reward_curves)
-        cumulative_mean, cumulative_std = mean_std_band(cumulative_curves)
+            if not reward_curves:
+                continue
 
-        axes[0].plot(x_axis, reward_mean, color=AGENT_COLORS[agent_key], linewidth=2.2, label=AGENT_LABELS[agent_key])
-        axes[0].fill_between(
-            x_axis,
-            reward_mean - reward_std,
-            reward_mean + reward_std,
-            color=AGENT_COLORS[agent_key],
-            alpha=0.12,
-        )
+            reward_mean, reward_std = mean_std_band(reward_curves)
+            cumulative_mean, cumulative_std = mean_std_band(cumulative_curves)
 
-        axes[1].plot(
-            x_axis,
-            cumulative_mean,
-            color=AGENT_COLORS[agent_key],
-            linewidth=2.2,
-            label=AGENT_LABELS[agent_key],
-        )
-        axes[1].fill_between(
-            x_axis,
-            cumulative_mean - cumulative_std,
-            cumulative_mean + cumulative_std,
-            color=AGENT_COLORS[agent_key],
-            alpha=0.12,
-        )
+            axes[0].plot(x_axis, reward_mean, color=AGENT_COLORS[agent_key], linewidth=2.2, label=AGENT_LABELS[agent_key])
+            axes[0].fill_between(
+                x_axis,
+                reward_mean - reward_std,
+                reward_mean + reward_std,
+                color=AGENT_COLORS[agent_key],
+                alpha=0.12,
+            )
 
-    axes[0].set_title(f"Instantaneous reward profile on {LEVEL_LABELS[level]}")
-    axes[0].set_ylabel("Per-turn reward")
-    axes[0].grid(True)
-    axes[0].legend(ncol=3, loc="upper left")
+            axes[1].plot(
+                x_axis,
+                cumulative_mean,
+                color=AGENT_COLORS[agent_key],
+                linewidth=2.2,
+                label=AGENT_LABELS[agent_key],
+            )
+            axes[1].fill_between(
+                x_axis,
+                cumulative_mean - cumulative_std,
+                cumulative_mean + cumulative_std,
+                color=AGENT_COLORS[agent_key],
+                alpha=0.12,
+            )
 
-    axes[1].set_title(f"Cumulative reward accumulation on {LEVEL_LABELS[level]}")
-    axes[1].set_xlabel("Episode progress (%)")
-    axes[1].set_ylabel("Cumulative reward")
-    axes[1].grid(True)
+        axes[0].set_title(f"Instantaneous reward profile on {LEVEL_LABELS[level]}")
+        axes[0].set_ylabel("Per-turn reward")
+        axes[0].grid(True)
+        axes[0].legend(ncol=3, loc="upper left")
+
+        axes[1].set_title(f"Cumulative reward accumulation on {LEVEL_LABELS[level]}")
+        axes[1].set_xlabel("Episode progress (%)")
+        axes[1].set_ylabel("Cumulative reward")
+        axes[1].grid(True)
+    else:
+        x_axis = np.arange(len(LEVELS))
+        for agent_key in AGENT_ORDER:
+            reward_means = [level_summary(payload, payload_mode, agent_key, level_name)["reward_mean"] for level_name in LEVELS]
+            security_means = [level_summary(payload, payload_mode, agent_key, level_name)["security_mean"] for level_name in LEVELS]
+            axes[0].plot(x_axis, reward_means, marker="o", linewidth=2.2, color=AGENT_COLORS[agent_key], label=AGENT_LABELS[agent_key])
+            axes[1].plot(x_axis, security_means, marker="o", linewidth=2.2, color=AGENT_COLORS[agent_key], label=AGENT_LABELS[agent_key])
+
+        axes[0].set_title("Reward response across escalating difficulty")
+        axes[0].set_ylabel("Mean reward")
+        axes[0].grid(True)
+        axes[0].legend(ncol=3, loc="upper left")
+
+        axes[1].set_xticks(x_axis, [LEVEL_LABELS[level_name] for level_name in LEVELS])
+        axes[1].set_xlabel("Scenario difficulty")
+        axes[1].set_ylabel("Mean security")
+        axes[1].set_title("Security retention across escalating difficulty")
+        axes[1].grid(True)
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=240)
@@ -454,14 +586,15 @@ def plot_reward_turn_dynamics(payload: dict[str, Any], output_path: Path, level:
 
 def render_evaluation_plots(payload: dict[str, Any], plot_dir: Path, timeline_level: str) -> dict[str, str]:
     ensure_plot_dir(plot_dir)
+    payload_mode = detect_payload_mode(payload)
     plot_files = build_plot_manifest(plot_dir)
-    plot_grade_comparison(payload, Path(plot_files["comparison_grades"]))
-    plot_operations_comparison(payload, Path(plot_files["comparison_operations"]))
-    plot_radar_comparison(payload, Path(plot_files["comparison_radar"]))
-    plot_timeline_comparison(payload, Path(plot_files["scenario_timeline"]), timeline_level)
-    plot_reward_distributions(payload, Path(plot_files["reward_distributions"]))
-    plot_reward_frontier(payload, Path(plot_files["reward_frontier"]))
-    plot_reward_turn_dynamics(payload, Path(plot_files["reward_turn_dynamics"]), timeline_level)
+    plot_grade_comparison(payload, payload_mode, Path(plot_files["comparison_grades"]))
+    plot_operations_comparison(payload, payload_mode, Path(plot_files["comparison_operations"]))
+    plot_radar_comparison(payload, payload_mode, Path(plot_files["comparison_radar"]))
+    plot_timeline_comparison(payload, payload_mode, Path(plot_files["scenario_timeline"]), timeline_level)
+    plot_reward_distributions(payload, payload_mode, Path(plot_files["reward_distributions"]))
+    plot_reward_frontier(payload, payload_mode, Path(plot_files["reward_frontier"]))
+    plot_reward_turn_dynamics(payload, payload_mode, Path(plot_files["reward_turn_dynamics"]), timeline_level)
     return plot_files
 
 
