@@ -1,0 +1,198 @@
+{
+  "levels": {
+    "easy": {
+      "label": "Easy",
+      "episodes": 50,
+      "examples": 3000,
+      "tokens": {
+        "min": 438,
+        "avg": 472,
+        "max": 486
+      },
+      "expert": {
+        "grade_mean": 0.75042,
+        "grade_std": 0.009324293484205224,
+        "grade_ci95_low": 0.7478354377082376,
+        "grade_ci95_high": 0.7530045622917624,
+        "grade_min": 0.726,
+        "grade_max": 0.766,
+        "revenue_mean": 271.78,
+        "revenue_std": 4.962265776099972,
+        "security_mean": 100.0,
+        "caught_mean": 1.0,
+        "caught_max": 1,
+        "episode_steps_mean": 60.0
+      },
+      "optimization": {
+        "train_steps": 224,
+        "epochs": 3.0,
+        "loss_start": 2.5486,
+        "loss_final": 0.0309,
+        "loss_reduction_pct": 98.7875696460802,
+        "half_loss_step": 11,
+        "near_final_step": 16,
+        "grad_mean": 0.5601242444078837,
+        "grad_p95": 1.3061512172222136,
+        "grad_max": 3.5359721183776855,
+        "learning_rate_peak": 1.9981668194317142e-05
+      }
+    },
+    "medium": {
+      "label": "Medium",
+      "episodes": 50,
+      "examples": 4500,
+      "tokens": {
+        "min": 455,
+        "avg": 489,
+        "max": 503
+      },
+      "expert": {
+        "grade_mean": 0.66522,
+        "grade_std": 0.05201424059322404,
+        "grade_ci95_low": 0.650802388081239,
+        "grade_ci95_high": 0.679637611918761,
+        "grade_min": 0.607,
+        "grade_max": 0.756,
+        "revenue_mean": 441.5,
+        "revenue_std": 12.155875374585287,
+        "security_mean": 76.76,
+        "caught_mean": 1.28,
+        "caught_max": 2,
+        "episode_steps_mean": 90.0
+      },
+      "optimization": {
+        "train_steps": 334,
+        "epochs": 3.0,
+        "loss_start": 0.2723,
+        "loss_final": 0.0291,
+        "loss_reduction_pct": 89.31325743665074,
+        "half_loss_step": 8,
+        "near_final_step": 60,
+        "grad_mean": 0.3512100912407487,
+        "grad_p95": 0.4897233873605724,
+        "grad_max": 1.9331352710723877,
+        "learning_rate_peak": 1.9951070336391438e-05
+      }
+    },
+    "hard": {
+      "label": "Hard",
+      "episodes": 50,
+      "examples": 6000,
+      "tokens": {
+        "min": 474,
+        "avg": 508,
+        "max": 522
+      },
+      "expert": {
+        "grade_mean": 0.52922,
+        "grade_std": 0.046690596877044674,
+        "grade_ci95_low": 0.516278026833593,
+        "grade_ci95_high": 0.542161973166407,
+        "grade_min": 0.451,
+        "grade_max": 0.573,
+        "revenue_mean": 601.14,
+        "revenue_std": 14.06255702936282,
+        "security_mean": 0.0,
+        "caught_mean": 0.74,
+        "caught_max": 1,
+        "episode_steps_mean": 120.0
+      },
+      "optimization": {
+        "train_steps": 448,
+        "epochs": 3.0,
+        "loss_start": 2.0891,
+        "loss_final": 0.0264,
+        "loss_reduction_pct": 98.73629792733713,
+        "half_loss_step": 13,
+        "near_final_step": 19,
+        "grad_mean": 0.4748227318881878,
+        "grad_p95": 0.709914618730545,
+        "grad_max": 2.878166437149048,
+        "learning_rate_peak": 1.9981668194317142e-05
+      }
+    },
+    "level_4": {
+      "label": "Level 4",
+      "episodes": 50,
+      "examples": 7500,
+      "tokens": {
+        "min": 493,
+        "avg": 529,
+        "max": 559
+      },
+      "expert": {
+        "grade_mean": 0.4849,
+        "grade_std": 0.0425921569861717,
+        "grade_ci95_low": 0.47309405641212865,
+        "grade_ci95_high": 0.49670594358787135,
+        "grade_min": 0.417,
+        "grade_max": 0.525,
+        "revenue_mean": 795.16,
+        "revenue_std": 19.928812082520327,
+        "security_mean": 0.0,
+        "caught_mean": 0.7,
+        "caught_max": 1,
+        "episode_steps_mean": 150.0
+      },
+      "optimization": {
+        "train_steps": 556,
+        "epochs": 3.0,
+        "loss_start": 0.2734,
+        "loss_final": 0.0213,
+        "loss_reduction_pct": 92.20921726408194,
+        "half_loss_step": 11,
+        "near_final_step": 106,
+        "grad_mean": 0.3613473902449762,
+        "grad_p95": 0.6726217418909073,
+        "grad_max": 2.017293691635132,
+        "learning_rate_peak": 2e-05
+      }
+    },
+    "level_5": {
+      "label": "Level 5",
+      "episodes": 50,
+      "examples": 8000,
+      "tokens": {
+        "min": 511,
+        "avg": 547,
+        "max": 576
+      },
+      "expert": {
+        "grade_mean": 0.53884,
+        "grade_std": 0.03881529258907513,
+        "grade_ci95_low": 0.5280809498114378,
+        "grade_ci95_high": 0.5495990501885621,
+        "grade_min": 0.473,
+        "grade_max": 0.579,
+        "revenue_mean": 892.26,
+        "revenue_std": 25.11427758816706,
+        "security_mean": 0.0,
+        "caught_mean": 0.72,
+        "caught_max": 1,
+        "episode_steps_mean": 160.0
+      },
+      "optimization": {
+        "train_steps": 596,
+        "epochs": 3.0,
+        "loss_start": 1.5964,
+        "loss_final": 0.0203,
+        "loss_reduction_pct": 98.72838887496869,
+        "half_loss_step": 16,
+        "near_final_step": 22,
+        "grad_mean": 0.38878349009776275,
+        "grad_p95": 0.6900989413261414,
+        "grad_max": 2.4556832313537598,
+        "learning_rate_peak": 2e-05
+      }
+    }
+  },
+  "global": {
+    "level_count": 5,
+    "total_examples": 29000,
+    "approx_total_tokens": 15008000,
+    "total_train_steps": 2158,
+    "best_final_loss": 0.0203,
+    "worst_final_loss": 0.0309
+  },
+  "source_log": "output_logs.txt"
+}

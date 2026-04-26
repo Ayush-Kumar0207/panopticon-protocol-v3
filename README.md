@@ -18,7 +18,7 @@
 🏆 **Meta PyTorch OpenEnv Hackathon x Scaler — Grand Finale 2026**
 
 🤗 **Hugging Face Space**: [TODO_HF_SPACE_LINK](https://huggingface.co/spaces/)
-📓 **Training Notebook**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](Panopticon_TRL_Training.ipynb)
+📓 **Training Notebook**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
 📝 **Blog Post**: [TODO_HF_BLOG_LINK](https://huggingface.co/blog/)
 🎬 **Video Demo**: [TODO_YOUTUBE_LINK](https://youtube.com/)
 
@@ -216,7 +216,7 @@ The full gauntlet. Gen-5 Manchurian candidates with active counter-intelligence.
 
 ## 📈 Training Results & Improvement Evidence
 
-We trained a **Qwen 2.5 1.5B** model using **HuggingFace TRL SFT** with **LoRA adapters** across all 5 curriculum levels. The curriculum chains adapter weights from easy → hard, so each level builds on the skills learned in previous levels.
+We trained **Qwen/Qwen2.5-1.5B-Instruct** with **TRL SFT + LoRA** across the full five-stage curriculum, and the figures below are generated directly from the raw `output_logs.txt` trace in this repository. Instead of a demo-only loss chart, the analysis pass extracts expert episode quality, revenue/security tradeoffs, optimizer stability, and curriculum scaling statistics.
 
 ### Training Configuration
 
@@ -224,67 +224,90 @@ We trained a **Qwen 2.5 1.5B** model using **HuggingFace TRL SFT** with **LoRA a
 |-----------|-------|
 | **Base Model** | `Qwen/Qwen2.5-1.5B-Instruct` |
 | **Method** | Supervised Fine-Tuning (SFT) with LoRA |
-| **LoRA Rank** | 16 (alpha=32) |
-| **Hardware** | NVIDIA A10G (24GB VRAM) |
-| **Curriculum** | 5 levels, chained adapter weights |
-| **Expert Trajectories** | 50 episodes per level |
-| **Framework** | HuggingFace TRL 0.12.2 + PEFT 0.12.0 |
+| **Curriculum** | 5 chained levels (`easy` -> `level_5`) |
+| **Expert Data** | 250 episodes total, 29,000 supervised examples |
+| **Approx. Token Budget** | 15.01M tokens from parsed training logs |
+| **Logged Optimization Steps** | 2,158 updates across all levels |
+| **Hardware** | NVIDIA A10G, `bfloat16` |
+| **Framework** | Hugging Face TRL + PEFT |
 
-### 1. Training Loss Curve (Full Convergence)
+### Quantitative Snapshot
 
-*Shows the SFT training loss across all 5 curriculum levels. Loss drops rapidly in each level and stabilizes, demonstrating consistent learning signal throughout the entire training pipeline.*
+| Signal | Value |
+|--------|-------|
+| **Best final loss** | `0.0203` on `level_5` |
+| **Easy-level expert grade** | `0.750 +/- 0.009` |
+| **Level-5 expert grade** | `0.539 +/- 0.039` |
+| **Largest single-level dataset** | `8,000` examples (`level_5`) |
+| **Fastest half-loss convergence** | `8` steps (`medium`) |
+| **Strongest loss reduction** | `98.8%` (`easy`) |
 
-![Training Loss Curve](plots/training_loss_curve.png)
-> **Figure 1** — Training loss converges smoothly across all 5 curriculum levels (easy → level_5). Each level starts from the previous level's merged adapter weights.
+### Per-Level Summary
 
-### 2. Per-Level Loss Breakdown
+| Level | Examples | Avg Tokens | Expert Grade | Revenue Mean | Security Mean | Caught Mean | Final Loss | Loss Reduction |
+|-------|---------:|-----------:|-------------:|-------------:|--------------:|------------:|-----------:|---------------:|
+| **Easy** | 3,000 | 472 | 0.750 +/- 0.009 | 271.8 | 100.0 | 1.00 | 0.0309 | 98.8% |
+| **Medium** | 4,500 | 489 | 0.665 +/- 0.052 | 441.5 | 76.8 | 1.28 | 0.0291 | 89.3% |
+| **Hard** | 6,000 | 508 | 0.529 +/- 0.047 | 601.1 | 0.0 | 0.74 | 0.0264 | 98.7% |
+| **Level 4** | 7,500 | 529 | 0.485 +/- 0.043 | 795.2 | 0.0 | 0.70 | 0.0213 | 92.2% |
+| **Level 5** | 8,000 | 547 | 0.539 +/- 0.039 | 892.3 | 0.0 | 0.72 | 0.0203 | 98.7% |
 
-*Individual loss curves for each curriculum level showing that every level achieves convergence. Higher levels start with slightly higher loss (more complex scenarios) but converge to comparable final values.*
+### Research Plot Gallery
 
-![Per-Level Loss](plots/per_level_loss.png)
-> **Figure 2** — Loss breakdown by curriculum level. Each level's training converges independently, with later levels benefiting from prior curriculum knowledge.
+<table>
+  <tr>
+    <td width="50%"><img src="plots/curriculum_loss_overview.png" alt="Curriculum loss overview"></td>
+    <td width="50%"><img src="plots/per_level_convergence.png" alt="Per-level convergence panels"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Figure 1.</b> Global curriculum loss curve with level spans, showing consistent convergence as the adapter chain moves from easy to level_5.</sub></td>
+    <td><sub><b>Figure 2.</b> Per-level convergence panels with start loss, final loss, loss drop, and half-loss step for each curriculum stage.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="plots/expert_grade_distribution.png" alt="Expert grade distribution"></td>
+    <td width="50%"><img src="plots/expert_operational_metrics.png" alt="Expert operational metrics"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Figure 3.</b> Violin, box, and confidence-interval summary of expert demonstration quality across all five levels.</sub></td>
+    <td><sub><b>Figure 4.</b> Revenue distribution, security retention, caught-sleeper averages, and revenue-grade tradeoff from expert episodes.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="plots/optimization_diagnostics.png" alt="Optimization diagnostics"></td>
+    <td width="50%"><img src="plots/dataset_scaling.png" alt="Dataset scaling"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Figure 5.</b> Gradient norm stability, learning-rate schedule, per-level gradient statistics, and aggregate optimizer distribution.</sub></td>
+    <td><sub><b>Figure 6.</b> Curriculum dataset growth and sequence-length scaling as task difficulty increases.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="plots/curriculum_heatmap.png" alt="Curriculum heatmap"></td>
+  </tr>
+  <tr>
+    <td colspan="2"><sub><b>Figure 7.</b> Normalized curriculum heatmap summarizing examples, token lengths, expert performance, optimization efficiency, and terminal loss by level.</sub></td>
+  </tr>
+</table>
 
-### 3. Loss Reduction Analysis
+### Reproducibility
 
-*Quantifies the magnitude of loss reduction per curriculum level, showing the agent is learning meaningful representations at every stage.*
+The plot pipeline now lives in `generate_plots.py` and emits both figures and machine-readable summaries:
 
-![Loss Reduction](plots/loss_reduction.png)
-> **Figure 3** — Loss reduction per level demonstrates that the curriculum provides genuine learning signal at every difficulty tier.
+```bash
+python generate_plots.py
+```
 
-### 4. Expert Trajectory Grades
+Artifacts written to `plots/`:
 
-*The expert policy's performance across all 5 levels — showing the quality of the demonstration data used for SFT training.*
+- `training_statistics.json`
+- `training_statistics.md`
+- `curriculum_loss_overview.png`
+- `per_level_convergence.png`
+- `expert_grade_distribution.png`
+- `expert_operational_metrics.png`
+- `optimization_diagnostics.png`
+- `dataset_scaling.png`
+- `curriculum_heatmap.png`
 
-![Expert Grades](plots/expert_grades.png)
-> **Figure 4** — Expert trajectory grades across curriculum levels. The expert heuristic achieves high composite scores, providing strong demonstration data.
-
-### 5. Gradient Norm Stability
-
-*Gradient norms remain stable throughout training, confirming no gradient explosion or vanishing — critical for LoRA fine-tuning stability.*
-
-![Gradient Norms](plots/gradient_norm.png)
-> **Figure 5** — Gradient norm evolution across training steps. Stable norms confirm healthy optimization dynamics with the LoRA adapter configuration.
-
-### 6. Learning Rate Schedule
-
-*Cosine decay learning rate schedule used across all curriculum levels, with warmup period for stable initial training.*
-
-![Learning Rate Schedule](plots/learning_rate_schedule.png)
-> **Figure 6** — Learning rate schedule (cosine decay with warmup) applied independently to each curriculum level.
-
-### Training Summary
-
-| Metric | Value |
-|--------|:-----:|
-| **Total Training Time** | ~12 hours (5 levels on A10G) |
-| **Final Training Loss** | 0.031 (level_5, epoch 3) |
-| **Loss Reduction** | 2.55 → 0.031 (98.8% reduction) |
-| **Expert Grade (Easy)** | 0.748 avg |
-| **Expert Grade (Level 5)** | 0.672 avg |
-| **GPU** | NVIDIA A10G (22.3 GB VRAM) |
-| **Precision** | bfloat16 |
-
-> 📊 **All training was completed successfully on Hugging Face Spaces across all 5 curriculum levels. The plots above are generated from real training logs.**
+> 📊 **Everything above is derived from the committed raw training log rather than hand-entered numbers.**
 
 ---
 
@@ -364,11 +387,11 @@ python train_trl_v2.py --curriculum --model Qwen/Qwen2.5-1.5B-Instruct
 # Train with native PPO (Alternative Pipeline)
 python train_rl.py --curriculum
 
-# Generate training plots
-python plot_training.py
+# Generate research-grade training plots and summary statistics
+python generate_plots.py
 ```
 
-👉 **[Run the TRL Training in Colab](Panopticon_TRL_Training.ipynb)** 👈
+👉 **[Run the TRL Training in Colab](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)** 👈
 
 ---
 
@@ -474,7 +497,7 @@ graph TB
 | `_server.py` | FastAPI server — 11 endpoints, OpenEnv-compliant | 300+ |
 | `inference.py` | LLM agent inference (any OpenAI-compatible API) | 200+ |
 | `smoke_test.py` | Heuristic verification across all 5 levels | 250+ |
-| `plot_training.py` | Publication-quality reward curve generation | 400+ |
+| `generate_plots.py` | Research-grade log parsing, statistical summaries, and training visualizations | 400+ |
 
 ---
 
