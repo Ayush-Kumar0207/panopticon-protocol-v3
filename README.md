@@ -327,6 +327,8 @@ We then ran a matched-seed benchmark on Hugging Face A10G hardware with **2 epis
 
 This is exactly why we added a dedicated reward-analysis pass: the raw scalar reward alone suggests the trained agent is competitive, but the grader and operational traces show clear **reward misalignment**.
 
+The gallery below is rendered from the April 26 benchmark snapshot captured from the A10G Space console. Once the repaired `evaluationResults.json` export is rerun, the same README slots can be refreshed from the full structured payload.
+
 ### Evaluation & Reward Plot Gallery
 
 <table>
@@ -343,7 +345,7 @@ This is exactly why we added a dedicated reward-analysis pass: the raw scalar re
     <td width="50%"><img src="plots/reward_distributions.png" alt="Reward distributions"></td>
   </tr>
   <tr>
-    <td><sub><b>Figure 10.</b> Five-dimension grader radar chart summarizing security, revenue, intelligence, adaptability, and efficiency.</sub></td>
+    <td><sub><b>Figure 10.</b> Normalized benchmark radar summarizing grade, reward, revenue, security retention, and sleepers caught.</sub></td>
     <td><sub><b>Figure 11.</b> Research-style reward distribution panels showing spread, variance, and level-wise reward trends for each agent family.</sub></td>
   </tr>
   <tr>
@@ -352,13 +354,13 @@ This is exactly why we added a dedicated reward-analysis pass: the raw scalar re
   </tr>
   <tr>
     <td><sub><b>Figure 12.</b> Reward-security frontier with marker size proportional to revenue, exposing the trained agent's reward-vs-security tradeoff.</sub></td>
-    <td><sub><b>Figure 13.</b> Instantaneous and cumulative reward profiles over normalized episode progress for the selected scenario tier.</sub></td>
+    <td><sub><b>Figure 13.</b> Reward and security response curves across escalating difficulty tiers.</sub></td>
   </tr>
   <tr>
     <td colspan="2"><img src="plots/scenario_timeline.png" alt="Scenario timeline"></td>
   </tr>
   <tr>
-    <td colspan="2"><sub><b>Figure 14.</b> Representative turn-by-turn replay with reward, cumulative reward, revenue, and security trajectories for the selected evaluation level.</sub></td>
+    <td colspan="2"><sub><b>Figure 14.</b> Episode-outcome panorama across all logged benchmark runs, showing reward, revenue, and security per scenario-agent episode.</sub></td>
   </tr>
 </table>
 

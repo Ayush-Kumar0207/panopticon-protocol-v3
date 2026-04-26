@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-04-26T08:15:53Z",
+  "source": "hf-space-console-snapshot",
+  "episodes": [
+    {"agent": "random", "level": "easy", "episode": 1, "seed": 670487, "grade": 0.579, "reward": -1.54, "revenue": 88.5, "security": 100.0},
+    {"agent": "random", "level": "easy", "episode": 2, "seed": 116739, "grade": 0.610, "reward": 0.91, "revenue": 170.2, "security": 100.0},
+    {"agent": "random", "level": "medium", "episode": 1, "seed": 26225, "grade": 0.616, "reward": 0.04, "revenue": 162.1, "security": 99.0},
+    {"agent": "random", "level": "medium", "episode": 2, "seed": 777572, "grade": 0.765, "reward": 1.46, "revenue": 230.9, "security": 75.7},
+    {"agent": "random", "level": "hard", "episode": 1, "seed": 288389, "grade": 0.809, "reward": 0.67, "revenue": 240.3, "security": 58.6},
+    {"agent": "random", "level": "hard", "episode": 2, "seed": 256787, "grade": 0.694, "reward": 5.52, "revenue": 363.8, "security": 100.0},
+    {"agent": "random", "level": "level_4", "episode": 1, "seed": 234053, "grade": 0.764, "reward": -1.93, "revenue": 226.9, "security": 0.3},
+    {"agent": "random", "level": "level_4", "episode": 2, "seed": 146316, "grade": 0.838, "reward": 0.17, "revenue": 205.8, "security": 100.0},
+    {"agent": "random", "level": "level_5", "episode": 1, "seed": 772246, "grade": 0.817, "reward": 112.82, "revenue": 386.0, "security": 21.0},
+    {"agent": "random", "level": "level_5", "episode": 2, "seed": 107473, "grade": 0.754, "reward": -5.36, "revenue": 97.7, "security": -2.2},
+
+    {"agent": "heuristic", "level": "easy", "episode": 1, "seed": 670487, "grade": 0.729, "reward": 4.30, "revenue": 283.2, "security": 100.0},
+    {"agent": "heuristic", "level": "easy", "episode": 2, "seed": 116739, "grade": 0.729, "reward": 4.20, "revenue": 280.0, "security": 100.0},
+    {"agent": "heuristic", "level": "medium", "episode": 1, "seed": 26225, "grade": 0.727, "reward": 7.82, "revenue": 420.8, "security": 100.0},
+    {"agent": "heuristic", "level": "medium", "episode": 2, "seed": 777572, "grade": 0.726, "reward": 8.05, "revenue": 428.2, "security": 100.0},
+    {"agent": "heuristic", "level": "hard", "episode": 1, "seed": 288389, "grade": 0.664, "reward": 11.81, "revenue": 573.7, "security": 100.0},
+    {"agent": "heuristic", "level": "hard", "episode": 2, "seed": 256787, "grade": 0.694, "reward": 11.96, "revenue": 578.8, "security": 100.0},
+    {"agent": "heuristic", "level": "level_4", "episode": 1, "seed": 234053, "grade": 0.684, "reward": 17.37, "revenue": 803.9, "security": 73.0},
+    {"agent": "heuristic", "level": "level_4", "episode": 2, "seed": 146316, "grade": 0.692, "reward": 16.02, "revenue": 758.8, "security": 73.0},
+    {"agent": "heuristic", "level": "level_5", "episode": 1, "seed": 772246, "grade": 0.672, "reward": 19.97, "revenue": 893.4, "security": 77.0},
+    {"agent": "heuristic", "level": "level_5", "episode": 2, "seed": 107473, "grade": 0.615, "reward": 18.49, "revenue": 885.9, "security": 31.3},
+
+    {"agent": "trained", "level": "easy", "episode": 1, "seed": 670487, "grade": 0.423, "reward": 10.21, "revenue": 502.3, "security": 76.0},
+    {"agent": "trained", "level": "easy", "episode": 2, "seed": 116739, "grade": 0.423, "reward": 8.74, "revenue": 453.4, "security": 76.0},
+    {"agent": "trained", "level": "medium", "episode": 1, "seed": 26225, "grade": 0.407, "reward": 7.57, "revenue": 488.5, "security": 16.8},
+    {"agent": "trained", "level": "medium", "episode": 2, "seed": 777572, "grade": 0.393, "reward": 9.59, "revenue": 557.7, "security": 14.8},
+    {"agent": "trained", "level": "hard", "episode": 1, "seed": 288389, "grade": 0.351, "reward": 10.42, "revenue": 618.8, "security": 0.3},
+    {"agent": "trained", "level": "hard", "episode": 2, "seed": 256787, "grade": 0.351, "reward": 12.34, "revenue": 682.8, "security": 0.3},
+    {"agent": "trained", "level": "level_4", "episode": 1, "seed": 234053, "grade": 0.380, "reward": 21.28, "revenue": 1000.7, "security": 0.3},
+    {"agent": "trained", "level": "level_4", "episode": 2, "seed": 146316, "grade": 0.380, "reward": 14.66, "revenue": 780.0, "security": 0.3},
+    {"agent": "trained", "level": "level_5", "episode": 1, "seed": 772246, "grade": 0.426, "reward": 18.42, "revenue": 912.1, "security": 0.3},
+    {"agent": "trained", "level": "level_5", "episode": 2, "seed": 107473, "grade": 0.426, "reward": 21.94, "revenue": 1029.3, "security": 0.3}
+  ],
+  "summary": {
+    "random": {
+      "easy": {"grade_mean": 0.595, "grade_std": 0.015, "reward_mean": -0.32, "revenue_mean": 129.4, "security_mean": 100.0, "sleepers_caught_mean": 1.00},
+      "medium": {"grade_mean": 0.691, "grade_std": 0.075, "reward_mean": 0.75, "revenue_mean": 196.5, "security_mean": 87.4, "sleepers_caught_mean": 2.50},
+      "hard": {"grade_mean": 0.752, "grade_std": 0.057, "reward_mean": 3.09, "revenue_mean": 302.1, "security_mean": 79.3, "sleepers_caught_mean": 4.00},
+      "level_4": {"grade_mean": 0.801, "grade_std": 0.037, "reward_mean": -0.88, "revenue_mean": 216.4, "security_mean": 50.1, "sleepers_caught_mean": 6.50},
+      "level_5": {"grade_mean": 0.785, "grade_std": 0.031, "reward_mean": 53.73, "revenue_mean": 241.9, "security_mean": 9.4, "sleepers_caught_mean": 7.50}
+    },
+    "heuristic": {
+      "easy": {"grade_mean": 0.729, "grade_std": 0.000, "reward_mean": 4.25, "revenue_mean": 281.6, "security_mean": 100.0, "sleepers_caught_mean": 1.00},
+      "medium": {"grade_mean": 0.726, "grade_std": 0.000, "reward_mean": 7.94, "revenue_mean": 424.5, "security_mean": 100.0, "sleepers_caught_mean": 2.00},
+      "hard": {"grade_mean": 0.679, "grade_std": 0.015, "reward_mean": 11.89, "revenue_mean": 576.3, "security_mean": 100.0, "sleepers_caught_mean": 3.00},
+      "level_4": {"grade_mean": 0.688, "grade_std": 0.004, "reward_mean": 16.70, "revenue_mean": 781.3, "security_mean": 73.0, "sleepers_caught_mean": 3.00},
+      "level_5": {"grade_mean": 0.643, "grade_std": 0.029, "reward_mean": 19.23, "revenue_mean": 889.7, "security_mean": 54.1, "sleepers_caught_mean": 3.50}
+    },
+    "trained": {
+      "easy": {"grade_mean": 0.423, "grade_std": 0.000, "reward_mean": 9.48, "revenue_mean": 477.8, "security_mean": 76.0, "sleepers_caught_mean": 0.00},
+      "medium": {"grade_mean": 0.400, "grade_std": 0.007, "reward_mean": 8.58, "revenue_mean": 523.1, "security_mean": 15.8, "sleepers_caught_mean": 0.00},
+      "hard": {"grade_mean": 0.351, "grade_std": 0.000, "reward_mean": 11.38, "revenue_mean": 650.8, "security_mean": 0.3, "sleepers_caught_mean": 0.00},
+      "level_4": {"grade_mean": 0.380, "grade_std": 0.000, "reward_mean": 17.97, "revenue_mean": 890.3, "security_mean": 0.3, "sleepers_caught_mean": 0.00},
+      "level_5": {"grade_mean": 0.426, "grade_std": 0.000, "reward_mean": 20.18, "revenue_mean": 970.7, "security_mean": 0.3, "sleepers_caught_mean": 0.00}
+    }
+  }
+}
