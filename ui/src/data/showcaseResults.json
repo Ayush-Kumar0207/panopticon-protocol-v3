@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "created_at": null,
+  "model": null,
+  "levels": {
+    "easy": {},
+    "medium": {},
+    "hard": {},
+    "level_4": {},
+    "level_5": {}
+  }
+}

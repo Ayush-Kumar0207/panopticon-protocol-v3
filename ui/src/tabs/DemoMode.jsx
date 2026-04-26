@@ -194,7 +194,7 @@ export default function DemoMode() {
   return (
     <div className={styles.container}>
       <div className={`${styles.header} glass-panel`}>
-        <div className={styles.title} style={{color:p.color}}>{p.icon} AI Agent Demo — Trained PPO Playthrough</div>
+        <div className={styles.title} style={{color:p.color}}>{p.icon} AI Agent Demo — Fine-Tuned ARGUS Playthrough</div>
         <div className={styles.controls}>
           <div className={styles.phaseNav}>
             {PHASES.map((_,i)=>(

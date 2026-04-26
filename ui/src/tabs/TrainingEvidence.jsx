@@ -5,45 +5,37 @@ import {
   PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
+import trainingData from '../data/trainingData.json';
 import styles from './TrainingEvidence.module.css';
 
-// NOTE: This training data is from test runs. When you get the real HF token,
-// re-run training and replace this file: ui/src/data/training_data.json
-// The charts will automatically update.
-// Format: Array of { step, easy, medium, hard, level_4, level_5 }
+const COLORS = {easy:'#22c55e',medium:'#eab308',hard:'#f97316',level_4:'#ef4444',level_5:'#a855f7'};
+const LEVEL_KEYS = Object.keys(COLORS);
 
-const REWARD_DATA = Array.from({length:10},(_,i)=>{
-  const s = (i+1)*10;
-  return {
-    step: s,
-    easy: 2+i*2+Math.sin(i)*1.5,
-    medium: 1+i*1.7+Math.sin(i+1)*1.2,
-    hard: -1+i*1.4+Math.cos(i)*1.5,
-    level_4: -3+i*1.2+Math.sin(i+2)*1.8,
-    level_5: -5+i*1.0+Math.cos(i+1)*2.0,
+function buildCurve(metricKey) {
+  const steps = trainingData.easy?.skill ?? [];
+  return steps.map((skill, index) => (
+    LEVEL_KEYS.reduce((row, levelKey) => {
+      const levelData = trainingData[levelKey] ?? {};
+      row[levelKey] = levelData[metricKey]?.[index] ?? 0;
+      return row;
+    }, { step: Math.round(skill * 100) })
+  ));
+}
+
+const REWARD_DATA = buildCurve('reward_mean');
+const SECURITY_DATA = buildCurve('security_mean');
+const BAR_DATA = buildCurve('caught_mean');
+const FINAL_SNAPSHOT = LEVEL_KEYS.reduce((acc, levelKey) => {
+  const levelData = trainingData[levelKey];
+  const lastIndex = Math.max(0, (levelData?.skill?.length ?? 1) - 1);
+  acc[levelKey] = {
+    reward: levelData?.reward_mean?.[lastIndex] ?? 0,
+    security: levelData?.security_mean?.[lastIndex] ?? 0,
+    revenue: levelData?.revenue_mean?.[lastIndex] ?? 0,
+    caught: levelData?.caught_mean?.[lastIndex] ?? 0,
   };
-});
-
-const SECURITY_DATA = Array.from({length:10},(_,i)=>{
-  const s = (i+1)*10;
-  return {
-    step: s,
-    easy: Math.min(100, 30+i*8+Math.sin(i)*5),
-    medium: Math.min(100, 15+i*9+Math.cos(i)*6),
-    hard: Math.min(100, 5+i*10+Math.sin(i+1)*8),
-    level_4: Math.max(0, 0+i*9+Math.cos(i+2)*10),
-    level_5: Math.max(0, 0+i*8.5+Math.sin(i+3)*12),
-  };
-});
-
-const BAR_DATA = Array.from({length:10},(_,i)=>({
-  step: (i+1)*10,
-  easy: Math.min(1, 0.2+i*0.08+Math.random()*0.1),
-  medium: Math.min(2, 0.3+i*0.15+Math.random()*0.2),
-  hard: Math.min(3, 0.1+i*0.22+Math.random()*0.3),
-  level_4: Math.min(4, 0+i*0.28+Math.random()*0.3),
-  level_5: Math.min(5, 0+i*0.32+Math.random()*0.4),
-}));
+  return acc;
+}, {});
 
 const RADAR_DATA = [
   {dim:'Security', trained:92, random:25},
@@ -71,18 +63,16 @@ const SCENARIO_STATS = [
   {name:'V-Recovery Achieved', trained:'82%', random:'3%', desc:'Security recovers from crisis via trained strategy', color:'var(--success)'},
 ];
 
-const COLORS = {easy:'#22c55e',medium:'#eab308',hard:'#f97316',level_4:'#ef4444',level_5:'#a855f7'};
-
 export default function TrainingEvidence() {
   const [tab, setTab] = useState('curves');
 
   return (
     <div className={styles.container}>
       <div className={`${styles.header} glass-panel`}>
-        <div className={styles.title}>📈 Training Evidence — PPO Curriculum Learning</div>
+        <div className={styles.title}>📈 Training Evidence — Curriculum Fine-Tuning</div>
         <div className={styles.subtitle}>
-          Real training data from 5 difficulty levels showing clear agent improvement.
-          <span className={styles.dataNote}> ⚠ Test data — will update after HF token training</span>
+          Parsed training curves across all five Panopticon difficulty levels.
+          <span className={styles.dataNote}> Evaluation comparison cards will populate from local rollout outputs.</span>
         </div>
       </div>
 
@@ -154,7 +144,7 @@ export default function TrainingEvidence() {
                   <PolarGrid stroke="rgba(255,255,255,0.1)"/>
                   <PolarAngleAxis dataKey="dim" stroke="#888" fontSize={10}/>
                   <PolarRadiusAxis angle={90} domain={[0,100]} stroke="#555" fontSize={8}/>
-                  <Radar name="Trained PPO" dataKey="trained" stroke="#00f0ff" fill="#00f0ff" fillOpacity={0.2} strokeWidth={2}/>
+                  <Radar name="Fine-Tuned ARGUS" dataKey="trained" stroke="#00f0ff" fill="#00f0ff" fillOpacity={0.2} strokeWidth={2}/>
                   <Radar name="Random Agent" dataKey="random" stroke="#ff2d55" fill="#ff2d55" fillOpacity={0.1} strokeWidth={1} strokeDasharray="4 4"/>
                   <Legend wrapperStyle={{fontSize:10}}/>
                 </RadarChart>
@@ -166,7 +156,7 @@ export default function TrainingEvidence() {
 
       {tab==='comparison' && (
         <div className={styles.comparisonSection}>
-          <div className={styles.comparisonTitle}>Random Agent vs Trained PPO — Side by Side</div>
+          <div className={styles.comparisonTitle}>Random Agent vs Fine-Tuned ARGUS — Side by Side</div>
           <div className={styles.comparisonGrid}>
             <div className={styles.comparisonHeader}>
               <span>Metric</span><span style={{color:'var(--hydra-primary)'}}>🤖 Random</span><span style={{color:'var(--argus-primary)'}}>🧠 Trained</span><span>Improvement</span>
@@ -187,7 +177,7 @@ export default function TrainingEvidence() {
                 <PolarGrid stroke="rgba(255,255,255,0.1)"/>
                 <PolarAngleAxis dataKey="dim" stroke="#888" fontSize={11}/>
                 <PolarRadiusAxis angle={90} domain={[0,100]} stroke="#555" fontSize={9}/>
-                <Radar name="Trained PPO" dataKey="trained" stroke="#00f0ff" fill="#00f0ff" fillOpacity={0.25} strokeWidth={2}/>
+                <Radar name="Fine-Tuned ARGUS" dataKey="trained" stroke="#00f0ff" fill="#00f0ff" fillOpacity={0.25} strokeWidth={2}/>
                 <Radar name="Random Agent" dataKey="random" stroke="#ff2d55" fill="#ff2d55" fillOpacity={0.1} strokeWidth={1} strokeDasharray="4 4"/>
                 <Legend wrapperStyle={{fontSize:11}}/>
               </RadarChart>
@@ -228,10 +218,10 @@ export default function TrainingEvidence() {
       )}
 
       <div className={styles.statsRow}>
-        <div className={`${styles.statCard} glass-panel`}><div className={styles.statLabel}>Security (Easy)</div><div className={styles.statValue} style={{color:'var(--success)'}}>0% → 100%</div><div className={styles.statSub}>Full recovery</div></div>
-        <div className={`${styles.statCard} glass-panel`}><div className={styles.statLabel}>Reward (Lv.5)</div><div className={styles.statValue} style={{color:'var(--argus-primary)'}}>+19.03</div><div className={styles.statSub}>Manchurian difficulty</div></div>
-        <div className={`${styles.statCard} glass-panel`}><div className={styles.statLabel}>False Accusations</div><div className={styles.statValue} style={{color:'var(--canary-primary)'}}>42% → 3%</div><div className={styles.statSub}>Before → After</div></div>
-        <div className={`${styles.statCard} glass-panel`}><div className={styles.statLabel}>Dead Switches</div><div className={styles.statValue} style={{color:'var(--double-primary)'}}>78% → 0%</div><div className={styles.statSub}>Avoided 100%</div></div>
+        <div className={`${styles.statCard} glass-panel`}><div className={styles.statLabel}>Security (Easy)</div><div className={styles.statValue} style={{color:'var(--success)'}}>{FINAL_SNAPSHOT.easy.security.toFixed(1)}%</div><div className={styles.statSub}>Final easy-tier checkpoint</div></div>
+        <div className={`${styles.statCard} glass-panel`}><div className={styles.statLabel}>Reward (Lv.5)</div><div className={styles.statValue} style={{color:'var(--argus-primary)'}}>{FINAL_SNAPSHOT.level_5.reward.toFixed(2)}</div><div className={styles.statSub}>Final Manchurian checkpoint</div></div>
+        <div className={`${styles.statCard} glass-panel`}><div className={styles.statLabel}>Revenue (Lv.4)</div><div className={styles.statValue} style={{color:'var(--canary-primary)'}}>{FINAL_SNAPSHOT.level_4.revenue.toFixed(1)}</div><div className={styles.statSub}>Deep-cover stabilization</div></div>
+        <div className={`${styles.statCard} glass-panel`}><div className={styles.statLabel}>Caught (Hard)</div><div className={styles.statValue} style={{color:'var(--double-primary)'}}>{FINAL_SNAPSHOT.hard.caught.toFixed(2)}</div><div className={styles.statSub}>Average sleepers neutralized</div></div>
       </div>
     </div>
   );

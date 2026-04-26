@@ -7,7 +7,8 @@ pydantic==2.6.1
 httpx==0.26.0
 
 # LLM client (for inference.py)
-openai==1.12.0
+# openenv-core requires OpenAI 2.7.2+.
+openai>=2.7.2,<3.0.0
 
 # OpenEnv core (required for hackathon validation)
 openenv-core==0.2.1
@@ -19,11 +20,17 @@ stable-baselines3==2.2.1
 numpy==1.26.4
 tqdm==4.66.1
 
-# LLM fine-tuning with TRL (for train_trl.py)
-trl>=0.8.0
-transformers>=4.38.0
-accelerate>=0.27.0
-peft>=0.9.0
+# LLM fine-tuning and local evaluation stack
+# Keep these aligned with the HF Space container to avoid transformers /
+# huggingface-hub compatibility issues during local inference.
+trl==0.12.2
+transformers==4.46.3
+tokenizers==0.20.3
+accelerate==0.34.2
+peft==0.12.0
+datasets==3.1.0
+huggingface-hub==0.26.5
+safetensors==0.4.5
 
 # Visualization
 matplotlib>=3.8.0
