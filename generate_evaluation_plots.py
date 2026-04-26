@@ -468,7 +468,7 @@ def render_evaluation_plots(payload: dict[str, Any], plot_dir: Path, timeline_le
 def build_cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate evaluation plots from a Panopticon evaluation JSON file")
     parser.add_argument("--input", default="evaluationResults.json", help="Path to evaluation JSON produced by full_evaluation.py")
-    parser.add_argument("--plot-dir", default="plots/evaluation", help="Directory for generated plots")
+    parser.add_argument("--plot-dir", default="plots", help="Directory for generated plots")
     parser.add_argument("--timeline-level", default="level_5", choices=LEVELS, help="Level used for reward/timeline profiles")
     return parser
 

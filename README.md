@@ -331,31 +331,31 @@ This is exactly why we added a dedicated reward-analysis pass: the raw scalar re
 
 <table>
   <tr>
-    <td width="50%"><img src="plots/evaluation/comparison_grades.png" alt="Comparison grades"></td>
-    <td width="50%"><img src="plots/evaluation/comparison_operations.png" alt="Comparison operations"></td>
+    <td width="50%"><img src="plots/comparison_grades.png" alt="Comparison grades"></td>
+    <td width="50%"><img src="plots/comparison_operations.png" alt="Comparison operations"></td>
   </tr>
   <tr>
     <td><sub><b>Figure 8.</b> Composite grade comparison with variance bars across all five Panopticon levels.</sub></td>
     <td><sub><b>Figure 9.</b> Operational comparison for reward, revenue, security, and sleepers caught.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="plots/evaluation/comparison_radar.png" alt="Comparison radar"></td>
-    <td width="50%"><img src="plots/evaluation/reward_distributions.png" alt="Reward distributions"></td>
+    <td width="50%"><img src="plots/comparison_radar.png" alt="Comparison radar"></td>
+    <td width="50%"><img src="plots/reward_distributions.png" alt="Reward distributions"></td>
   </tr>
   <tr>
     <td><sub><b>Figure 10.</b> Five-dimension grader radar chart summarizing security, revenue, intelligence, adaptability, and efficiency.</sub></td>
     <td><sub><b>Figure 11.</b> Research-style reward distribution panels showing spread, variance, and level-wise reward trends for each agent family.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="plots/evaluation/reward_frontier.png" alt="Reward frontier"></td>
-    <td width="50%"><img src="plots/evaluation/reward_turn_dynamics.png" alt="Reward turn dynamics"></td>
+    <td width="50%"><img src="plots/reward_frontier.png" alt="Reward frontier"></td>
+    <td width="50%"><img src="plots/reward_turn_dynamics.png" alt="Reward turn dynamics"></td>
   </tr>
   <tr>
     <td><sub><b>Figure 12.</b> Reward-security frontier with marker size proportional to revenue, exposing the trained agent's reward-vs-security tradeoff.</sub></td>
     <td><sub><b>Figure 13.</b> Instantaneous and cumulative reward profiles over normalized episode progress for the selected scenario tier.</sub></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="plots/evaluation/scenario_timeline.png" alt="Scenario timeline"></td>
+    <td colspan="2"><img src="plots/scenario_timeline.png" alt="Scenario timeline"></td>
   </tr>
   <tr>
     <td colspan="2"><sub><b>Figure 14.</b> Representative turn-by-turn replay with reward, cumulative reward, revenue, and security trajectories for the selected evaluation level.</sub></td>
@@ -371,7 +371,7 @@ python full_evaluation.py \
   --model trained_model \
   --episodes 3 \
   --output evaluationResults.json \
-  --plot-dir plots/evaluation \
+  --plot-dir plots \
   --showcase-output ui/src/data/showcaseResults.json
 ```
 
@@ -380,7 +380,7 @@ To regenerate the figure suite from a saved evaluation JSON without rerunning in
 ```bash
 python generate_evaluation_plots.py \
   --input evaluationResults.json \
-  --plot-dir plots/evaluation \
+  --plot-dir plots \
   --timeline-level level_5
 ```
 

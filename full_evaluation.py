@@ -79,7 +79,7 @@ def build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--episodes", type=int, default=5, help="Episodes per level and per agent")
     parser.add_argument("--seed", type=int, default=42, help="Base seed used to create the fair comparison schedule")
     parser.add_argument("--output", default="evaluation_results.json", help="JSON output path")
-    parser.add_argument("--plot-dir", default="plots/evaluation", help="Directory for generated plots")
+    parser.add_argument("--plot-dir", default="plots", help="Directory for generated plots")
     parser.add_argument("--timeline-level", default="level_5", choices=LEVELS, help="Level used for representative timeline plot")
     parser.add_argument("--showcase-output", default="", help="Optional dashboard-ready showcase JSON path")
     parser.add_argument("--max-steps", type=int, default=300, help="Maximum steps per episode")
