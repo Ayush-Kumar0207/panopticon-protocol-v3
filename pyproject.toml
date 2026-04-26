@@ -16,10 +16,10 @@ keywords = [
     "canary-traps", "double-agents", "deception-games",
 ]
 dependencies = [
-    "fastapi>=0.109.0",
+    "fastapi>=0.115.12",
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.5.0",
-    "httpx>=0.26.0",
+    "httpx>=0.28.1",
     "openai>=2.7.2,<3.0.0",
     "openenv-core>=0.2.0",
     "gymnasium>=0.29.0",
@@ -30,7 +30,7 @@ dependencies = [
 train = [
     "torch>=2.2.0",
     "stable-baselines3>=2.2.0",
-    "tqdm>=4.66.0",
+    "tqdm>=4.66.3",
 ]
 
 [project.entry-points."openenv.server"]
