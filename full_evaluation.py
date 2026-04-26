@@ -6,15 +6,10 @@ from __future__ import annotations
 import argparse
 import json
 import random
-from math import pi
 from pathlib import Path
 from typing import Any
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
+from generate_evaluation_plots import render_evaluation_plots, to_builtin
 from inference_local import (
     DEFAULT_MODEL,
     LEVELS,
@@ -27,17 +22,8 @@ from inference_local import (
     utc_now_iso,
 )
 
-LEVEL_LABELS = {
-    "easy": "Easy",
-    "medium": "Medium",
-    "hard": "Hard",
-    "level_4": "Level 4",
-    "level_5": "Level 5",
-}
 AGENT_ORDER = ["random", "heuristic", "trained"]
 AGENT_LABELS = {"random": "Random", "heuristic": "Heuristic", "trained": "Trained"}
-AGENT_COLORS = {"random": "#ff5a5f", "heuristic": "#f59e0b", "trained": "#06b6d4"}
-DIMENSIONS = ["security", "revenue", "intelligence", "adaptability", "efficiency"]
 
 
 def overall_summary(episodes: list[dict[str, Any]], level_label: str) -> dict[str, Any]:
@@ -70,141 +56,6 @@ def print_summary_table(agent_payloads: dict[str, dict[str, Any]]) -> None:
         print("-" * 92)
 
 
-def ensure_plot_dir(plot_dir: Path) -> None:
-    plot_dir.mkdir(parents=True, exist_ok=True)
-
-
-def plot_grade_comparison(agent_payloads: dict[str, dict[str, Any]], output_path: Path) -> None:
-    fig, ax = plt.subplots(figsize=(11, 6))
-    width = 0.24
-    x_positions = list(range(len(LEVELS)))
-
-    for idx, agent_key in enumerate(AGENT_ORDER):
-        summary = agent_payloads[agent_key]["summary"]
-        means = [summary[level]["grade_mean"] for level in LEVELS]
-        stds = [summary[level]["grade_std"] for level in LEVELS]
-        shifted = [x + (idx - 1) * width for x in x_positions]
-        ax.bar(
-            shifted,
-            means,
-            width=width,
-            color=AGENT_COLORS[agent_key],
-            label=AGENT_LABELS[agent_key],
-            yerr=stds,
-            capsize=4,
-            alpha=0.9,
-        )
-
-    ax.set_xticks(x_positions, [LEVEL_LABELS[level] for level in LEVELS])
-    ax.set_ylim(0.0, 1.05)
-    ax.set_ylabel("Composite grade")
-    ax.set_title("Panopticon ARGUS Evaluation: grade by level and agent")
-    ax.grid(axis="y", alpha=0.25)
-    ax.legend(frameon=False)
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=220)
-    plt.close(fig)
-
-
-def plot_operations_comparison(agent_payloads: dict[str, dict[str, Any]], output_path: Path) -> None:
-    metrics = [
-        ("reward_mean", "Reward", "Mean episode reward"),
-        ("revenue_mean", "Revenue", "Final enterprise revenue"),
-        ("security_mean", "Security", "Final security score"),
-        ("sleepers_caught_mean", "Caught", "Sleepers caught"),
-    ]
-    fig, axes = plt.subplots(2, 2, figsize=(14, 9))
-    axes_flat = axes.flatten()
-    width = 0.24
-    x_positions = list(range(len(LEVELS)))
-
-    for ax, (metric_key, short_label, title) in zip(axes_flat, metrics):
-        for idx, agent_key in enumerate(AGENT_ORDER):
-            summary = agent_payloads[agent_key]["summary"]
-            means = [summary[level][metric_key] for level in LEVELS]
-            shifted = [x + (idx - 1) * width for x in x_positions]
-            ax.bar(
-                shifted,
-                means,
-                width=width,
-                color=AGENT_COLORS[agent_key],
-                label=AGENT_LABELS[agent_key],
-                alpha=0.9,
-            )
-        ax.set_xticks(x_positions, [LEVEL_LABELS[level] for level in LEVELS], rotation=15)
-        ax.set_title(title)
-        ax.grid(axis="y", alpha=0.25)
-        ax.set_ylabel(short_label)
-
-    handles, labels = axes_flat[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=3, frameon=False, bbox_to_anchor=(0.5, 1.01))
-    fig.suptitle("Operational comparison across all five Panopticon levels", y=1.04)
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=220, bbox_inches="tight")
-    plt.close(fig)
-
-
-def plot_radar_comparison(agent_payloads: dict[str, dict[str, Any]], output_path: Path) -> None:
-    angles = [idx / float(len(DIMENSIONS)) * 2 * pi for idx in range(len(DIMENSIONS))]
-    angles += angles[:1]
-
-    fig = plt.figure(figsize=(8, 8))
-    ax = plt.subplot(111, polar=True)
-
-    for agent_key in AGENT_ORDER:
-        overall = agent_payloads[agent_key]["overall"]["grader_dimensions"]
-        values = [overall[dimension]["mean"] * 100 for dimension in DIMENSIONS]
-        values += values[:1]
-        ax.plot(angles, values, color=AGENT_COLORS[agent_key], linewidth=2, label=AGENT_LABELS[agent_key])
-        ax.fill(angles, values, color=AGENT_COLORS[agent_key], alpha=0.14)
-
-    ax.set_xticks(angles[:-1], [dimension.title() for dimension in DIMENSIONS])
-    ax.set_ylim(0, 100)
-    ax.set_yticks([20, 40, 60, 80, 100])
-    ax.set_yticklabels(["20", "40", "60", "80", "100"])
-    ax.set_title("Average grader dimensions across all evaluated episodes", pad=25)
-    ax.legend(loc="upper right", bbox_to_anchor=(1.18, 1.08), frameon=False)
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=220)
-    plt.close(fig)
-
-
-def plot_timeline_comparison(agent_payloads: dict[str, dict[str, Any]], output_path: Path, level: str) -> None:
-    fig, axes = plt.subplots(3, 1, figsize=(12, 11), sharex=True)
-    metric_specs = [
-        ("reward", "Per-turn reward"),
-        ("metrics_after.enterprise_revenue", "Enterprise revenue"),
-        ("metrics_after.security_score", "Security score"),
-    ]
-
-    for agent_key in AGENT_ORDER:
-        representative = select_representative_episode(agent_payloads[agent_key]["episodes"][level])
-        timeline = representative.get("timeline", [])
-        x_values = [item["turn"] for item in timeline]
-        reward_values = [item["reward"] for item in timeline]
-        revenue_values = [item["metrics_after"]["enterprise_revenue"] for item in timeline]
-        security_values = [item["metrics_after"]["security_score"] for item in timeline]
-        series = [reward_values, revenue_values, security_values]
-
-        for ax, values, (_, title) in zip(axes, series, metric_specs):
-            ax.plot(
-                x_values,
-                values,
-                label=AGENT_LABELS[agent_key],
-                color=AGENT_COLORS[agent_key],
-                linewidth=2,
-            )
-            ax.set_title(title)
-            ax.grid(alpha=0.25)
-
-    axes[-1].set_xlabel(f"Turn ({LEVEL_LABELS[level]})")
-    axes[0].legend(frameon=False, ncol=3, loc="upper right")
-    fig.suptitle(f"Representative timeline comparison on {LEVEL_LABELS[level]}", y=0.98)
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=220)
-    plt.close(fig)
-
-
 def write_showcase_payload(agent_payloads: dict[str, dict[str, Any]], output_path: Path, model_ref: str) -> None:
     showcase = {
         "schema_version": 1,
@@ -219,7 +70,7 @@ def write_showcase_payload(agent_payloads: dict[str, dict[str, Any]], output_pat
             "random": select_representative_episode(agent_payloads["random"]["episodes"][level]),
         }
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(showcase, indent=2), encoding="utf-8")
+    output_path.write_text(json.dumps(to_builtin(showcase), indent=2), encoding="utf-8")
 
 
 def build_cli() -> argparse.ArgumentParser:
@@ -241,7 +92,6 @@ def main() -> None:
     args = build_cli().parse_args()
     seed_plan = build_seed_plan(args.episodes, args.seed)
     plot_dir = Path(args.plot_dir)
-    ensure_plot_dir(plot_dir)
 
     trained_policy = LocalModelPolicy(args.model, deterministic=not args.sampled)
     heuristic_policy = HeuristicPolicy()
@@ -299,18 +149,6 @@ def main() -> None:
                 row["agent"] = agent_key
                 comparison_rows.append(row)
 
-        plot_files = {
-            "comparison_grades": str(plot_dir / "comparison_grades.png"),
-            "comparison_operations": str(plot_dir / "comparison_operations.png"),
-            "comparison_radar": str(plot_dir / "comparison_radar.png"),
-            "scenario_timeline": str(plot_dir / "scenario_timeline.png"),
-        }
-
-        plot_grade_comparison(agent_payloads, Path(plot_files["comparison_grades"]))
-        plot_operations_comparison(agent_payloads, Path(plot_files["comparison_operations"]))
-        plot_radar_comparison(agent_payloads, Path(plot_files["comparison_radar"]))
-        plot_timeline_comparison(agent_payloads, Path(plot_files["scenario_timeline"]), args.timeline_level)
-
         payload = {
             "schema_version": 1,
             "created_at": utc_now_iso(),
@@ -325,8 +163,10 @@ def main() -> None:
             "seed_plan": seed_plan,
             "agents": agent_payloads,
             "comparison_rows": comparison_rows,
-            "plots": plot_files,
+            "plots": {},
         }
+        payload = to_builtin(payload)
+        payload["plots"] = render_evaluation_plots(payload, plot_dir, args.timeline_level)
 
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)

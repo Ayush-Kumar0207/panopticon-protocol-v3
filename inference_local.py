@@ -70,6 +70,26 @@ def compact_observation(obs: EnvironmentObservation) -> dict[str, Any]:
     return obs.model_dump()
 
 
+def to_builtin(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): to_builtin(subvalue) for key, subvalue in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [to_builtin(item) for item in value]
+    if hasattr(value, "tolist") and callable(value.tolist):
+        try:
+            return to_builtin(value.tolist())
+        except TypeError:
+            pass
+    if hasattr(value, "item") and callable(value.item):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            pass
+    if isinstance(value, Path):
+        return str(value)
+    return value
+
+
 def serialize_action(action: AgentAction) -> dict[str, Any]:
     return action.model_dump()
 
@@ -614,7 +634,7 @@ def main() -> None:
         if args.output:
             output_path = Path(args.output)
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            output_path.write_text(json.dumps(to_builtin(payload), indent=2), encoding="utf-8")
             print(f"\n[*] Wrote inference results to {output_path}")
     finally:
         policy.close()

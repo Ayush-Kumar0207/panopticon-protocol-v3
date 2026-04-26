@@ -17,7 +17,7 @@
 
 🏆 **Meta PyTorch OpenEnv Hackathon x Scaler — Grand Finale 2026**
 
-🤗 **Hugging Face Space**: [HF_SPACE_LINK](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
+🤗 **Hugging Face Space**: [panopticon-protocol-v3](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
 📓 **Training Notebook**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
 📝 **Blog Post**: [TODO_HF_BLOG_LINK](https://huggingface.co/blog/)
 
@@ -308,6 +308,81 @@ Artifacts written to `plots/`:
 - `curriculum_heatmap.png`
 
 > 📊 **Everything above is derived from the committed raw training log rather than hand-entered numbers.**
+
+### A10G Evaluation Snapshot (April 26, 2026)
+
+We then ran a matched-seed benchmark on Hugging Face A10G hardware with **2 episodes per level** for each agent family. The benchmark exposed an important failure mode in the fine-tuned model: it learns to maximize enterprise revenue and dense reward, but it collapses on the security objective and fails to catch sleepers on the harder tiers.
+
+| Agent | Easy Grade | Medium Grade | Hard Grade | Level 4 Grade | Level 5 Grade |
+|---|---:|---:|---:|---:|---:|
+| **Random** | 0.595 | 0.691 | 0.752 | 0.801 | 0.785 |
+| **Heuristic** | 0.729 | 0.726 | 0.679 | 0.688 | 0.643 |
+| **Trained** | 0.423 | 0.400 | 0.351 | 0.380 | 0.426 |
+
+| Agent | Mean Reward | Mean Revenue | Mean Security | Mean Sleepers Caught | Diagnostic Read |
+|---|---:|---:|---:|---:|---|
+| **Random** | 11.27 | 217.2 | 65.2 | 4.30 | Chaotic but occasionally security-positive on later tiers |
+| **Heuristic** | 12.00 | 590.7 | 85.4 | 2.50 | Reliable baseline with strong security discipline |
+| **Trained** | 13.52 | 702.5 | 18.5 | 0.00 | Reward/revenue seeking with near-total security collapse |
+
+This is exactly why we added a dedicated reward-analysis pass: the raw scalar reward alone suggests the trained agent is competitive, but the grader and operational traces show clear **reward misalignment**.
+
+### Evaluation & Reward Plot Gallery
+
+<table>
+  <tr>
+    <td width="50%"><img src="plots/evaluation/comparison_grades.png" alt="Comparison grades"></td>
+    <td width="50%"><img src="plots/evaluation/comparison_operations.png" alt="Comparison operations"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Figure 8.</b> Composite grade comparison with variance bars across all five Panopticon levels.</sub></td>
+    <td><sub><b>Figure 9.</b> Operational comparison for reward, revenue, security, and sleepers caught.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="plots/evaluation/comparison_radar.png" alt="Comparison radar"></td>
+    <td width="50%"><img src="plots/evaluation/reward_distributions.png" alt="Reward distributions"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Figure 10.</b> Five-dimension grader radar chart summarizing security, revenue, intelligence, adaptability, and efficiency.</sub></td>
+    <td><sub><b>Figure 11.</b> Research-style reward distribution panels showing spread, variance, and level-wise reward trends for each agent family.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="plots/evaluation/reward_frontier.png" alt="Reward frontier"></td>
+    <td width="50%"><img src="plots/evaluation/reward_turn_dynamics.png" alt="Reward turn dynamics"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Figure 12.</b> Reward-security frontier with marker size proportional to revenue, exposing the trained agent's reward-vs-security tradeoff.</sub></td>
+    <td><sub><b>Figure 13.</b> Instantaneous and cumulative reward profiles over normalized episode progress for the selected scenario tier.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="plots/evaluation/scenario_timeline.png" alt="Scenario timeline"></td>
+  </tr>
+  <tr>
+    <td colspan="2"><sub><b>Figure 14.</b> Representative turn-by-turn replay with reward, cumulative reward, revenue, and security trajectories for the selected evaluation level.</sub></td>
+  </tr>
+</table>
+
+### Evaluation Reproducibility
+
+To rerun the full benchmark and generate the reward-analysis figures:
+
+```bash
+python full_evaluation.py \
+  --model trained_model \
+  --episodes 3 \
+  --output evaluationResults.json \
+  --plot-dir plots/evaluation \
+  --showcase-output ui/src/data/showcaseResults.json
+```
+
+To regenerate the figure suite from a saved evaluation JSON without rerunning inference:
+
+```bash
+python generate_evaluation_plots.py \
+  --input evaluationResults.json \
+  --plot-dir plots/evaluation \
+  --timeline-level level_5
+```
 
 ---
 
