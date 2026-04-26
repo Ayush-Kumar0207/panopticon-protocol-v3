@@ -19,6 +19,8 @@
 
 🤗 **Hugging Face Space**: [panopticon-protocol-v3](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
 📓 **Training Notebook**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
+📓 **Training Notebook**: [![Open In HF space]](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer/tree/main)
+
 📝 **Blog Post**: [TODO_HF_BLOG_LINK](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3/blob/main/blog.md)
 
 
