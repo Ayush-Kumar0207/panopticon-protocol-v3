@@ -17,10 +17,10 @@
 
 🏆 **Meta PyTorch OpenEnv Hackathon x Scaler — Grand Finale 2026**
 
-🤗 **Hugging Face Space**: [TODO_HF_SPACE_LINK](https://huggingface.co/spaces/)
+🤗 **Hugging Face Space**: [HF_SPACE_LINK](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
 📓 **Training Notebook**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
 📝 **Blog Post**: [TODO_HF_BLOG_LINK](https://huggingface.co/blog/)
-🎬 **Video Demo**: [TODO_YOUTUBE_LINK](https://youtube.com/)
+
 
 ---
 
