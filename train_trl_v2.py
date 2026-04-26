@@ -5,17 +5,15 @@ Panopticon Protocol v3 - stable TRL fine-tuning script
 Key fixes:
 1. Uses bf16 on supported GPUs like A10G
 2. Does not use device_map="auto" during training
-3. Lowers LR for stability
-4. Disables loss NaN filtering in logs so failures are visible
-5. Adds a first-batch label sanity check
-6. Saves outputs under a persistent root
-7. Resumes interrupted level training from checkpoints
-8. Skips already completed curriculum levels
-9. Saves merged model to the persistent root for upload
+3. Uses 20 episodes per level for faster runs
+4. Saves outputs under a persistent root
+5. Resumes interrupted level training from checkpoints
+6. Skips already completed curriculum levels
+7. Saves merged model to the persistent root for upload
 
 Usage:
-    python train_trl_v2.py --level easy --episodes 5
-    python train_trl_v2.py --curriculum --episodes 50 --merge
+    python train_trl_v2.py --level easy --episodes 20
+    python train_trl_v2.py --curriculum --episodes 20 --merge
 """
 
 from __future__ import annotations
@@ -52,14 +50,12 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 LORA_R = 16
 LORA_ALPHA = 32
-EPISODES_PER_LEVEL = 50
+EPISODES_PER_LEVEL = 20
 MAX_SEQ_LENGTH = 1024
 LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
 
-# Persistent root. On HF Spaces with persistent storage, /data persists across restarts.
-RUN_ROOT = Path(os.environ.get("TRAIN_ROOT", "/data/panopticon"))
+RUN_ROOT = Path(os.environ.get("TRAIN_ROOT", "/data/panopticon-ep20"))
 RUN_ROOT.mkdir(parents=True, exist_ok=True)
-
 STATE_PATH = RUN_ROOT / "curriculum_state.json"
 
 
@@ -90,16 +86,15 @@ RULES: Interrogate before terminating Gen-4+. Verify leaks before accusing. Plan
 Respond ONLY with a JSON object."""
 
 
-def cleanup_memory(*objects):
-    for obj in objects:
-        del obj
+def cleanup_cuda():
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
 
 def ordered_completed_levels(levels):
-    return [level for level in LEVELS if level in set(levels)]
+    level_set = set(levels)
+    return [level for level in LEVELS if level in level_set]
 
 
 def load_state():
@@ -120,12 +115,12 @@ def load_state():
 
 def save_state(state):
     tmp_path = STATE_PATH.with_suffix(".tmp")
-    state_to_save = {
+    payload = {
         "completed_levels": ordered_completed_levels(state.get("completed_levels", [])),
         "current_model": state.get("current_model", DEFAULT_MODEL),
     }
     with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(state_to_save, f)
+        json.dump(payload, f)
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp_path, STATE_PATH)
@@ -209,7 +204,7 @@ def parse_llm_action(text: str) -> AgentAction:
     return AgentAction(action_type="noop", reason="Parse failure")
 
 
-def generate_expert_trajectories(task_level: str, num_episodes: int = 50):
+def generate_expert_trajectories(task_level: str, num_episodes: int = 20):
     trajectories = []
     depts = [d.value for d in Department]
     channels = [c.value for c in LeakChannel]
@@ -442,8 +437,8 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     if last_checkpoint and not has_matching_data:
         raise RuntimeError(
             f"Found checkpoint '{last_checkpoint}' for level '{task_level}', but matching "
-            f"training data was not found at '{data_path}'. Restore that data file or delete "
-            f"the level output directory and restart the level cleanly."
+            f"training data was not found at '{data_path}'. Delete the partial level artifacts "
+            f"or restart this run in a fresh TRAIN_ROOT."
         )
 
     if has_matching_data:
@@ -486,7 +481,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         warmup_ratio=0.03,
         logging_steps=5,
         save_strategy="steps",
-        save_steps=100,
+        save_steps=50,
         save_total_limit=2,
         bf16=USE_BF16,
         fp16=USE_FP16,
@@ -571,7 +566,8 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     print(f"  [DONE] Model saved to {output_dir}/")
     sys.stdout.flush()
 
-    cleanup_memory(model, trainer)
+    del model, trainer
+    cleanup_cuda()
     return str(output_dir)
 
 
@@ -611,7 +607,8 @@ def merge_and_save_final_model(adapter_path: str, output_path: str):
     print(f"  [DONE] Merged model saved to {output_dir}/")
     sys.stdout.flush()
 
-    cleanup_memory(model, base_model)
+    del model, base_model
+    cleanup_cuda()
     return str(output_dir)
 
 
@@ -721,7 +718,8 @@ def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int 
     print(f"\n  Average Grade: {avg:.3f}")
     sys.stdout.flush()
 
-    cleanup_memory(model, base_model)
+    del model, base_model
+    cleanup_cuda()
     return avg
 
 
