@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from environment import Environment, StepResult
-from models import AgentAction, EnvironmentObservation, EnvironmentState, ActionType, SubAction
+from models import AgentAction, EnvironmentObservation, EnvironmentState, ActionType, SubAction, validate_action
 from grader import GRADERS, grade_episode as _grade_episode, list_graders, GraderResult
 from tasks import TASK_REGISTRY, get_task, list_tasks, list_tasks_with_graders
 
@@ -67,11 +67,34 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class AgentStatusResponse(BaseModel):
+    status: str
+    policy: str
+    model_ref: str
+    local_model_present: bool
+    loaded: bool
+    error: str | None = None
+
+
+class AgentStepResponse(BaseModel):
+    observation: dict
+    reward: float
+    done: bool
+    truncated: bool
+    info: dict
+    agent_action: dict
+    agent_policy: str
+    agent_raw_text: str = ""
+    model_info: dict | None = None
+
+
 # =============================================================================
 # ENVIRONMENT WRAPPER
 # =============================================================================
 
 _env: Environment | None = None
+_agent_policy: Any | None = None
+_agent_load_error: str | None = None
 
 
 def get_env() -> Environment:
@@ -79,6 +102,39 @@ def get_env() -> Environment:
     if _env is None:
         _env = Environment()
     return _env
+
+
+def resolve_agent_model_ref() -> str:
+    explicit_ref = os.environ.get("ARGUS_MODEL_REF")
+    if explicit_ref:
+        return explicit_ref
+
+    local_model = Path(__file__).parent / "trained_model"
+    if local_model.exists():
+        return str(local_model)
+
+    return "Ayush-Kumar0207/panopticon-argus-qwen-1.5B"
+
+
+def get_agent_policy():
+    global _agent_policy, _agent_load_error
+    if _agent_policy is not None:
+        return _agent_policy
+
+    try:
+        from inference_local import LocalModelPolicy
+
+        _agent_policy = LocalModelPolicy(
+            resolve_agent_model_ref(),
+            deterministic=True,
+            temperature=0.0,
+            top_p=1.0,
+        )
+        _agent_load_error = None
+        return _agent_policy
+    except Exception as exc:  # pragma: no cover - depends on local model/runtime availability
+        _agent_load_error = str(exc)
+        raise
 
 
 # =============================================================================
@@ -140,6 +196,41 @@ async def health_check():
     )
 
 
+@app.get("/agent/status", response_model=AgentStatusResponse)
+async def get_agent_status():
+    model_ref = resolve_agent_model_ref()
+    local_model_present = Path(model_ref).exists()
+
+    if _agent_policy is not None:
+        return AgentStatusResponse(
+            status="ready",
+            policy="trained",
+            model_ref=model_ref,
+            local_model_present=local_model_present,
+            loaded=True,
+            error=None,
+        )
+
+    if _agent_load_error:
+        return AgentStatusResponse(
+            status="error",
+            policy="trained",
+            model_ref=model_ref,
+            local_model_present=local_model_present,
+            loaded=False,
+            error=_agent_load_error,
+        )
+
+    return AgentStatusResponse(
+        status="configured",
+        policy="trained",
+        model_ref=model_ref,
+        local_model_present=local_model_present,
+        loaded=False,
+        error=None,
+    )
+
+
 @app.post("/reset", response_model=ObservationResponse)
 async def reset_environment(request: ResetRequest | None = None):
     try:
@@ -195,6 +286,47 @@ async def step_environment(request: StepRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@app.post("/agent/step", response_model=AgentStepResponse)
+async def step_with_trained_agent():
+    try:
+        env = get_env()
+        obs = env.get_observation()
+        policy = get_agent_policy()
+        decision = policy.act(obs)
+
+        is_valid, validation_error = validate_action(decision.action, obs)
+        if not is_valid:
+            decision.action = AgentAction(
+                action_type=ActionType.NOOP.value,
+                reason=f"Model produced invalid action: {validation_error}",
+            )
+
+        result = env.step(decision.action)
+        info = dict(result.info)
+        info["agent_action"] = decision.action.model_dump()
+        if decision.action.reason:
+            info["agent_reason"] = decision.action.reason
+
+        model_info = policy.model_info() if hasattr(policy, "model_info") else None
+        return AgentStepResponse(
+            observation=result.observation.model_dump(),
+            reward=result.reward,
+            done=result.done,
+            truncated=result.truncated,
+            info=info,
+            agent_action=decision.action.model_dump(),
+            agent_policy=getattr(policy, "policy_name", "trained"),
+            agent_raw_text=decision.raw_text,
+            model_info=model_info,
+        )
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Trained agent unavailable: {str(e)}")
 
 
 @app.get("/observation", response_model=ObservationResponse)

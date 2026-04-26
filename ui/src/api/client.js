@@ -37,3 +37,18 @@ export async function getHealth() {
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+export async function getAgentStatus() {
+  const res = await fetch(`${BASE}/agent/status`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function stepWithAgent() {
+  const res = await fetch(`${BASE}/agent/step`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
