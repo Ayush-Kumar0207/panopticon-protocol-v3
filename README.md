@@ -48,6 +48,11 @@ You are **ARGUS**, an AI security chief defending a corporate network of 30+ wor
 
 Your goal: **Identify and neutralize all sleepers while keeping the company profitable.** Fire too many innocents and the company goes bankrupt. Ignore the spies and they detonate dead-man's switches, leaking critical data.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Ayush-Kumar0207/panopticon-protocol-v3/main/docs/ui/command-center.png" alt="Command Center Dashboard" width="100%">
+</p>
+<sub><b>Command Center.</b> The primary interface for monitoring enterprise revenue, security levels, and network topology while managing workers and departments.</sub>
+
 ### The Core Tension
 
 ```
@@ -69,7 +74,7 @@ The optimal strategy lives in the narrow corridor between paranoia and negligenc
 No single mechanic is complex — but **together they create emergent strategic depth** that demands genuine multi-step reasoning:
 
 <p align="center">
-  <img src="static/ui_architecture.png" alt="Architecture Dashboard showing 7 Stacking Mechanics" width="100%">
+  <img src="https://raw.githubusercontent.com/Ayush-Kumar0207/panopticon-protocol-v3/main/docs/ui/architecture.png" alt="Architecture Dashboard showing 7 Stacking Mechanics" width="100%">
 </p>
 <sub><b>Architecture Dashboard.</b> The UI visualizes the 7 core mechanics and meta-innovations that force the agent to adapt its counter-intelligence strategies dynamically.</sub>
 
@@ -90,7 +95,7 @@ No single mechanic is complex — but **together they create emergent strategic 
 Every episode follows a dramatic arc from calm to crisis to triumph:
 
 <p align="center">
-  <img src="static/ui_agent_demo.png" alt="AI Agent Demo Dashboard showing First Contact Phase" width="100%">
+  <img src="https://raw.githubusercontent.com/Ayush-Kumar0207/panopticon-protocol-v3/main/docs/ui/ai-agent-demo.png" alt="AI Agent Demo Dashboard showing First Contact Phase" width="100%">
 </p>
 <sub><b>Live Agent Playthrough.</b> The AI Agent Demo dashboard visualizes the network state, active leaks, and step-by-step actions taken by the fine-tuned ARGUS model during the critical 'First Contact' phase.</sub>
 
