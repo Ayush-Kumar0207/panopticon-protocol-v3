@@ -47,17 +47,35 @@ from models import (
 
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
+GPU_DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
+CPU_BASIC_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+DEFAULT_MODEL = GPU_DEFAULT_MODEL
 LORA_R = 16
 LORA_ALPHA = 32
 EPISODES_PER_LEVEL = 20
-MAX_SEQ_LENGTH = 1024
+DEFAULT_MAX_SEQ_LENGTH = 1024
+CPU_BASIC_MAX_SEQ_LENGTH = 512
+DEFAULT_TRAIN_EPOCHS = 3
+CPU_BASIC_TRAIN_EPOCHS = 2
+DEFAULT_BATCH_SIZE = 2
+CPU_BASIC_BATCH_SIZE = 1
+DEFAULT_GRAD_ACCUM = 4
+CPU_BASIC_GRAD_ACCUM = 8
+DEFAULT_SAVE_STEPS = 50
+CPU_BASIC_SAVE_STEPS = 100
 TRAJECTORY_SCHEMA_VERSION = "curriculum-expert-v2"
 LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
 
 RUN_ROOT = Path(os.environ.get("TRAIN_ROOT", "/data/panopticon-ep20"))
 RUN_ROOT.mkdir(parents=True, exist_ok=True)
 STATE_PATH = RUN_ROOT / "curriculum_state.json"
+MAX_SEQ_LENGTH = DEFAULT_MAX_SEQ_LENGTH
+NUM_TRAIN_EPOCHS = DEFAULT_TRAIN_EPOCHS
+PER_DEVICE_TRAIN_BATCH_SIZE = DEFAULT_BATCH_SIZE
+GRADIENT_ACCUMULATION_STEPS = DEFAULT_GRAD_ACCUM
+SAVE_STEPS = DEFAULT_SAVE_STEPS
+GRADIENT_CHECKPOINTING = False
+CPU_BASIC_SAFE_MODE = False
 
 
 def resolve_precision():
@@ -69,6 +87,54 @@ def resolve_precision():
 
 
 TRAIN_DTYPE, USE_BF16, USE_FP16 = resolve_precision()
+
+
+def configure_runtime(args):
+    global TRAIN_DTYPE
+    global USE_BF16
+    global USE_FP16
+    global MAX_SEQ_LENGTH
+    global NUM_TRAIN_EPOCHS
+    global PER_DEVICE_TRAIN_BATCH_SIZE
+    global GRADIENT_ACCUMULATION_STEPS
+    global SAVE_STEPS
+    global GRADIENT_CHECKPOINTING
+    global CPU_BASIC_SAFE_MODE
+
+    TRAIN_DTYPE, USE_BF16, USE_FP16 = resolve_precision()
+    running_on_cpu = not torch.cuda.is_available()
+    CPU_BASIC_SAFE_MODE = running_on_cpu or args.cpu_basic_safe
+
+    if CPU_BASIC_SAFE_MODE:
+        if args.model == GPU_DEFAULT_MODEL:
+            args.model = CPU_BASIC_MODEL
+        MAX_SEQ_LENGTH = args.max_seq_length or CPU_BASIC_MAX_SEQ_LENGTH
+        NUM_TRAIN_EPOCHS = args.epochs or CPU_BASIC_TRAIN_EPOCHS
+        PER_DEVICE_TRAIN_BATCH_SIZE = CPU_BASIC_BATCH_SIZE
+        GRADIENT_ACCUMULATION_STEPS = CPU_BASIC_GRAD_ACCUM
+        SAVE_STEPS = CPU_BASIC_SAVE_STEPS
+        GRADIENT_CHECKPOINTING = True
+    else:
+        MAX_SEQ_LENGTH = args.max_seq_length or DEFAULT_MAX_SEQ_LENGTH
+        NUM_TRAIN_EPOCHS = args.epochs or DEFAULT_TRAIN_EPOCHS
+        PER_DEVICE_TRAIN_BATCH_SIZE = DEFAULT_BATCH_SIZE
+        GRADIENT_ACCUMULATION_STEPS = DEFAULT_GRAD_ACCUM
+        SAVE_STEPS = DEFAULT_SAVE_STEPS
+        GRADIENT_CHECKPOINTING = False
+
+    print(
+        "[*] Runtime profile: "
+        f"{'cpu-basic-safe' if CPU_BASIC_SAFE_MODE else 'default-gpu'} | "
+        f"device={'cuda' if torch.cuda.is_available() else 'cpu'} | "
+        f"model={args.model}"
+    )
+    print(
+        f"[*] Training config: seq={MAX_SEQ_LENGTH} | epochs={NUM_TRAIN_EPOCHS} | "
+        f"batch={PER_DEVICE_TRAIN_BATCH_SIZE} | accum={GRADIENT_ACCUMULATION_STEPS} | "
+        f"grad_ckpt={GRADIENT_CHECKPOINTING}"
+    )
+    sys.stdout.flush()
+    return args
 
 SYSTEM_PROMPT = """You are ARGUS, an AI counter-intelligence agent defending a corporate network from HYDRA infiltrators.
 
@@ -105,6 +171,7 @@ def load_state():
             "completed_levels": [],
             "current_model": DEFAULT_MODEL,
             "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
+            "runtime_profile": "",
         }
 
     try:
@@ -115,11 +182,13 @@ def load_state():
             "completed_levels": [],
             "current_model": DEFAULT_MODEL,
             "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
+            "runtime_profile": "",
         }
 
     state.setdefault("completed_levels", [])
     state.setdefault("current_model", DEFAULT_MODEL)
     state.setdefault("trajectory_schema_version", "")
+    state.setdefault("runtime_profile", "")
     state["completed_levels"] = ordered_completed_levels(state["completed_levels"])
     return state
 
@@ -130,6 +199,7 @@ def save_state(state):
         "completed_levels": ordered_completed_levels(state.get("completed_levels", [])),
         "current_model": state.get("current_model", DEFAULT_MODEL),
         "trajectory_schema_version": state.get("trajectory_schema_version", TRAJECTORY_SCHEMA_VERSION),
+        "runtime_profile": state.get("runtime_profile", ""),
     }
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
@@ -148,7 +218,13 @@ def load_data_meta(meta_path: Path):
         return None
 
 
-def save_data_meta(meta_path: Path, task_level: str, num_episodes: int, num_examples: int):
+def save_data_meta(
+    meta_path: Path,
+    task_level: str,
+    num_episodes: int,
+    num_examples: int,
+    model_name: str,
+):
     tmp_path = meta_path.with_suffix(".tmp")
     payload = {
         "task_level": task_level,
@@ -156,6 +232,8 @@ def save_data_meta(meta_path: Path, task_level: str, num_episodes: int, num_exam
         "num_examples": num_examples,
         "max_seq_length": MAX_SEQ_LENGTH,
         "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
+        "model_name": model_name,
+        "runtime_profile": "cpu-basic-safe" if CPU_BASIC_SAFE_MODE else "default-gpu",
     }
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
@@ -164,13 +242,15 @@ def save_data_meta(meta_path: Path, task_level: str, num_episodes: int, num_exam
     os.replace(tmp_path, meta_path)
 
 
-def data_matches(meta, task_level: str, num_episodes: int):
+def data_matches(meta, task_level: str, num_episodes: int, model_name: str):
     return (
         meta is not None
         and meta.get("task_level") == task_level
         and meta.get("num_episodes") == num_episodes
         and meta.get("max_seq_length") == MAX_SEQ_LENGTH
         and meta.get("trajectory_schema_version") == TRAJECTORY_SCHEMA_VERSION
+        and meta.get("model_name") == model_name
+        and meta.get("runtime_profile") == ("cpu-basic-safe" if CPU_BASIC_SAFE_MODE else "default-gpu")
     )
 
 
@@ -553,6 +633,7 @@ def load_model_and_tokenizer(model_name: str):
             base_model_name,
             torch_dtype=TRAIN_DTYPE,
             trust_remote_code=True,
+            low_cpu_mem_usage=True,
         )
         model = PeftModel.from_pretrained(base_model, model_name)
         model = model.merge_and_unload()
@@ -563,6 +644,7 @@ def load_model_and_tokenizer(model_name: str):
             model_name,
             torch_dtype=TRAIN_DTYPE,
             trust_remote_code=True,
+            low_cpu_mem_usage=True,
         )
 
     if tokenizer.pad_token is None:
@@ -593,7 +675,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
 
     last_checkpoint = get_last_checkpoint(str(output_dir)) if output_dir.is_dir() else None
     data_meta = load_data_meta(data_meta_path)
-    has_matching_data = data_path.exists() and data_matches(data_meta, task_level, num_episodes)
+    has_matching_data = data_path.exists() and data_matches(data_meta, task_level, num_episodes, model_name)
 
     if last_checkpoint and not has_matching_data:
         print(
@@ -613,7 +695,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         trajectories, episode_metrics = generate_expert_trajectories(task_level, num_episodes)
         save_training_data_with_template(trajectories, str(data_path), tokenizer)
         save_episode_metrics(episode_metrics, str(metrics_path))
-        save_data_meta(data_meta_path, task_level, num_episodes, len(trajectories))
+        save_data_meta(data_meta_path, task_level, num_episodes, len(trajectories), model_name)
 
     print("\n[Phase 2] Loading model...")
     sys.stdout.flush()
@@ -638,18 +720,18 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
 
     sft_config = SFTConfig(
         output_dir=str(output_dir),
-        num_train_epochs=3,
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=4,
+        num_train_epochs=NUM_TRAIN_EPOCHS,
+        per_device_train_batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,
+        gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
         learning_rate=2e-5,
         warmup_ratio=0.03,
         logging_steps=5,
         save_strategy="steps",
-        save_steps=50,
+        save_steps=SAVE_STEPS,
         save_total_limit=2,
         bf16=USE_BF16,
         fp16=USE_FP16,
-        gradient_checkpointing=False,
+        gradient_checkpointing=GRADIENT_CHECKPOINTING,
         report_to="none",
         dataset_text_field="text",
         max_seq_length=MAX_SEQ_LENGTH,
@@ -760,6 +842,7 @@ def merge_and_save_final_model(adapter_path: str, output_path: str):
         torch_dtype=TRAIN_DTYPE,
         device_map=device_map,
         trust_remote_code=True,
+        low_cpu_mem_usage=True,
     )
     model = PeftModel.from_pretrained(base_model, adapter_path)
     model = model.merge_and_unload()
@@ -794,6 +877,7 @@ def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int 
         torch_dtype=TRAIN_DTYPE,
         device_map=device_map,
         trust_remote_code=True,
+        low_cpu_mem_usage=True,
     )
     model = PeftModel.from_pretrained(base_model, model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -893,23 +977,36 @@ def main():
     parser.add_argument("--level", default="easy")
     parser.add_argument("--curriculum", action="store_true", help="Chain training across all 5 levels")
     parser.add_argument("--episodes", type=int, default=EPISODES_PER_LEVEL)
+    parser.add_argument("--epochs", type=int, help="Override SFT epochs for this run")
+    parser.add_argument("--max-seq-length", type=int, help="Override tokenizer/training sequence length")
+    parser.add_argument(
+        "--cpu-basic-safe",
+        action="store_true",
+        help="Use a lighter runtime profile suitable for CPU basic / low-memory environments",
+    )
     parser.add_argument("--eval", action="store_true", help="Evaluate after training")
     parser.add_argument("--eval-games", type=int, default=5)
     parser.add_argument("--merge", action="store_true", help="Merge final adapter into standalone model")
     args = parser.parse_args()
+    args = configure_runtime(args)
+    runtime_profile = "cpu-basic-safe" if CPU_BASIC_SAFE_MODE else "default-gpu"
 
     if args.curriculum:
         state = load_state()
-        if state.get("trajectory_schema_version") != TRAJECTORY_SCHEMA_VERSION:
+        if (
+            state.get("trajectory_schema_version") != TRAJECTORY_SCHEMA_VERSION
+            or state.get("runtime_profile") != runtime_profile
+        ):
             print(
-                "[*] Curriculum state was produced by an older expert schema. "
-                "Resetting completed-level tracking so the stronger expert data is regenerated."
+                "[*] Curriculum state was produced by an older expert/runtime profile. "
+                "Resetting completed-level tracking so fresh-compatible data is regenerated."
             )
             sys.stdout.flush()
             state = {
                 "completed_levels": [],
                 "current_model": args.model,
                 "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
+                "runtime_profile": runtime_profile,
             }
             save_state(state)
 
@@ -933,6 +1030,7 @@ def main():
             state["completed_levels"] = ordered_completed_levels(completed_levels)
             state["current_model"] = current_model
             state["trajectory_schema_version"] = TRAJECTORY_SCHEMA_VERSION
+            state["runtime_profile"] = runtime_profile
             save_state(state)
 
             print(f"[*] Progress saved: {level} complete")
