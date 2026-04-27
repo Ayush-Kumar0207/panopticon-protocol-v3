@@ -47,6 +47,7 @@ class LevelData:
     token_max: int
     token_avg: int
     expert_steps: list[int]
+    expert_reward: list[float]
     expert_revenue: list[int]
     expert_security: list[int]
     expert_caught: list[int]
@@ -91,7 +92,7 @@ def to_percentile(values: list[float], q: float) -> float:
 def parse_levels(log_text: str) -> dict[str, LevelData]:
     header_pattern = re.compile(r"TRAINING:\s+(\w+)\s+\| Episodes:\s+(\d+)")
     expert_pattern = re.compile(
-        r"\[Expert Ep \d+/\d+\]\s+Steps=(\d+)\s+Rev=(\d+)\s+Sec=(\d+)\s+Caught=(\d+)\s+Grade=([\d.]+)"
+        r"\[Expert Ep \d+/\d+\]\s+Steps=(\d+)\s+Reward=([-\d.]+)\s+Rev=(\d+)\s+Sec=(\d+)\s+Caught=(\d+)\s+DAs=(\d+)\s+Grade=([\d.]+)"
     )
     metric_pattern = re.compile(
         r"'loss':\s*([\d.]+),\s*'grad_norm':\s*([\d.eE+-]+),\s*'learning_rate':\s*([\d.eE+-]+),\s*'epoch':\s*([\d.]+)"
@@ -128,10 +129,11 @@ def parse_levels(log_text: str) -> dict[str, LevelData]:
             token_max=int(token_match.group(1)),
             token_avg=int(token_match.group(3)),
             expert_steps=[int(row[0]) for row in expert_rows],
-            expert_revenue=[int(row[1]) for row in expert_rows],
-            expert_security=[int(row[2]) for row in expert_rows],
-            expert_caught=[int(row[3]) for row in expert_rows],
-            expert_grade=[float(row[4]) for row in expert_rows],
+            expert_reward=[float(row[1]) for row in expert_rows],
+            expert_revenue=[int(row[2]) for row in expert_rows],
+            expert_security=[int(row[3]) for row in expert_rows],
+            expert_caught=[int(row[4]) for row in expert_rows],
+            expert_grade=[float(row[6]) for row in expert_rows],
             loss=[float(row[0]) for row in metric_rows],
             grad_norm=[float(row[1]) for row in metric_rows],
             learning_rate=[float(row[2]) for row in metric_rows],
@@ -192,6 +194,10 @@ def build_summary(levels: dict[str, LevelData]) -> dict[str, object]:
                 "grade_ci95_high": grade_interval[1],
                 "grade_min": min(level.expert_grade),
                 "grade_max": max(level.expert_grade),
+                "reward_mean": mean(level.expert_reward),
+                "reward_std": sample_std(level.expert_reward),
+                "reward_min": min(level.expert_reward),
+                "reward_max": max(level.expert_reward),
                 "revenue_mean": mean(level.expert_revenue),
                 "revenue_std": sample_std(level.expert_revenue),
                 "security_mean": mean(level.expert_security),
@@ -473,6 +479,56 @@ def plot_expert_operational_metrics(levels: dict[str, LevelData], summary: dict[
     save_figure("expert_operational_metrics.png")
 
 
+def plot_expert_reward_progression(levels: dict[str, LevelData], summary: dict[str, object]) -> None:
+    setup_style()
+    fig, axes = plt.subplots(2, 1, figsize=(14, 9), height_ratios=[2.0, 1.2])
+
+    for level_name in LEVEL_ORDER:
+        if level_name not in levels:
+            continue
+        level = levels[level_name]
+        rewards = np.asarray(level.expert_reward, dtype=float)
+        episodes = np.arange(1, len(rewards) + 1)
+        smooth = rolling_mean(level.expert_reward, max(3, len(rewards) // 8))
+        color = LEVEL_COLORS[level_name]
+
+        axes[0].plot(episodes, rewards, color=color, alpha=0.25, linewidth=1.2)
+        axes[0].scatter(episodes, rewards, color=color, alpha=0.45, s=22)
+        axes[0].plot(episodes, smooth, color=color, linewidth=2.4, label=LEVEL_LABELS[level_name])
+
+    axes[0].set_title("Training-time expert reward traces across curriculum episodes")
+    axes[0].set_xlabel("Episode index within level")
+    axes[0].set_ylabel("Episode reward")
+    axes[0].grid(True, axis="both")
+    axes[0].legend(ncol=3, loc="upper left")
+    axes[0].text(
+        0.01,
+        0.97,
+        "Fast proxy during training: these rewards come from expert-trajectory generation.\n"
+        "Use full_evaluation.py for the official trained-model benchmark.",
+        transform=axes[0].transAxes,
+        va="top",
+        ha="left",
+        fontsize=10,
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "#F5F7FA", "edgecolor": "#D7DCE2"},
+    )
+
+    labels = [LEVEL_LABELS[name] for name in LEVEL_ORDER if name in levels]
+    colors = [LEVEL_COLORS[name] for name in LEVEL_ORDER if name in levels]
+    reward_means = [summary["levels"][name]["expert"]["reward_mean"] for name in LEVEL_ORDER if name in levels]
+    reward_stds = [summary["levels"][name]["expert"]["reward_std"] for name in LEVEL_ORDER if name in levels]
+    x = np.arange(len(labels))
+    axes[1].bar(x, reward_means, color=colors, alpha=0.8)
+    axes[1].errorbar(x, reward_means, yerr=reward_stds, fmt="none", ecolor="#111827", capsize=4, linewidth=1.2)
+    axes[1].set_xticks(x, labels)
+    axes[1].set_title("Mean training-time reward by difficulty")
+    axes[1].set_ylabel("Reward mean +/- std")
+    axes[1].grid(True, axis="y")
+
+    fig.tight_layout()
+    save_figure("expert_reward_progression.png")
+
+
 def plot_optimization_diagnostics(levels: dict[str, LevelData], summary: dict[str, object]) -> None:
     setup_style()
     fig, axes = plt.subplots(2, 2, figsize=(14, 9))
@@ -581,6 +637,7 @@ def plot_curriculum_heatmap(levels: dict[str, LevelData], summary: dict[str, obj
         "Avg tokens",
         "Expert grade",
         "Grade std",
+        "Reward",
         "Revenue",
         "Security",
         "Caught",
@@ -595,6 +652,7 @@ def plot_curriculum_heatmap(levels: dict[str, LevelData], summary: dict[str, obj
             [stats[name]["tokens"]["avg"] for name in names],
             [stats[name]["expert"]["grade_mean"] for name in names],
             [stats[name]["expert"]["grade_std"] for name in names],
+            [stats[name]["expert"]["reward_mean"] for name in names],
             [stats[name]["expert"]["revenue_mean"] for name in names],
             [stats[name]["expert"]["security_mean"] for name in names],
             [stats[name]["expert"]["caught_mean"] for name in names],
@@ -606,7 +664,7 @@ def plot_curriculum_heatmap(levels: dict[str, LevelData], summary: dict[str, obj
     )
 
     norm_matrix = np.zeros_like(raw_matrix)
-    reverse_rows = {3, 8, 9}
+    reverse_rows = {3, 9, 10}
     for row_idx in range(raw_matrix.shape[0]):
         row = raw_matrix[row_idx]
         lo = row.min()
@@ -627,9 +685,9 @@ def plot_curriculum_heatmap(levels: dict[str, LevelData], summary: dict[str, obj
     for row_idx in range(norm_matrix.shape[0]):
         for col_idx in range(norm_matrix.shape[1]):
             raw_value = raw_matrix[row_idx, col_idx]
-            if row_idx in (2, 3, 6, 7, 8):
+            if row_idx in (2, 3, 4, 7, 8, 9):
                 label = f"{raw_value:.2f}"
-            elif row_idx == 9:
+            elif row_idx == 10:
                 label = f"{raw_value:.0f}"
             else:
                 label = f"{raw_value:.0f}"
@@ -649,8 +707,8 @@ def write_statistics_files(summary: dict[str, object]) -> None:
     lines = [
         "# Training Statistics",
         "",
-        "| Level | Examples | Avg Tokens | Expert Grade (mean +/- std) | Revenue Mean | Security Mean | Caught Mean | Loss Start -> Final | Loss Reduction | Steps |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Level | Examples | Avg Tokens | Expert Grade (mean +/- std) | Reward Mean | Revenue Mean | Security Mean | Caught Mean | Loss Start -> Final | Loss Reduction | Steps |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
 
     for level_name in LEVEL_ORDER:
@@ -663,6 +721,7 @@ def write_statistics_files(summary: dict[str, object]) -> None:
             f"{stats['examples']} | "
             f"{stats['tokens']['avg']} | "
             f"{stats['expert']['grade_mean']:.3f} +/- {stats['expert']['grade_std']:.3f} | "
+            f"{stats['expert']['reward_mean']:.2f} | "
             f"{stats['expert']['revenue_mean']:.1f} | "
             f"{stats['expert']['security_mean']:.1f} | "
             f"{stats['expert']['caught_mean']:.2f} | "
@@ -696,6 +755,7 @@ def main() -> None:
     plot_per_level_convergence(levels, summary)
     plot_expert_grade_distribution(levels, summary)
     plot_expert_operational_metrics(levels, summary)
+    plot_expert_reward_progression(levels, summary)
     plot_optimization_diagnostics(levels, summary)
     plot_dataset_scaling(levels, summary)
     plot_curriculum_heatmap(levels, summary)
@@ -707,6 +767,7 @@ def main() -> None:
         "per_level_convergence.png",
         "expert_grade_distribution.png",
         "expert_operational_metrics.png",
+        "expert_reward_progression.png",
         "optimization_diagnostics.png",
         "dataset_scaling.png",
         "curriculum_heatmap.png",

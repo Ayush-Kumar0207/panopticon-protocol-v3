@@ -30,12 +30,13 @@ Read the observation carefully. Output a single JSON action. Available actions:
 - {"action_type":"monitor","target":"<channel>","reason":"..."} - Scan for leaks
 - {"action_type":"investigate","target":"<id>","sub_action":"audit|verify|correlate","reason":"..."}
 - {"action_type":"neutralize","target":"<worker_id>","sub_action":"terminate|interrogate|turn","reason":"..."}
+- {"action_type":"deploy_double","target":"<worker_id>","reason":"..."} - Feed disinformation through an active double agent
 - {"action_type":"noop","reason":"..."}
 
 Departments: engineering, finance, rd, operations, executive, legal
 Channels: market_chatter, dark_web, competitor_filing, press_leak, insider_trade
 
-RULES: Interrogate before terminating Gen-4+. Verify leaks before accusing. Plant canaries early.
+RULES: Verify leaks before accusing. Plant canaries early. Interrogate before terminating uncertain suspects. In deep_cover/crisis, consider turning high-confidence sleepers if enough turns remain. If active double agents exist, use deploy_double in crisis/counterstrike.
 Respond ONLY with a JSON object."""
 
 
@@ -60,6 +61,8 @@ def format_observation(obs: EnvironmentObservation) -> str:
     workers_info = []
     for worker in obs.workers:
         status = f"suspicion={worker.suspicion_level:.0%}" if worker.suspicion_level > 0.05 else "clean"
+        if worker.turning_in_progress:
+            status += f" turning={worker.interrogation_progress}/4"
         workers_info.append(
             f"  {worker.id} {worker.name} dept={worker.department} state={worker.state} {status}"
         )
@@ -70,15 +73,33 @@ def format_observation(obs: EnvironmentObservation) -> str:
         leaks_info.append(f"  {leak.id} dept={leak.department} channel={leak.channel}{canary}")
 
     traps_info = [f"  {trap.id} dept={trap.department} triggered={trap.triggered}" for trap in obs.canary_traps]
+    intel_info = []
+    for report in obs.intel_reports[-4:]:
+        flagged = ",".join(report.flagged_workers) if report.flagged_workers else "none"
+        findings = report.findings.replace("\n", " ").strip() or "no findings"
+        intel_info.append(
+            f"  {report.id} {report.report_type} target={report.target} "
+            f"conf={report.confidence:.0%} flagged={flagged} :: {findings}"
+        )
+    da_info = []
+    for asset in obs.double_agents:
+        da_info.append(
+            f"  {asset.worker_id} active={asset.active} trust={asset.hydra_trust:.0%} "
+            f"eff={asset.effectiveness:.0%} disinfo={asset.disinfo_fed_count}"
+        )
 
     sections = [
-        f"Turn {obs.turn}/{obs.max_turns} | Phase: {obs.phase} | Revenue: {obs.enterprise_revenue:.0f} | Security: {obs.security_score:.0f}",
+        f"Turn {obs.turn}/{obs.max_turns} | Phase: {obs.phase} ({obs.phase_number}) | Revenue: {obs.enterprise_revenue:.0f} | Security: {obs.security_score:.0f}",
         f"Workers ({len(obs.workers)}):",
         "\n".join(workers_info) if workers_info else "  (none)",
         f"Active Leaks ({len(obs.active_leaks)}):",
         "\n".join(leaks_info) if leaks_info else "  (none)",
         f"Canary Traps ({len(obs.canary_traps)}):",
         "\n".join(traps_info) if traps_info else "  (none)",
+        f"Recent Intel Reports ({len(obs.intel_reports)}):",
+        "\n".join(intel_info) if intel_info else "  (none)",
+        f"Active Double Agents ({len(obs.double_agents)}):",
+        "\n".join(da_info) if da_info else "  (none)",
     ]
     return "\n".join(sections)
 
