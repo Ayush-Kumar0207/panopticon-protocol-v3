@@ -5,7 +5,7 @@ Panopticon Protocol v3 - stable TRL fine-tuning script
 Key fixes:
 1. Uses bf16 on supported GPUs like A10G
 2. Does not use device_map="auto" during training
-3. Uses 20 episodes per level for faster runs
+3. Defaults to 20 episodes per level locally, but supports higher counts via --episodes
 4. Saves outputs under a persistent root
 5. Resumes interrupted level training from checkpoints
 6. Skips already completed curriculum levels
@@ -14,6 +14,7 @@ Key fixes:
 Usage:
     python train_trl_v2.py --level easy --episodes 20
     python train_trl_v2.py --curriculum --episodes 20 --merge
+    python train_trl_v2.py --curriculum --episodes 50 --merge
 """
 
 from __future__ import annotations
@@ -52,7 +53,7 @@ CPU_BASIC_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 DEFAULT_MODEL = GPU_DEFAULT_MODEL
 LORA_R = 16
 LORA_ALPHA = 32
-EPISODES_PER_LEVEL = 20
+EPISODES_PER_LEVEL = 20  # Default/fallback only; production GPU runs can override with --episodes 50
 DEFAULT_MAX_SEQ_LENGTH = 1024
 CPU_BASIC_MAX_SEQ_LENGTH = 384
 DEFAULT_TRAIN_EPOCHS = 3
@@ -66,6 +67,7 @@ CPU_BASIC_SAVE_STEPS = 5
 TRAJECTORY_SCHEMA_VERSION = "curriculum-expert-v2"
 LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
 
+# Default local/persistent root; HF worker Spaces override this via ENV TRAIN_ROOT.
 RUN_ROOT = Path(os.environ.get("TRAIN_ROOT", "/data/panopticon-ep20"))
 RUN_ROOT.mkdir(parents=True, exist_ok=True)
 STATE_PATH = RUN_ROOT / "curriculum_state.json"
