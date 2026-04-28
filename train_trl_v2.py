@@ -54,15 +54,15 @@ LORA_R = 16
 LORA_ALPHA = 32
 EPISODES_PER_LEVEL = 20
 DEFAULT_MAX_SEQ_LENGTH = 1024
-CPU_BASIC_MAX_SEQ_LENGTH = 512
+CPU_BASIC_MAX_SEQ_LENGTH = 384
 DEFAULT_TRAIN_EPOCHS = 3
-CPU_BASIC_TRAIN_EPOCHS = 2
+CPU_BASIC_TRAIN_EPOCHS = 1
 DEFAULT_BATCH_SIZE = 2
 CPU_BASIC_BATCH_SIZE = 1
 DEFAULT_GRAD_ACCUM = 4
-CPU_BASIC_GRAD_ACCUM = 8
+CPU_BASIC_GRAD_ACCUM = 4
 DEFAULT_SAVE_STEPS = 50
-CPU_BASIC_SAVE_STEPS = 100
+CPU_BASIC_SAVE_STEPS = 5
 TRAJECTORY_SCHEMA_VERSION = "curriculum-expert-v2"
 LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
 
@@ -133,6 +133,8 @@ def configure_runtime(args):
         f"batch={PER_DEVICE_TRAIN_BATCH_SIZE} | accum={GRADIENT_ACCUMULATION_STEPS} | "
         f"grad_ckpt={GRADIENT_CHECKPOINTING}"
     )
+    if CPU_BASIC_SAFE_MODE:
+        print("[*] CPU-safe note: truncated contexts, 1 epoch, and rapid checkpoints are enabled.")
     sys.stdout.flush()
     return args
 

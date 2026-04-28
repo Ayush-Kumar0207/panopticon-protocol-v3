@@ -105,6 +105,7 @@ def parse_levels(log_text: str) -> dict[str, LevelData]:
         raise ValueError("No training blocks found in the provided training log.")
 
     parsed: dict[str, LevelData] = {}
+    skipped_blocks: list[tuple[str, list[str]]] = []
 
     for idx, match in enumerate(headers):
         level = match.group(1)
@@ -113,13 +114,22 @@ def parse_levels(log_text: str) -> dict[str, LevelData]:
 
         token_match = token_pattern.search(block)
         saved_match = saved_pattern.search(block)
-        if token_match is None or saved_match is None:
-            raise ValueError(f"Missing token/example metadata for level {level}")
-
         expert_rows = [tuple(row) for row in expert_pattern.findall(block)]
         metric_rows = [tuple(row) for row in metric_pattern.findall(block)]
-        if not expert_rows or not metric_rows:
-            raise ValueError(f"Missing expert or training metrics for level {level}")
+
+        missing_parts: list[str] = []
+        if token_match is None:
+            missing_parts.append("token metadata")
+        if saved_match is None:
+            missing_parts.append("saved example metadata")
+        if not expert_rows:
+            missing_parts.append("expert metrics")
+        if not metric_rows:
+            missing_parts.append("training metrics")
+
+        if missing_parts:
+            skipped_blocks.append((level, missing_parts))
+            continue
 
         parsed[level] = LevelData(
             name=level,
@@ -139,6 +149,14 @@ def parse_levels(log_text: str) -> dict[str, LevelData]:
             learning_rate=[float(row[2]) for row in metric_rows],
             epoch=[float(row[3]) for row in metric_rows],
         )
+
+    if skipped_blocks:
+        print("[WARN] Ignoring incomplete training blocks while parsing logs:")
+        for level, parts in skipped_blocks:
+            print(f"  - {level}: missing {', '.join(parts)}")
+
+    if not parsed:
+        raise ValueError("No complete training blocks found in the provided training log.")
 
     return parsed
 
