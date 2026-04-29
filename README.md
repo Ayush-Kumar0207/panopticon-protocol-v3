@@ -17,14 +17,23 @@
 
 🏆 **Meta PyTorch OpenEnv Hackathon x Scaler — Grand Finale 2026**
 
-🤗 **Hugging Face Space**: [panopticon-protocol-v3](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
-📓 **Training Notebook**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
-📓 **Training Notebook**: [![Open In HF space]](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer/tree/main)
-
-📝 **Blog Post**: [TODO_HF_BLOG_LINK](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3/blob/main/blog.md)
+🤗 **Demo Space**: [panopticon-protocol-v3](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)  
+🧪 **Submitted Trainer Space**: [panopticon-trainer](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer)  
+🧠 **Model Repo**: [panopticon-argus-qwen-1.5B](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B)  
+📓 **Training Notebook (Colab)**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)  
+📈 **Plot Notebook**: [Panopticon_Plots_Colab.ipynb](Panopticon_Plots_Colab.ipynb)  
+📘 **Production Training Notebook**: [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)
 
 
 ---
+
+## ✅ Submission Checklist
+
+- **OpenEnv environment hosted on Hugging Face Spaces:** [Demo Space](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
+- **Minimal TRL training script / Colab path:** [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)
+- **Real training evidence:** `output_logs.txt`, `plots/training_statistics.json`, and the figure suite in [`plots/`](plots)
+- **Trainer Space link preserved for judges:** [panopticon-trainer](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer)
+- **Merged model destination:** [panopticon-argus-qwen-1.5B](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B)
 
 ## 🖥️ Interactive Dashboard Preview
 
@@ -235,7 +244,7 @@ The full gauntlet. Gen-5 Manchurian candidates with active counter-intelligence.
 
 ## 📈 Training Results & Improvement Evidence
 
-We trained **Qwen/Qwen2.5-1.5B-Instruct** with **TRL SFT + LoRA** across the full five-stage curriculum, and the figures below are generated directly from the raw `output_logs.txt` trace in this repository. Instead of a demo-only loss chart, the analysis pass extracts expert episode quality, revenue/security tradeoffs, optimizer stability, and curriculum scaling statistics.
+We trained **Qwen/Qwen2.5-1.5B-Instruct** with **TRL SFT + LoRA** across the full five-stage curriculum and committed the resulting worker log as [`output_logs.txt`](output_logs.txt). The figures below are regenerated directly from that finished 50-episode A10G run, so the README is tied to the same training trace the plot notebook consumes.
 
 ### Training Configuration
 
@@ -244,9 +253,10 @@ We trained **Qwen/Qwen2.5-1.5B-Instruct** with **TRL SFT + LoRA** across the ful
 | **Base Model** | `Qwen/Qwen2.5-1.5B-Instruct` |
 | **Method** | Supervised Fine-Tuning (SFT) with LoRA |
 | **Curriculum** | 5 chained levels (`easy` -> `level_5`) |
-| **Expert Data** | 250 episodes total, 29,000 supervised examples |
-| **Approx. Token Budget** | 15.01M tokens from parsed training logs |
-| **Logged Optimization Steps** | 2,158 updates across all levels |
+| **Episodes per Level** | `50` |
+| **Expert Data** | 250 expert episodes total, 29,000 supervised examples |
+| **Approx. Token Budget** | 17.91M tokens parsed from the final saved log |
+| **Logged Optimization Steps** | 2,174 updates across all levels |
 | **Hardware** | NVIDIA A10G, `bfloat16` |
 | **Framework** | Hugging Face TRL + PEFT |
 
@@ -254,22 +264,25 @@ We trained **Qwen/Qwen2.5-1.5B-Instruct** with **TRL SFT + LoRA** across the ful
 
 | Signal | Value |
 |--------|-------|
-| **Best final loss** | `0.0203` on `level_5` |
-| **Easy-level expert grade** | `0.750 +/- 0.009` |
-| **Level-5 expert grade** | `0.539 +/- 0.039` |
+| **Best final loss** | `0.0212` on `level_4` |
+| **Fastest half-loss convergence** | `8` steps on `medium` |
+| **Hardest-tier expert reward mean** | `34.48 +/- 0.52` on `level_5` |
+| **Easy-level expert grade** | `0.725 +/- 0.002` |
+| **Level-5 expert grade** | `0.820 +/- 0.013` |
 | **Largest single-level dataset** | `8,000` examples (`level_5`) |
-| **Fastest half-loss convergence** | `8` steps (`medium`) |
-| **Strongest loss reduction** | `98.8%` (`easy`) |
+| **Strongest loss reduction** | `99.0%` (`easy`) |
 
 ### Per-Level Summary
 
-| Level | Examples | Avg Tokens | Expert Grade | Revenue Mean | Security Mean | Caught Mean | Final Loss | Loss Reduction |
+| Level | Examples | Avg Tokens | Expert Grade | Reward Mean | Revenue Mean | Security Mean | Caught Mean | Final Loss | Loss Reduction |
 |-------|---------:|-----------:|-------------:|-------------:|--------------:|------------:|-----------:|---------------:|
-| **Easy** | 3,000 | 472 | 0.750 +/- 0.009 | 271.8 | 100.0 | 1.00 | 0.0309 | 98.8% |
-| **Medium** | 4,500 | 489 | 0.665 +/- 0.052 | 441.5 | 76.8 | 1.28 | 0.0291 | 89.3% |
-| **Hard** | 6,000 | 508 | 0.529 +/- 0.047 | 601.1 | 0.0 | 0.74 | 0.0264 | 98.7% |
-| **Level 4** | 7,500 | 529 | 0.485 +/- 0.043 | 795.2 | 0.0 | 0.70 | 0.0213 | 92.2% |
-| **Level 5** | 8,000 | 547 | 0.539 +/- 0.039 | 892.3 | 0.0 | 0.72 | 0.0203 | 98.7% |
+| **Easy** | 3,000 | 573 | 0.725 +/- 0.002 | 4.26 | 282.0 | 100.0 | 1.00 | 0.0249 | 99.0% |
+| **Medium** | 4,500 | 589 | 0.721 +/- 0.003 | 7.93 | 424.2 | 100.0 | 2.00 | 0.0220 | 90.6% |
+| **Hard** | 6,000 | 608 | 0.678 +/- 0.006 | 12.05 | 581.6 | 100.0 | 3.00 | 0.0238 | 98.9% |
+| **Level 4** | 7,500 | 629 | 0.712 +/- 0.074 | 16.53 | 772.8 | 76.2 | 3.14 | 0.0212 | 91.0% |
+| **Level 5** | 8,000 | 647 | 0.820 +/- 0.013 | 34.48 | 896.0 | 59.6 | 3.14 | 0.0226 | 98.8% |
+
+> **Interpretation:** `easy` through `hard` stay security-perfect while reward and revenue scale cleanly. The later tiers intentionally trade some security for long-horizon counter-intelligence mechanics such as dead-man's switches, turning, and counterstrike timing.
 
 ### Research Plot Gallery
 
@@ -283,26 +296,28 @@ We trained **Qwen/Qwen2.5-1.5B-Instruct** with **TRL SFT + LoRA** across the ful
     <td><sub><b>Figure 2.</b> Per-level convergence panels with start loss, final loss, loss drop, and half-loss step for each curriculum stage.</sub></td>
   </tr>
   <tr>
+    <td width="50%"><img src="plots/expert_reward_progression.png" alt="Expert reward progression"></td>
     <td width="50%"><img src="plots/expert_grade_distribution.png" alt="Expert grade distribution"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Figure 3.</b> Per-episode reward traces from the expert curriculum. This is the fast reward evidence used during training-time monitoring.</sub></td>
+    <td><sub><b>Figure 4.</b> Violin, box, and confidence-interval summary of expert demonstration quality across all five levels.</sub></td>
+  </tr>
+  <tr>
     <td width="50%"><img src="plots/expert_operational_metrics.png" alt="Expert operational metrics"></td>
-  </tr>
-  <tr>
-    <td><sub><b>Figure 3.</b> Violin, box, and confidence-interval summary of expert demonstration quality across all five levels.</sub></td>
-    <td><sub><b>Figure 4.</b> Revenue distribution, security retention, caught-sleeper averages, and revenue-grade tradeoff from expert episodes.</sub></td>
-  </tr>
-  <tr>
     <td width="50%"><img src="plots/optimization_diagnostics.png" alt="Optimization diagnostics"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Figure 5.</b> Revenue distribution, security retention, caught-sleeper averages, and revenue-grade tradeoff from expert episodes.</sub></td>
+    <td><sub><b>Figure 6.</b> Gradient norm stability, learning-rate schedule, per-level gradient statistics, and aggregate optimizer distribution.</sub></td>
+  </tr>
+  <tr>
     <td width="50%"><img src="plots/dataset_scaling.png" alt="Dataset scaling"></td>
+    <td width="50%"><img src="plots/curriculum_heatmap.png" alt="Curriculum heatmap"></td>
   </tr>
   <tr>
-    <td><sub><b>Figure 5.</b> Gradient norm stability, learning-rate schedule, per-level gradient statistics, and aggregate optimizer distribution.</sub></td>
-    <td><sub><b>Figure 6.</b> Curriculum dataset growth and sequence-length scaling as task difficulty increases.</sub></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="plots/curriculum_heatmap.png" alt="Curriculum heatmap"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><sub><b>Figure 7.</b> Normalized curriculum heatmap summarizing examples, token lengths, expert performance, optimization efficiency, and terminal loss by level.</sub></td>
+    <td><sub><b>Figure 7.</b> Curriculum dataset growth and sequence-length scaling as task difficulty increases.</sub></td>
+    <td><sub><b>Figure 8.</b> Normalized curriculum heatmap summarizing examples, token lengths, expert performance, optimization efficiency, and terminal loss by level.</sub></td>
   </tr>
 </table>
 
@@ -310,15 +325,16 @@ We trained **Qwen/Qwen2.5-1.5B-Instruct** with **TRL SFT + LoRA** across the ful
 
 - **Figure 1 - Curriculum Loss Overview:** read this as the high-level stability plot. A smooth downward trajectory across level spans means the adapter chain is learning without blowing up when difficulty increases.
 - **Figure 2 - Per-Level Convergence:** this is the best place to compare learning efficiency per tier. Start loss, final loss, and half-loss step together show which levels were easy to absorb and which ones demanded longer adaptation.
-- **Figure 3 - Expert Grade Distribution:** this tells you how strong and how consistent the demonstration policy was before fine-tuning. Tight violins and narrow boxes indicate stable supervision; wider shapes indicate noisier expert behavior.
-- **Figure 4 - Expert Operational Metrics:** use this to connect grade to actual gameplay outcomes. It shows whether expert success comes from balanced security discipline or from brute-force revenue growth.
-- **Figure 5 - Optimization Diagnostics:** this is the health monitor for the training run itself. Gradient norms and learning-rate behavior reveal whether the optimization process stayed controlled and numerically stable.
-- **Figure 6 - Dataset Scaling:** this plot explains curriculum pressure. As examples and sequence lengths rise with difficulty, the model is being asked to reason over richer and longer contexts.
-- **Figure 7 - Curriculum Heatmap:** this is the one-glance summary. It lets a reader compare data scale, expert quality, optimization efficiency, and terminal loss across all five stages without scanning every earlier figure.
+- **Figure 3 - Expert Reward Progression:** this is the quickest judging-facing reward plot. It shows the curriculum's reward signal directly during data generation, without waiting for the post-training benchmark.
+- **Figure 4 - Expert Grade Distribution:** this tells you how strong and how consistent the demonstration policy was before fine-tuning. Tight violins and narrow boxes indicate stable supervision; wider shapes indicate noisier expert behavior.
+- **Figure 5 - Expert Operational Metrics:** use this to connect grade to actual gameplay outcomes. It shows whether expert success comes from balanced security discipline or from brute-force revenue growth.
+- **Figure 6 - Optimization Diagnostics:** this is the health monitor for the training run itself. Gradient norms and learning-rate behavior reveal whether the optimization process stayed controlled and numerically stable.
+- **Figure 7 - Dataset Scaling:** this plot explains curriculum pressure. As examples and sequence lengths rise with difficulty, the model is being asked to reason over richer and longer contexts.
+- **Figure 8 - Curriculum Heatmap:** this is the one-glance summary. It lets a reader compare data scale, expert quality, optimization efficiency, and terminal loss across all five stages without scanning every earlier figure.
 
 ### Reproducibility
 
-The plot pipeline now lives in `generate_plots.py` and emits both figures and machine-readable summaries:
+The plot pipeline lives in `generate_plots.py` and emits both figures and machine-readable summaries from the raw saved worker log:
 
 ```bash
 python generate_plots.py
@@ -330,6 +346,7 @@ Artifacts written to `plots/`:
 - `training_statistics.md`
 - `curriculum_loss_overview.png`
 - `per_level_convergence.png`
+- `expert_reward_progression.png`
 - `expert_grade_distribution.png`
 - `expert_operational_metrics.png`
 - `optimization_diagnostics.png`
@@ -338,9 +355,9 @@ Artifacts written to `plots/`:
 
 > 📊 **Everything above is derived from the committed raw training log rather than hand-entered numbers.**
 
-### A10G Evaluation Snapshot (April 26, 2026)
+### Historical Structured Benchmark Snapshot (April 26 baseline)
 
-We then ran a matched-seed benchmark on Hugging Face A10G hardware with **2 episodes per level** for each agent family. The benchmark exposed an important failure mode in the fine-tuned model: it learns to maximize enterprise revenue and dense reward, but it collapses on the security objective and fails to catch sleepers on the harder tiers.
+The structured benchmark figures below come from the last committed evaluation payload available in the repo: [`evaluation_snapshot_apr26.json`](evaluation_snapshot_apr26.json). We keep them here as the **baseline comparison snapshot** that motivated the stronger expert policy, the repaired plotting pipeline, and the final 50-episode A10G rerun. The fresh 50-episode worker log above is the current training source of truth; once the new `evaluationResults.json` export is synced from the worker upload, the same gallery can be refreshed without changing this layout.
 
 | Agent | Easy Grade | Medium Grade | Hard Grade | Level 4 Grade | Level 5 Grade |
 |---|---:|---:|---:|---:|---:|
@@ -354,7 +371,7 @@ We then ran a matched-seed benchmark on Hugging Face A10G hardware with **2 epis
 | **Heuristic** | 12.00 | 590.7 | 85.4 | 2.50 | Reliable baseline with strong security discipline |
 | **Trained** | 13.52 | 702.5 | 18.5 | 0.00 | Reward/revenue seeking with near-total security collapse |
 
-This is exactly why we added a dedicated reward-analysis pass: the raw scalar reward alone suggests the trained agent is competitive, but the grader and operational traces show clear **reward misalignment**.
+This baseline snapshot is exactly why we added the dedicated reward-analysis pass: the raw scalar reward alone suggested the earlier trained agent was competitive, but the grader and operational traces exposed clear **reward misalignment**.
 
 The gallery below is rendered from the April 26 benchmark snapshot captured from the A10G Space console. Once the repaired `evaluationResults.json` export is rerun, the same README slots can be refreshed from the full structured payload.
 
@@ -362,7 +379,7 @@ The gallery below is rendered from the April 26 benchmark snapshot captured from
   <img src="plots/benchmark_summary_table.png" alt="Benchmark summary table" width="100%">
 </p>
 
-<sub><b>Console Snapshot.</b> Benchmark scoreboard from the April 26, 2026 A10G evaluation run, included here because the reward story only becomes obvious when grade, reward, revenue, security, and sleepers caught are read side by side.</sub>
+<sub><b>Console Snapshot.</b> Baseline benchmark scoreboard from the April 26, 2026 A10G evaluation run. We keep it in the README because the reward story only becomes obvious when grade, reward, revenue, security, and sleepers caught are read side by side.</sub>
 
 ### Evaluation & Reward Plot Gallery
 
@@ -372,42 +389,42 @@ The gallery below is rendered from the April 26 benchmark snapshot captured from
     <td width="50%"><img src="plots/comparison_operations.png" alt="Comparison operations"></td>
   </tr>
   <tr>
-    <td><sub><b>Figure 8.</b> Composite grade comparison with variance bars across all five Panopticon levels.</sub></td>
-    <td><sub><b>Figure 9.</b> Operational comparison for reward, revenue, security, and sleepers caught.</sub></td>
+    <td><sub><b>Figure 9.</b> Composite grade comparison with variance bars across all five Panopticon levels.</sub></td>
+    <td><sub><b>Figure 10.</b> Operational comparison for reward, revenue, security, and sleepers caught.</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="plots/comparison_radar.png" alt="Comparison radar"></td>
     <td width="50%"><img src="plots/reward_distributions.png" alt="Reward distributions"></td>
   </tr>
   <tr>
-    <td><sub><b>Figure 10.</b> Normalized benchmark radar summarizing grade, reward, revenue, security retention, and sleepers caught.</sub></td>
-    <td><sub><b>Figure 11.</b> Research-style reward distribution panels showing spread, variance, and level-wise reward trends for each agent family.</sub></td>
+    <td><sub><b>Figure 11.</b> Normalized benchmark radar summarizing grade, reward, revenue, security retention, and sleepers caught.</sub></td>
+    <td><sub><b>Figure 12.</b> Research-style reward distribution panels showing spread, variance, and level-wise reward trends for each agent family.</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="plots/reward_frontier.png" alt="Reward frontier"></td>
     <td width="50%"><img src="plots/reward_turn_dynamics.png" alt="Reward turn dynamics"></td>
   </tr>
   <tr>
-    <td><sub><b>Figure 12.</b> Reward-security frontier with marker size proportional to revenue, exposing the trained agent's reward-vs-security tradeoff.</sub></td>
-    <td><sub><b>Figure 13.</b> Reward and security response curves across escalating difficulty tiers.</sub></td>
+    <td><sub><b>Figure 13.</b> Reward-security frontier with marker size proportional to revenue, exposing the trained agent's reward-vs-security tradeoff.</sub></td>
+    <td><sub><b>Figure 14.</b> Reward and security response curves across escalating difficulty tiers.</sub></td>
   </tr>
   <tr>
     <td colspan="2"><img src="plots/scenario_timeline.png" alt="Scenario timeline"></td>
   </tr>
   <tr>
-    <td colspan="2"><sub><b>Figure 14.</b> Episode-outcome panorama across all logged benchmark runs, showing reward, revenue, and security per scenario-agent episode.</sub></td>
+    <td colspan="2"><sub><b>Figure 15.</b> Episode-outcome panorama across all logged benchmark runs, showing reward, revenue, and security per scenario-agent episode.</sub></td>
   </tr>
 </table>
 
 ### How to Read the Evaluation Plots
 
-- **Figure 8 - Comparison Grades:** this is the main headline metric. It shows overall task quality by agent family and reveals that the trained model underperforms once grading accounts for more than raw reward.
-- **Figure 9 - Comparison Operations:** use this to separate *why* an agent scored the way it did. Reward, revenue, security, and sleepers caught are split apart so hidden tradeoffs become visible.
-- **Figure 10 - Comparison Radar:** this is the balanced-performance view. It makes it easy to see whether an agent is broadly competent or only strong on one or two axes.
-- **Figure 11 - Reward Distributions:** this exposes variance and brittleness. If an agent has a high average reward but a wide or unstable distribution, it is not reliably solving the task.
-- **Figure 12 - Reward Frontier:** this is the clearest reward-misalignment figure. It shows whether higher reward is being bought by sacrificing security, which is exactly the failure mode the trained model exhibits.
-- **Figure 13 - Reward Turn Dynamics:** this figure is about escalation behavior. It shows how reward and security move as scenario difficulty intensifies, rather than only reporting final means.
-- **Figure 14 - Scenario Timeline:** this is the episode-level panorama. It helps readers see that the trained model can accumulate revenue and dense reward while still failing the core sleeper-detection objective.
+- **Figure 9 - Comparison Grades:** this is the main headline metric for the baseline snapshot. It shows overall task quality by agent family and reveals that the earlier trained model underperformed once grading accounted for more than raw reward.
+- **Figure 10 - Comparison Operations:** use this to separate *why* an agent scored the way it did. Reward, revenue, security, and sleepers caught are split apart so hidden tradeoffs become visible.
+- **Figure 11 - Comparison Radar:** this is the balanced-performance view. It makes it easy to see whether an agent is broadly competent or only strong on one or two axes.
+- **Figure 12 - Reward Distributions:** this exposes variance and brittleness. If an agent has a high average reward but a wide or unstable distribution, it is not reliably solving the task.
+- **Figure 13 - Reward Frontier:** this is the clearest reward-misalignment figure. It shows whether higher reward is being bought by sacrificing security, which is exactly the failure mode the baseline trained model exhibited.
+- **Figure 14 - Reward Turn Dynamics:** this figure is about escalation behavior. It shows how reward and security move as scenario difficulty intensifies, rather than only reporting final means.
+- **Figure 15 - Scenario Timeline:** this is the episode-level panorama. It helps readers see that the trained model can accumulate revenue and dense reward while still failing the core sleeper-detection objective.
 
 ### Evaluation Reproducibility
 

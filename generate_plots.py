@@ -105,6 +105,7 @@ def parse_levels(log_text: str) -> dict[str, LevelData]:
         raise ValueError("No training blocks found in the provided training log.")
 
     parsed: dict[str, LevelData] = {}
+    partials: dict[str, dict[str, object]] = {}
     skipped_blocks: list[tuple[str, list[str]]] = []
 
     for idx, match in enumerate(headers):
@@ -117,37 +118,72 @@ def parse_levels(log_text: str) -> dict[str, LevelData]:
         expert_rows = [tuple(row) for row in expert_pattern.findall(block)]
         metric_rows = [tuple(row) for row in metric_pattern.findall(block)]
 
-        missing_parts: list[str] = []
-        if token_match is None:
-            missing_parts.append("token metadata")
-        if saved_match is None:
-            missing_parts.append("saved example metadata")
-        if not expert_rows:
-            missing_parts.append("expert metrics")
-        if not metric_rows:
-            missing_parts.append("training metrics")
+        level_parts = partials.setdefault(level, {"episodes": int(match.group(2))})
+        level_parts["episodes"] = int(match.group(2))
 
+        if token_match is not None:
+            level_parts["token_min"] = int(token_match.group(2))
+            level_parts["token_max"] = int(token_match.group(1))
+            level_parts["token_avg"] = int(token_match.group(3))
+        if saved_match is not None:
+            level_parts["examples"] = int(saved_match.group(1))
+        if expert_rows:
+            level_parts["expert_steps"] = [int(row[0]) for row in expert_rows]
+            level_parts["expert_reward"] = [float(row[1]) for row in expert_rows]
+            level_parts["expert_revenue"] = [int(row[2]) for row in expert_rows]
+            level_parts["expert_security"] = [int(row[3]) for row in expert_rows]
+            level_parts["expert_caught"] = [int(row[4]) for row in expert_rows]
+            level_parts["expert_grade"] = [float(row[6]) for row in expert_rows]
+        if metric_rows:
+            level_parts["loss"] = [float(row[0]) for row in metric_rows]
+            level_parts["grad_norm"] = [float(row[1]) for row in metric_rows]
+            level_parts["learning_rate"] = [float(row[2]) for row in metric_rows]
+            level_parts["epoch"] = [float(row[3]) for row in metric_rows]
+
+        required_fields = {
+            "examples": "saved example metadata",
+            "token_min": "token metadata",
+            "token_max": "token metadata",
+            "token_avg": "token metadata",
+            "expert_steps": "expert metrics",
+            "expert_reward": "expert metrics",
+            "expert_revenue": "expert metrics",
+            "expert_security": "expert metrics",
+            "expert_caught": "expert metrics",
+            "expert_grade": "expert metrics",
+            "loss": "training metrics",
+            "grad_norm": "training metrics",
+            "learning_rate": "training metrics",
+            "epoch": "training metrics",
+        }
+        missing_parts = sorted(
+            {
+                label
+                for key, label in required_fields.items()
+                if key not in level_parts
+            }
+        )
         if missing_parts:
             skipped_blocks.append((level, missing_parts))
             continue
 
         parsed[level] = LevelData(
             name=level,
-            episodes=int(match.group(2)),
-            examples=int(saved_match.group(1)),
-            token_min=int(token_match.group(2)),
-            token_max=int(token_match.group(1)),
-            token_avg=int(token_match.group(3)),
-            expert_steps=[int(row[0]) for row in expert_rows],
-            expert_reward=[float(row[1]) for row in expert_rows],
-            expert_revenue=[int(row[2]) for row in expert_rows],
-            expert_security=[int(row[3]) for row in expert_rows],
-            expert_caught=[int(row[4]) for row in expert_rows],
-            expert_grade=[float(row[6]) for row in expert_rows],
-            loss=[float(row[0]) for row in metric_rows],
-            grad_norm=[float(row[1]) for row in metric_rows],
-            learning_rate=[float(row[2]) for row in metric_rows],
-            epoch=[float(row[3]) for row in metric_rows],
+            episodes=int(level_parts["episodes"]),
+            examples=int(level_parts["examples"]),
+            token_min=int(level_parts["token_min"]),
+            token_max=int(level_parts["token_max"]),
+            token_avg=int(level_parts["token_avg"]),
+            expert_steps=list(level_parts["expert_steps"]),
+            expert_reward=list(level_parts["expert_reward"]),
+            expert_revenue=list(level_parts["expert_revenue"]),
+            expert_security=list(level_parts["expert_security"]),
+            expert_caught=list(level_parts["expert_caught"]),
+            expert_grade=list(level_parts["expert_grade"]),
+            loss=list(level_parts["loss"]),
+            grad_norm=list(level_parts["grad_norm"]),
+            learning_rate=list(level_parts["learning_rate"]),
+            epoch=list(level_parts["epoch"]),
         )
 
     if skipped_blocks:
