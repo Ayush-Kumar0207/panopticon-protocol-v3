@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import statistics
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -175,6 +176,208 @@ def enumerate_valid_actions(obs: EnvironmentObservation) -> list[AgentAction]:
     return [action for action in actions if validate_action(action, obs)[0]]
 
 
+def _safe_fallback_action(obs: EnvironmentObservation) -> AgentAction:
+    canary_leak = next((leak for leak in obs.active_leaks if leak.is_canary and not leak.verified), None)
+    if canary_leak:
+        return AgentAction(
+            action_type=ActionType.INVESTIGATE.value,
+            target=canary_leak.id,
+            sub_action=SubAction.VERIFY.value,
+            reason="Recovered: verify triggered canary leak",
+        )
+
+    suspicious_worker = max(
+        obs.workers,
+        key=lambda worker: worker.suspicion_level,
+        default=None,
+    )
+    if suspicious_worker and suspicious_worker.suspicion_level > 0.2:
+        return AgentAction(
+            action_type=ActionType.INVESTIGATE.value,
+            target=suspicious_worker.id,
+            sub_action=SubAction.AUDIT.value,
+            reason="Recovered: audit highest-suspicion worker",
+        )
+
+    planted_departments = {trap.department for trap in obs.canary_traps if trap.active}
+    for dept in [dept.value for dept in Department]:
+        if dept not in planted_departments:
+            return AgentAction(
+                action_type=ActionType.CANARY.value,
+                target=dept,
+                reason="Recovered: expand canary coverage",
+            )
+
+    if obs.active_leaks:
+        most_recent = max(obs.active_leaks, key=lambda leak: leak.turn_detected)
+        return AgentAction(
+            action_type=ActionType.MONITOR.value,
+            target=most_recent.channel,
+            reason="Recovered: monitor latest active leak channel",
+        )
+
+    return AgentAction(
+        action_type=ActionType.WORK.value,
+        target=Department.ENGINEERING.value,
+        reason="Recovered: maintain revenue while awaiting stronger signals",
+    )
+
+
+def _recover_action_from_text(raw_text: str, obs: EnvironmentObservation) -> AgentAction | None:
+    text = (raw_text or "").lower()
+    departments = {dept.value for dept in Department}
+    worker_ids = {worker.id for worker in obs.workers if worker.state != "terminated"}
+    leak_ids = {leak.id for leak in obs.active_leaks}
+    double_agents = [asset.worker_id for asset in obs.double_agents if asset.active]
+
+    worker_match = re.search(r"w-\d{3}", text)
+    leak_match = re.search(r"leak-\d{3}", text)
+    department_match = next((dept for dept in departments if dept in text), "")
+
+    if "verify" in text and leak_match and leak_match.group(0) in leak_ids:
+        return AgentAction(
+            action_type=ActionType.INVESTIGATE.value,
+            target=leak_match.group(0),
+            sub_action=SubAction.VERIFY.value,
+            reason="Recovered verify action from model trace",
+        )
+
+    if "audit" in text and worker_match and worker_match.group(0) in worker_ids:
+        return AgentAction(
+            action_type=ActionType.INVESTIGATE.value,
+            target=worker_match.group(0),
+            sub_action=SubAction.AUDIT.value,
+            reason="Recovered audit action from model trace",
+        )
+
+    if "correlate" in text and department_match:
+        return AgentAction(
+            action_type=ActionType.INVESTIGATE.value,
+            target=department_match,
+            sub_action=SubAction.CORRELATE.value,
+            reason="Recovered correlate action from model trace",
+        )
+
+    if "terminate" in text and worker_match and worker_match.group(0) in worker_ids:
+        return AgentAction(
+            action_type=ActionType.NEUTRALIZE.value,
+            target=worker_match.group(0),
+            sub_action=SubAction.TERMINATE.value,
+            reason="Recovered terminate action from model trace",
+        )
+
+    if "interrogate" in text and worker_match and worker_match.group(0) in worker_ids:
+        return AgentAction(
+            action_type=ActionType.NEUTRALIZE.value,
+            target=worker_match.group(0),
+            sub_action=SubAction.INTERROGATE.value,
+            reason="Recovered interrogate action from model trace",
+        )
+
+    if "turn" in text and worker_match and worker_match.group(0) in worker_ids:
+        return AgentAction(
+            action_type=ActionType.NEUTRALIZE.value,
+            target=worker_match.group(0),
+            sub_action=SubAction.TURN.value,
+            reason="Recovered turn action from model trace",
+        )
+
+    if "deploy_double" in text and double_agents:
+        return AgentAction(
+            action_type=ActionType.DEPLOY_DOUBLE.value,
+            target=double_agents[0],
+            reason="Recovered deploy_double action from model trace",
+        )
+
+    return None
+
+
+def repair_trained_action(action: AgentAction, raw_text: str, obs: EnvironmentObservation) -> AgentAction:
+    departments = {dept.value for dept in Department}
+    channels = {channel.value for channel in LeakChannel}
+    worker_ids = {worker.id for worker in obs.workers if worker.state != "terminated"}
+    leak_ids = {leak.id for leak in obs.active_leaks}
+    active_double_agents = [asset.worker_id for asset in obs.double_agents if asset.active]
+
+    normalized = AgentAction(
+        action_type=(action.action_type or "noop").strip().lower(),
+        target=(action.target or "").strip().lower(),
+        sub_action=(action.sub_action or "none").strip().lower(),
+        reason=action.reason or "",
+    )
+
+    action_aliases = {
+        "analyse": ActionType.INVESTIGATE.value,
+        "analyze": ActionType.INVESTIGATE.value,
+        "scan": ActionType.MONITOR.value,
+        "scan_for_leaks": ActionType.MONITOR.value,
+        "generate_revenue": ActionType.WORK.value,
+    }
+    normalized.action_type = action_aliases.get(normalized.action_type, normalized.action_type)
+
+    if normalized.action_type == ActionType.NOOP.value and (raw_text.strip() or "parse failure" in normalized.reason.lower()):
+        recovered = _recover_action_from_text(raw_text, obs)
+        if recovered is not None and validate_action(recovered, obs)[0]:
+            return recovered
+        return _safe_fallback_action(obs)
+
+    if normalized.action_type == ActionType.MONITOR.value:
+        if normalized.target in leak_ids:
+            normalized = AgentAction(
+                action_type=ActionType.INVESTIGATE.value,
+                target=normalized.target,
+                sub_action=SubAction.VERIFY.value,
+                reason=normalized.reason or "Repair: verify referenced leak",
+            )
+        elif normalized.target in departments:
+            normalized = AgentAction(
+                action_type=ActionType.INVESTIGATE.value,
+                target=normalized.target,
+                sub_action=SubAction.CORRELATE.value,
+                reason=normalized.reason or "Repair: correlate on referenced department",
+            )
+
+    if normalized.action_type == ActionType.INVESTIGATE.value:
+        if normalized.sub_action not in {
+            SubAction.AUDIT.value,
+            SubAction.VERIFY.value,
+            SubAction.CORRELATE.value,
+        }:
+            if normalized.target in leak_ids:
+                normalized.sub_action = SubAction.VERIFY.value
+            elif normalized.target in worker_ids:
+                normalized.sub_action = SubAction.AUDIT.value
+            elif normalized.target in departments:
+                normalized.sub_action = SubAction.CORRELATE.value
+
+    if normalized.action_type == ActionType.NEUTRALIZE.value:
+        if normalized.sub_action not in {
+            SubAction.TERMINATE.value,
+            SubAction.INTERROGATE.value,
+            SubAction.TURN.value,
+        } and normalized.target in worker_ids:
+            normalized.sub_action = SubAction.INTERROGATE.value
+
+    if normalized.action_type == ActionType.DEPLOY_DOUBLE.value and normalized.target not in active_double_agents:
+        if active_double_agents:
+            normalized.target = active_double_agents[0]
+
+    if normalized.action_type not in {action_type.value for action_type in ActionType}:
+        recovered = _recover_action_from_text(raw_text, obs)
+        if recovered is not None:
+            normalized = recovered
+
+    valid, _ = validate_action(normalized, obs)
+    if valid:
+        return normalized
+
+    recovered = _recover_action_from_text(raw_text, obs)
+    if recovered is not None and validate_action(recovered, obs)[0]:
+        return recovered
+
+    return _safe_fallback_action(obs)
+
+
 class LocalModelPolicy:
     def __init__(
         self,
@@ -201,8 +404,9 @@ class LocalModelPolicy:
             temperature=self.temperature,
             top_p=self.top_p,
         )
+        repaired_action = repair_trained_action(trace.action, trace.raw_text, obs)
         return make_policy_decision(
-            action=trace.action,
+            action=repaired_action,
             policy_name=self.policy_name,
             raw_text=trace.raw_text,
             prompt=trace.prompt,
