@@ -176,6 +176,7 @@ def rolling_mean(values: list[float] | np.ndarray, window: int) -> np.ndarray:
 
 def build_plot_manifest(plot_dir: Path) -> dict[str, str]:
     return {
+        "benchmark_summary_table": str(plot_dir / "benchmark_summary_table.png"),
         "comparison_grades": str(plot_dir / "comparison_grades.png"),
         "comparison_operations": str(plot_dir / "comparison_operations.png"),
         "comparison_radar": str(plot_dir / "comparison_radar.png"),
@@ -184,6 +185,60 @@ def build_plot_manifest(plot_dir: Path) -> dict[str, str]:
         "reward_frontier": str(plot_dir / "reward_frontier.png"),
         "reward_turn_dynamics": str(plot_dir / "reward_turn_dynamics.png"),
     }
+
+
+def build_console_lines(payload: dict[str, Any], payload_mode: str) -> list[str]:
+    lines = []
+    rule = "-" * 92
+    header = (
+        f"{'AGENT':<12} | {'LEVEL':<8} | {'GRADE (+/- STD)':<18} | "
+        f"{'REWARD':>8} | {'REV':>7} | {'SEC':>7} | {'CAUGHT':>7}"
+    )
+    lines.append(rule)
+    lines.append(header)
+    lines.append(rule)
+    for agent_key in AGENT_ORDER:
+        for level in LEVELS:
+            row = level_summary(payload, payload_mode, agent_key, level)
+            lines.append(
+                f"{AGENT_LABELS[agent_key]:<12} | {level:<8} | "
+                f"{row['grade_mean']:.3f} +/- {row['grade_std']:.3f} | "
+                f"{row['reward_mean']:>8.2f} | {row['revenue_mean']:>7.1f} | "
+                f"{row['security_mean']:>7.1f} | {row['sleepers_caught_mean']:>7.2f}"
+            )
+        lines.append(rule)
+    return lines
+
+
+def plot_benchmark_summary_table(payload: dict[str, Any], payload_mode: str, output_path: Path) -> None:
+    lines = build_console_lines(payload, payload_mode)
+    fig_height = max(7.2, 0.42 * len(lines))
+    fig, ax = plt.subplots(figsize=(15.5, fig_height))
+    bg = "#0d1117"
+    fg = "#d1d5db"
+    muted = "#9ca3af"
+
+    fig.patch.set_facecolor(bg)
+    ax.set_facecolor(bg)
+    ax.axis("off")
+
+    y_top = 0.98
+    step = 0.92 / max(len(lines), 1)
+    for idx, line in enumerate(lines):
+        color = muted if set(line) == {"-"} else fg
+        ax.text(
+            0.015,
+            y_top - idx * step,
+            line,
+            family="DejaVu Sans Mono",
+            fontsize=12.0,
+            color=color,
+            va="top",
+            ha="left",
+        )
+
+    fig.savefig(output_path, dpi=220, facecolor=bg, bbox_inches="tight")
+    plt.close(fig)
 
 
 def plot_grade_comparison(payload: dict[str, Any], payload_mode: str, output_path: Path) -> None:
@@ -588,6 +643,7 @@ def render_evaluation_plots(payload: dict[str, Any], plot_dir: Path, timeline_le
     ensure_plot_dir(plot_dir)
     payload_mode = detect_payload_mode(payload)
     plot_files = build_plot_manifest(plot_dir)
+    plot_benchmark_summary_table(payload, payload_mode, Path(plot_files["benchmark_summary_table"]))
     plot_grade_comparison(payload, payload_mode, Path(plot_files["comparison_grades"]))
     plot_operations_comparison(payload, payload_mode, Path(plot_files["comparison_operations"]))
     plot_radar_comparison(payload, payload_mode, Path(plot_files["comparison_radar"]))

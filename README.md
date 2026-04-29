@@ -355,31 +355,33 @@ Artifacts written to `plots/`:
 
 > 📊 **Everything above is derived from the committed raw training log rather than hand-entered numbers.**
 
-### Historical Structured Benchmark Snapshot (April 26 baseline)
+### Final Structured Benchmark (50-Episode A10G Rerun)
 
-The structured benchmark figures below come from the last committed evaluation payload available in the repo: [`evaluation_snapshot_apr26.json`](evaluation_snapshot_apr26.json). We keep them here as the **baseline comparison snapshot** that motivated the stronger expert policy, the repaired plotting pipeline, and the final 50-episode A10G rerun. The fresh 50-episode worker log above is the current training source of truth; once the new `evaluationResults.json` export is synced from the worker upload, the same gallery can be refreshed without changing this layout.
+The figures below are regenerated from the final structured benchmark payload uploaded to the model repo as [`evaluationResults.json`](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/blob/main/evaluationResults.json), produced after the full 50-episode A10G curriculum run completed and the merged model was evaluated across all five levels.
+
+This benchmark tells an important and honest story: **the curriculum training curves clearly improve, but the held-out deployment policy still fails in a reward-misaligned way.** That is not a README accident. It is one of the main research takeaways of Panopticon: the environment is rich enough to show when an agent appears to learn from dense expert traces, yet still collapses under a stricter operational evaluation that measures security retention and sleeper neutralization.
 
 | Agent | Easy Grade | Medium Grade | Hard Grade | Level 4 Grade | Level 5 Grade |
 |---|---:|---:|---:|---:|---:|
-| **Random** | 0.595 | 0.691 | 0.752 | 0.801 | 0.785 |
-| **Heuristic** | 0.729 | 0.726 | 0.679 | 0.688 | 0.643 |
-| **Trained** | 0.423 | 0.400 | 0.351 | 0.380 | 0.426 |
+| **Random** | 0.602 | 0.813 | 0.825 | 0.591 | 0.733 |
+| **Heuristic** | 0.729 | 0.722 | 0.687 | 0.712 | 0.663 |
+| **Trained** | 0.502 | 0.441 | 0.370 | 0.411 | 0.433 |
 
-| Agent | Mean Reward | Mean Revenue | Mean Security | Mean Sleepers Caught | Diagnostic Read |
-|---|---:|---:|---:|---:|---|
-| **Random** | 11.27 | 217.2 | 65.2 | 4.30 | Chaotic but occasionally security-positive on later tiers |
-| **Heuristic** | 12.00 | 590.7 | 85.4 | 2.50 | Reliable baseline with strong security discipline |
-| **Trained** | 13.52 | 702.5 | 18.5 | 0.00 | Reward/revenue seeking with near-total security collapse |
+| Agent | Overall Grade | Mean Reward | Mean Revenue | Mean Security | Mean Sleepers Caught | Diagnostic Read |
+|---|---:|---:|---:|---:|---:|---|
+| **Random** | 0.713 | 5.08 | 228.5 | 68.4 | 4.00 | Chaotic but sometimes “succeeds” by brute-force disruption rather than disciplined defense |
+| **Heuristic** | 0.703 | 12.14 | 591.7 | 89.4 | 2.67 | Best balanced baseline with strong security discipline and stable sleeper handling |
+| **Trained** | 0.431 | -10.22 | 423.2 | 27.9 | 0.00 | Learns dense imitation/loss structure, but still fails the held-out security-preserving mission objective |
 
-This baseline snapshot is exactly why we added the dedicated reward-analysis pass: the raw scalar reward alone suggested the earlier trained agent was competitive, but the grader and operational traces exposed clear **reward misalignment**.
+The key lesson is that **training improvement and deployment success are not the same thing**. The 50-episode rerun gives us better expert traces, cleaner reward logging, and much stronger research evidence, but the final benchmark still shows the learned policy prioritizing the wrong behavior. That is exactly the kind of failure mode a good OpenEnv environment should expose.
 
-The gallery below is rendered from the April 26 benchmark snapshot captured from the A10G Space console. Once the repaired `evaluationResults.json` export is rerun, the same README slots can be refreshed from the full structured payload.
+The gallery below is rendered directly from the final structured `evaluationResults.json` export rather than a console screenshot. The plots and tables are regenerated from the same payload that was uploaded from the A10G worker.
 
 <p align="center">
   <img src="plots/benchmark_summary_table.png" alt="Benchmark summary table" width="100%">
 </p>
 
-<sub><b>Console Snapshot.</b> Baseline benchmark scoreboard from the April 26, 2026 A10G evaluation run. We keep it in the README because the reward story only becomes obvious when grade, reward, revenue, security, and sleepers caught are read side by side.</sub>
+<sub><b>Structured Benchmark Scoreboard.</b> Final 50-episode A10G benchmark summary rendered from the structured `evaluationResults.json` payload. Reading grade, reward, revenue, security, and sleepers caught side by side is what makes the reward-misalignment story visible.</sub>
 
 ### Evaluation & Reward Plot Gallery
 
@@ -418,13 +420,13 @@ The gallery below is rendered from the April 26 benchmark snapshot captured from
 
 ### How to Read the Evaluation Plots
 
-- **Figure 9 - Comparison Grades:** this is the main headline metric for the baseline snapshot. It shows overall task quality by agent family and reveals that the earlier trained model underperformed once grading accounted for more than raw reward.
+- **Figure 9 - Comparison Grades:** this is the main headline metric for the final benchmark. It shows overall task quality by agent family and makes the post-training gap immediately visible: the fine-tuned model still trails both baselines once grading accounts for operational reality rather than token-level imitation success.
 - **Figure 10 - Comparison Operations:** use this to separate *why* an agent scored the way it did. Reward, revenue, security, and sleepers caught are split apart so hidden tradeoffs become visible.
 - **Figure 11 - Comparison Radar:** this is the balanced-performance view. It makes it easy to see whether an agent is broadly competent or only strong on one or two axes.
 - **Figure 12 - Reward Distributions:** this exposes variance and brittleness. If an agent has a high average reward but a wide or unstable distribution, it is not reliably solving the task.
-- **Figure 13 - Reward Frontier:** this is the clearest reward-misalignment figure. It shows whether higher reward is being bought by sacrificing security, which is exactly the failure mode the baseline trained model exhibited.
+- **Figure 13 - Reward Frontier:** this is the clearest reward-misalignment figure. It shows whether higher reward is being bought by sacrificing security, which is exactly the failure mode the final trained model still exhibits.
 - **Figure 14 - Reward Turn Dynamics:** this figure is about escalation behavior. It shows how reward and security move as scenario difficulty intensifies, rather than only reporting final means.
-- **Figure 15 - Scenario Timeline:** this is the episode-level panorama. It helps readers see that the trained model can accumulate revenue and dense reward while still failing the core sleeper-detection objective.
+- **Figure 15 - Scenario Timeline:** this is the episode-level panorama. It helps readers see that the trained model can still accumulate revenue or local reward while failing the actual sleeper-detection mission, which is exactly why the environment needs multi-dimensional grading.
 
 ### Evaluation Reproducibility
 
@@ -436,7 +438,7 @@ python full_evaluation.py \
   --episodes 3 \
   --output evaluationResults.json \
   --plot-dir plots \
-  --showcase-output ui/src/data/showcaseResults.json
+  --showcase-output showcaseResults.json
 ```
 
 To regenerate the figure suite from a saved evaluation JSON without rerunning inference:
@@ -447,6 +449,11 @@ python generate_evaluation_plots.py \
   --plot-dir plots \
   --timeline-level level_5
 ```
+
+For lightweight frontend/demo artifacts, we keep compact derived summaries in:
+
+- `ui/src/data/evaluationResults.json`
+- `ui/src/data/showcaseResults.json`
 
 ---
 

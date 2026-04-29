@@ -1,32 +1,1501 @@
 {
   "schema_version": 1,
-  "created_at": null,
+  "created_at": "2026-04-28T19:09:09+00:00",
   "config": {
-    "model": null,
-    "episodes_per_level": 0,
-    "seed": null,
+    "model": "/data/panopticon-ep50-v2/merged_model",
+    "episodes_per_level": 3,
+    "seed": 42,
     "timeline_level": "level_5",
     "deterministic_trained_eval": true,
     "max_steps": 300
   },
-  "seed_plan": {},
+  "seed_plan": {
+    "easy": [
+      670487,
+      116739,
+      26225
+    ],
+    "medium": [
+      777572,
+      288389,
+      256787
+    ],
+    "hard": [
+      234053,
+      146316,
+      772246
+    ],
+    "level_4": [
+      107473,
+      709570,
+      776646
+    ],
+    "level_5": [
+      935518,
+      571858,
+      91161
+    ]
+  },
   "agents": {
     "random": {
       "episodes": {},
-      "summary": {},
-      "overall": {}
+      "summary": {
+        "easy": {
+          "level": "easy",
+          "episodes": 3,
+          "pass_rate": 1.0,
+          "grade_mean": 0.6021666666666666,
+          "grade_std": 0.016511073725095964,
+          "reward_mean": 0.04024999999999027,
+          "reward_std": 1.122016766808758,
+          "revenue_mean": 141.34166666666633,
+          "revenue_std": 37.40055889362527,
+          "security_mean": 100.0,
+          "security_std": 0.0,
+          "sleepers_caught_mean": 1,
+          "sleepers_caught_std": 0.0,
+          "sleepers_missed_mean": 0,
+          "sleepers_missed_std": 0.0,
+          "invalid_actions_mean": 0,
+          "invalid_actions_std": 0.0,
+          "steps_mean": 60,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 0.6,
+              "std": 0.0
+            },
+            "revenue": {
+              "mean": 0.959,
+              "std": 0.0579827560572969
+            },
+            "intelligence": {
+              "mean": 0.3621333333333333,
+              "std": 0.017159124556793574
+            },
+            "adaptability": {
+              "mean": 0.2,
+              "std": 0.0
+            },
+            "efficiency": {
+              "mean": 0.8,
+              "std": 0.0
+            }
+          }
+        },
+        "medium": {
+          "level": "medium",
+          "episodes": 3,
+          "pass_rate": 1.0,
+          "grade_mean": 0.8127,
+          "grade_std": 0.035466322053463645,
+          "reward_mean": 0.8219166666666309,
+          "reward_std": 0.49482043600571585,
+          "revenue_mean": 211.93333333333214,
+          "revenue_std": 30.887405290110497,
+          "security_mean": 73.23333333333333,
+          "security_std": 22.92834248019008,
+          "sleepers_caught_mean": 3.3333333333333335,
+          "sleepers_caught_std": 0.4714045207910317,
+          "sleepers_missed_mean": 0.3333333333333333,
+          "sleepers_missed_std": 0.4714045207910317,
+          "invalid_actions_mean": 0,
+          "invalid_actions_std": 0.0,
+          "steps_mean": 90,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 0.8530333333333333,
+              "std": 0.06327402486188329
+            },
+            "revenue": {
+              "mean": 1.0,
+              "std": 0.0
+            },
+            "intelligence": {
+              "mean": 0.6964666666666667,
+              "std": 0.01813584541423116
+            },
+            "adaptability": {
+              "mean": 0.5833333333333334,
+              "std": 0.09428090415820635
+            },
+            "efficiency": {
+              "mean": 0.8,
+              "std": 0.0
+            }
+          }
+        },
+        "hard": {
+          "level": "hard",
+          "episodes": 3,
+          "pass_rate": 1.0,
+          "grade_mean": 0.8247666666666666,
+          "grade_std": 0.07593270412381975,
+          "reward_mean": 0.610749999999958,
+          "reward_std": 1.9741656782043393,
+          "revenue_mean": 205.21666666666528,
+          "revenue_std": 67.58561648424579,
+          "security_mean": 94.69999999999999,
+          "security_std": 2.4859605789312136,
+          "sleepers_caught_mean": 5.333333333333333,
+          "sleepers_caught_std": 0.9428090415820634,
+          "sleepers_missed_mean": 0,
+          "sleepers_missed_std": 0.0,
+          "invalid_actions_mean": 0,
+          "invalid_actions_std": 0.0,
+          "steps_mean": 120,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 0.9142333333333333,
+              "std": 0.12129238319953244
+            },
+            "revenue": {
+              "mean": 0.9977333333333334,
+              "std": 0.0032055507413790286
+            },
+            "intelligence": {
+              "mean": 0.7389,
+              "std": 0.1091623561489949
+            },
+            "adaptability": {
+              "mean": 0.6333333333333333,
+              "std": 0.09428090415820632
+            },
+            "efficiency": {
+              "mean": 0.8,
+              "std": 0.0
+            }
+          }
+        },
+        "level_4": {
+          "level": "level_4",
+          "episodes": 3,
+          "pass_rate": 0.0,
+          "grade_mean": 0.5905,
+          "grade_std": 0.10573460486835266,
+          "reward_mean": -1.6589166666667108,
+          "reward_std": 2.5376088017177874,
+          "revenue_mean": 232.18333333333186,
+          "revenue_std": 85.67187970520003,
+          "security_mean": 4.566666666666655,
+          "security_std": 3.0346151137976016,
+          "sleepers_caught_mean": 4.333333333333333,
+          "sleepers_caught_std": 0.9428090415820634,
+          "sleepers_missed_mean": 1,
+          "sleepers_missed_std": 0.816496580927726,
+          "invalid_actions_mean": 0,
+          "invalid_actions_std": 0.0,
+          "steps_mean": 150,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 0.35536666666666666,
+              "std": 0.11271691187316224
+            },
+            "revenue": {
+              "mean": 1.0,
+              "std": 0.0
+            },
+            "intelligence": {
+              "mean": 0.5889,
+              "std": 0.17231682061443296
+            },
+            "adaptability": {
+              "mean": 0.5333333333333333,
+              "std": 0.2357022603955158
+            },
+            "efficiency": {
+              "mean": 0.8,
+              "std": 0.0
+            }
+          }
+        },
+        "level_5": {
+          "level": "level_5",
+          "episodes": 3,
+          "pass_rate": 0.6666666666666666,
+          "grade_mean": 0.7326333333333334,
+          "grade_std": 0.07972729910276793,
+          "reward_mean": 25.574833333333196,
+          "reward_std": 13.883070963247047,
+          "revenue_mean": 352.0333333333321,
+          "revenue_std": 43.1023120674008,
+          "security_mean": 69.46666666666665,
+          "security_std": 39.08301705628958,
+          "sleepers_caught_mean": 6,
+          "sleepers_caught_std": 0.816496580927726,
+          "sleepers_missed_mean": 0,
+          "sleepers_missed_std": 0.0,
+          "invalid_actions_mean": 0,
+          "invalid_actions_std": 0.0,
+          "steps_mean": 160,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 0.6084,
+              "std": 0.1386867213062111
+            },
+            "revenue": {
+              "mean": 0.9985,
+              "std": 0.002121320343559618
+            },
+            "intelligence": {
+              "mean": 0.6211,
+              "std": 0.1139228686436573
+            },
+            "adaptability": {
+              "mean": 0.5333333333333333,
+              "std": 0.2357022603955158
+            },
+            "efficiency": {
+              "mean": 1.0,
+              "std": 0.0
+            }
+          }
+        }
+      },
+      "overall": {
+        "level": "overall",
+        "episodes": 15,
+        "pass_rate": 0.7333333333333333,
+        "grade_mean": 0.7125533333333334,
+        "grade_std": 0.12242477345519392,
+        "reward_mean": 5.077766666666613,
+        "reward_std": 12.11227420739891,
+        "revenue_mean": 228.54166666666555,
+        "revenue_std": 89.22478946770083,
+        "security_mean": 68.39333333333333,
+        "security_std": 39.64346884698944,
+        "sleepers_caught_mean": 4,
+        "sleepers_caught_std": 1.8973665961010275,
+        "sleepers_missed_mean": 0.26666666666666666,
+        "sleepers_missed_std": 0.5734883511361751,
+        "invalid_actions_mean": 0,
+        "invalid_actions_std": 0.0,
+        "steps_mean": 116,
+        "steps_std": 37.20215047547655,
+        "grader_dimensions": {
+          "security": {
+            "mean": 0.6662066666666666,
+            "std": 0.22424202242715843
+          },
+          "revenue": {
+            "mean": 0.9910466666666666,
+            "std": 0.030542928623314577
+          },
+          "intelligence": {
+            "mean": 0.6015,
+            "std": 0.16789759974460625
+          },
+          "adaptability": {
+            "mean": 0.49666666666666665,
+            "std": 0.2217105219775452
+          },
+          "efficiency": {
+            "mean": 0.8400000000000001,
+            "std": 0.07999999999999997
+          }
+        }
+      }
     },
     "heuristic": {
       "episodes": {},
-      "summary": {},
-      "overall": {}
+      "summary": {
+        "easy": {
+          "level": "easy",
+          "episodes": 3,
+          "pass_rate": 1.0,
+          "grade_mean": 0.7292666666666667,
+          "grade_std": 0.00041899350299922175,
+          "reward_mean": 4.184749999999982,
+          "reward_std": 0.09741406469294067,
+          "revenue_mean": 279.4916666666661,
+          "revenue_std": 3.2471354897646743,
+          "security_mean": 100.0,
+          "security_std": 0.0,
+          "sleepers_caught_mean": 1,
+          "sleepers_caught_std": 0.0,
+          "sleepers_missed_mean": 0,
+          "sleepers_missed_std": 0.0,
+          "invalid_actions_mean": 0,
+          "invalid_actions_std": 0.0,
+          "steps_mean": 60,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 1.0,
+              "std": 0.0
+            },
+            "revenue": {
+              "mean": 0.9137333333333333,
+              "std": 0.0018006171781425908
+            },
+            "intelligence": {
+              "mean": 0.4167,
+              "std": 0.0
+            },
+            "adaptability": {
+              "mean": 0.25,
+              "std": 0.0
+            },
+            "efficiency": {
+              "mean": 0.8,
+              "std": 0.0
+            }
+          }
+        },
+        "medium": {
+          "level": "medium",
+          "episodes": 3,
+          "pass_rate": 1.0,
+          "grade_mean": 0.7223999999999999,
+          "grade_std": 0.0025664502073226964,
+          "reward_mean": 8.082499999999978,
+          "reward_std": 0.06030339957249463,
+          "revenue_mean": 429.4166666666659,
+          "revenue_std": 2.010113319083123,
+          "security_mean": 100.0,
+          "security_std": 0.0,
+          "sleepers_caught_mean": 2,
+          "sleepers_caught_std": 0.0,
+          "sleepers_missed_mean": 0,
+          "sleepers_missed_std": 0.0,
+          "invalid_actions_mean": 0,
+          "invalid_actions_std": 0.0,
+          "steps_mean": 90,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 1.0,
+              "std": 0.0
+            },
+            "revenue": {
+              "mean": 0.8739666666666667,
+              "std": 0.0028170118131728415
+            },
+            "intelligence": {
+              "mean": 0.3944333333333333,
+              "std": 0.015744910994420477
+            },
+            "adaptability": {
+              "mean": 0.3,
+              "std": 0.0
+            },
+            "efficiency": {
+              "mean": 0.8,
+              "std": 0.0
+            }
+          }
+        },
+        "hard": {
+          "level": "hard",
+          "episodes": 3,
+          "pass_rate": 1.0,
+          "grade_mean": 0.6868000000000001,
+          "grade_std": 0.005162040940041714,
+          "reward_mean": 12.324999999999998,
+          "reward_std": 0.15163154355212824,
+          "revenue_mean": 590.8333333333336,
+          "revenue_std": 5.054384785070967,
+          "security_mean": 100.0,
+          "security_std": 0.0,
+          "sleepers_caught_mean": 3,
+          "sleepers_caught_std": 0.0,
+          "sleepers_missed_mean": 0,
+          "sleepers_missed_std": 0.0,
+          "invalid_actions_mean": 0,
+          "invalid_actions_std": 0.0,
+          "steps_mean": 120,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 1.0,
+              "std": 0.0
+            },
+            "revenue": {
+              "mean": 0.8798333333333334,
+              "std": 0.002389328124994321
+            },
+            "intelligence": {
+              "mean": 0.4278,
+              "std": 0.015697770542341352
+            },
+            "adaptability": {
+              "mean": 0.35,
+              "std": 0.0
+            },
+            "efficiency": {
+              "mean": 0.8,
+              "std": 0.0
+            }
+          }
+        },
+        "level_4": {
+          "level": "level_4",
+          "episodes": 3,
+          "pass_rate": 1.0,
+          "grade_mean": 0.7116,
+          "grade_std": 0.0384315842331105,
+          "reward_mean": 16.420916666666752,
+          "reward_std": 0.4420706171592346,
+          "revenue_mean": 764.4750000000031,
+          "revenue_std": 4.549221545128957,
+          "security_mean": 81.33333333333333,
+          "security_std": 13.199326582148887,
+          "sleepers_caught_mean": 3.3333333333333335,
+          "sleepers_caught_std": 0.4714045207910317,
+          "sleepers_missed_mean": 0.6666666666666666,
+          "sleepers_missed_std": 0.4714045207910317,
+          "invalid_actions_mean": 0,
+          "invalid_actions_std": 0.0,
+          "steps_mean": 150,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 0.8606666666666667,
+              "std": 0.0985235448453256
+            },
+            "revenue": {
+              "mean": 0.8583,
+              "std": 0.011679326464598348
+            },
+            "intelligence": {
+              "mean": 0.4211,
+              "std": 0.02794792777052831
+            },
+            "adaptability": {
+              "mean": 0.35,
+              "std": 0.0
+            },
+            "efficiency": {
+              "mean": 0.8,
+              "std": 0.0
+            }
+          }
+        },
+        "level_5": {
+          "level": "level_5",
+          "episodes": 3,
+          "pass_rate": 1.0,
+          "grade_mean": 0.6631666666666667,
+          "grade_std": 0.011154769781976182,
+          "reward_mean": 19.684250000000166,
+          "reward_std": 0.3897437192138706,
+          "revenue_mean": 894.2500000000043,
+          "revenue_std": 3.2705121923027356,
+          "security_mean": 65.7,
+          "security_std": 15.628392964942574,
+          "sleepers_caught_mean": 4,
+          "sleepers_caught_std": 0.0,
+          "sleepers_missed_mean": 1,
+          "sleepers_missed_std": 0.0,
+          "invalid_actions_mean": 0,
+          "invalid_actions_std": 0.0,
+          "steps_mean": 160,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 0.7971,
+              "std": 0.046885178894827725
+            },
+            "revenue": {
+              "mean": 0.8261333333333333,
+              "std": 0.005325619421459083
+            },
+            "intelligence": {
+              "mean": 0.43666666666666665,
+              "std": 0.009428090415820642
+            },
+            "adaptability": {
+              "mean": 0.35,
+              "std": 0.0
+            },
+            "efficiency": {
+              "mean": 1.0,
+              "std": 0.0
+            }
+          }
+        }
+      },
+      "overall": {
+        "level": "overall",
+        "episodes": 15,
+        "pass_rate": 1.0,
+        "grade_mean": 0.7026466666666666,
+        "grade_std": 0.03040918428516111,
+        "reward_mean": 12.139483333333375,
+        "reward_std": 5.575104174263439,
+        "revenue_mean": 591.6933333333345,
+        "revenue_std": 221.48133131761483,
+        "security_mean": 89.40666666666667,
+        "security_std": 16.627145141471384,
+        "sleepers_caught_mean": 2.6666666666666665,
+        "sleepers_caught_std": 1.0749676997731399,
+        "sleepers_missed_mean": 0.3333333333333333,
+        "sleepers_missed_std": 0.4714045207910317,
+        "invalid_actions_mean": 0,
+        "invalid_actions_std": 0.0,
+        "steps_mean": 116,
+        "steps_std": 37.20215047547655,
+        "grader_dimensions": {
+          "security": {
+            "mean": 0.9315533333333333,
+            "std": 0.09905813018402657
+          },
+          "revenue": {
+            "mean": 0.8703933333333334,
+            "std": 0.029213318119576146
+          },
+          "intelligence": {
+            "mean": 0.41934,
+            "std": 0.021755422312609803
+          },
+          "adaptability": {
+            "mean": 0.32,
+            "std": 0.03999999999999999
+          },
+          "efficiency": {
+            "mean": 0.8400000000000001,
+            "std": 0.07999999999999997
+          }
+        }
+      }
     },
     "trained": {
       "episodes": {},
-      "summary": {},
-      "overall": {}
+      "summary": {
+        "easy": {
+          "level": "easy",
+          "episodes": 3,
+          "pass_rate": 1.0,
+          "grade_mean": 0.5021666666666667,
+          "grade_std": 0.025502984574794805,
+          "reward_mean": 2.978166666666647,
+          "reward_std": 0.18504057362883738,
+          "revenue_mean": 260.9666666666659,
+          "revenue_std": 5.736082189865224,
+          "security_mean": 76.33333333333333,
+          "security_std": 0.4714045207910317,
+          "sleepers_caught_mean": 0,
+          "sleepers_caught_std": 0.0,
+          "sleepers_missed_mean": 1,
+          "sleepers_missed_std": 0.0,
+          "invalid_actions_mean": 0,
+          "invalid_actions_std": 0.0,
+          "steps_mean": 60,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 0.429,
+              "std": 0.0014142135623730963
+            },
+            "revenue": {
+              "mean": 0.9674,
+              "std": 0.0
+            },
+            "intelligence": {
+              "mean": 0.13333333333333333,
+              "std": 0.09428090415820635
+            },
+            "adaptability": {
+              "mean": 0.16666666666666669,
+              "std": 0.047140452079103175
+            },
+            "efficiency": {
+              "mean": 0.8,
+              "std": 0.0
+            }
+          }
+        },
+        "medium": {
+          "level": "medium",
+          "episodes": 3,
+          "pass_rate": 0.0,
+          "grade_mean": 0.4404666666666667,
+          "grade_std": 0.016309574556751093,
+          "reward_mean": -14.979250000000032,
+          "reward_std": 12.852880174951698,
+          "revenue_mean": 300.4833333333322,
+          "revenue_std": 31.59942861649354,
+          "security_mean": 43.499999999999986,
+          "security_std": 20.537932385385535,
+          "sleepers_caught_mean": 0,
+          "sleepers_caught_std": 0.0,
+          "sleepers_missed_mean": 0.6666666666666666,
+          "sleepers_missed_std": 0.9428090415820634,
+          "invalid_actions_mean": 18,
+          "invalid_actions_std": 12.727922061357855,
+          "steps_mean": 90,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 0.3305,
+              "std": 0.06161379715615651
+            },
+            "revenue": {
+              "mean": 0.9572,
+              "std": 0.003179098404684356
+            },
+            "intelligence": {
+              "mean": 0.2,
+              "std": 0.0
+            },
+            "adaptability": {
+              "mean": 0.2,
+              "std": 0.0
+            },
+            "efficiency": {
+              "mean": 0.32,
+              "std": 0.33941125496954283
+            }
+          }
+        },
+        "hard": {
+          "level": "hard",
+          "episodes": 3,
+          "pass_rate": 0.0,
+          "grade_mean": 0.36983333333333335,
+          "grade_std": 0.029454635552923672,
+          "reward_mean": -6.2160833333333825,
+          "reward_std": 17.74006910139366,
+          "revenue_mean": 451.4833333333321,
+          "revenue_std": 43.64214960588237,
+          "security_mean": 5.433333333333315,
+          "security_std": 7.259629620181862,
+          "sleepers_caught_mean": 0,
+          "sleepers_caught_std": 0.0,
+          "sleepers_missed_mean": 2,
+          "sleepers_missed_std": 1.4142135623730951,
+          "invalid_actions_mean": 12,
+          "invalid_actions_std": 16.97056274847714,
+          "steps_mean": 120,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 0.2163,
+              "std": 0.02177888886054566
+            },
+            "revenue": {
+              "mean": 0.9487333333333333,
+              "std": 0.00999377584076987
+            },
+            "intelligence": {
+              "mean": 0.13333333333333333,
+              "std": 0.09428090415820635
+            },
+            "adaptability": {
+              "mean": 0.2,
+              "std": 0.0
+            },
+            "efficiency": {
+              "mean": 0.56,
+              "std": 0.33941125496954283
+            }
+          }
+        },
+        "level_4": {
+          "level": "level_4",
+          "episodes": 3,
+          "pass_rate": 0.0,
+          "grade_mean": 0.4108,
+          "grade_std": 0.0044181444068748955,
+          "reward_mean": 2.482249999999958,
+          "reward_std": 6.822437137856236,
+          "revenue_mean": 570.133333333332,
+          "revenue_std": 15.844680144733148,
+          "security_mean": 0.3,
+          "security_std": 0.0,
+          "sleepers_caught_mean": 0,
+          "sleepers_caught_std": 0.0,
+          "sleepers_missed_mean": 4,
+          "sleepers_missed_std": 0.0,
+          "invalid_actions_mean": 6,
+          "invalid_actions_std": 6.48074069840786,
+          "steps_mean": 150,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 0.2009,
+              "std": 0.0
+            },
+            "revenue": {
+              "mean": 0.9501,
+              "std": 0.0
+            },
+            "intelligence": {
+              "mean": 0.26666666666666666,
+              "std": 0.09428090415820635
+            },
+            "adaptability": {
+              "mean": 0.2,
+              "std": 0.0
+            },
+            "efficiency": {
+              "mean": 0.7040000000000001,
+              "std": 0.10369185117452576
+            }
+          }
+        },
+        "level_5": {
+          "level": "level_5",
+          "episodes": 3,
+          "pass_rate": 0.0,
+          "grade_mean": 0.4334,
+          "grade_std": 0.05067089894604198,
+          "reward_mean": -35.38416666666668,
+          "reward_std": 42.84000685998883,
+          "revenue_mean": 532.716666666666,
+          "revenue_std": 123.21227166515935,
+          "security_mean": 13.733333333333329,
+          "security_std": 18.99760218787857,
+          "sleepers_caught_mean": 0,
+          "sleepers_caught_std": 0.0,
+          "sleepers_missed_mean": 3.3333333333333335,
+          "sleepers_missed_std": 2.3570226039551585,
+          "invalid_actions_mean": 43.666666666666664,
+          "invalid_actions_std": 40.45024378445972,
+          "steps_mean": 160,
+          "steps_std": 0.0,
+          "grader_dimensions": {
+            "security": {
+              "mean": 0.2412,
+              "std": 0.05699280656363572
+            },
+            "revenue": {
+              "mean": 0.9215666666666666,
+              "std": 0.03214978831794838
+            },
+            "intelligence": {
+              "mean": 0.26666666666666666,
+              "std": 0.09428090415820635
+            },
+            "adaptability": {
+              "mean": 0.2,
+              "std": 0.0
+            },
+            "efficiency": {
+              "mean": 0.49373333333333336,
+              "std": 0.36580305569466687
+            }
+          }
+        }
+      },
+      "overall": {
+        "level": "overall",
+        "episodes": 15,
+        "pass_rate": 0.2,
+        "grade_mean": 0.43133333333333335,
+        "grade_std": 0.05230670660207499,
+        "reward_mean": -10.223816666666698,
+        "reward_std": 25.958460800457505,
+        "revenue_mean": 423.1566666666656,
+        "revenue_std": 137.2083514424525,
+        "security_mean": 27.859999999999992,
+        "security_std": 31.27933929395995,
+        "sleepers_caught_mean": 0,
+        "sleepers_caught_std": 0.0,
+        "sleepers_missed_mean": 2.2,
+        "sleepers_missed_std": 1.833030277982336,
+        "invalid_actions_mean": 15.933333333333334,
+        "invalid_actions_std": 25.572033335049618,
+        "steps_mean": 116,
+        "steps_std": 37.20215047547655,
+        "grader_dimensions": {
+          "security": {
+            "mean": 0.28358,
+            "std": 0.09383801788187984
+          },
+          "revenue": {
+            "mean": 0.949,
+            "std": 0.021462805035689075
+          },
+          "intelligence": {
+            "mean": 0.2,
+            "std": 0.10327955589886445
+          },
+          "adaptability": {
+            "mean": 0.19333333333333336,
+            "std": 0.024944382578492942
+          },
+          "efficiency": {
+            "mean": 0.5755466666666667,
+            "std": 0.32065016839055127
+          }
+        }
+      }
     }
   },
-  "comparison_rows": [],
-  "plots": {}
+  "comparison_rows": [
+    {
+      "level": "easy",
+      "episodes": 3,
+      "pass_rate": 1.0,
+      "grade_mean": 0.6021666666666666,
+      "grade_std": 0.016511073725095964,
+      "reward_mean": 0.04024999999999027,
+      "reward_std": 1.122016766808758,
+      "revenue_mean": 141.34166666666633,
+      "revenue_std": 37.40055889362527,
+      "security_mean": 100.0,
+      "security_std": 0.0,
+      "sleepers_caught_mean": 1,
+      "sleepers_caught_std": 0.0,
+      "sleepers_missed_mean": 0,
+      "sleepers_missed_std": 0.0,
+      "invalid_actions_mean": 0,
+      "invalid_actions_std": 0.0,
+      "steps_mean": 60,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 0.6,
+          "std": 0.0
+        },
+        "revenue": {
+          "mean": 0.959,
+          "std": 0.0579827560572969
+        },
+        "intelligence": {
+          "mean": 0.3621333333333333,
+          "std": 0.017159124556793574
+        },
+        "adaptability": {
+          "mean": 0.2,
+          "std": 0.0
+        },
+        "efficiency": {
+          "mean": 0.8,
+          "std": 0.0
+        }
+      },
+      "agent": "random"
+    },
+    {
+      "level": "medium",
+      "episodes": 3,
+      "pass_rate": 1.0,
+      "grade_mean": 0.8127,
+      "grade_std": 0.035466322053463645,
+      "reward_mean": 0.8219166666666309,
+      "reward_std": 0.49482043600571585,
+      "revenue_mean": 211.93333333333214,
+      "revenue_std": 30.887405290110497,
+      "security_mean": 73.23333333333333,
+      "security_std": 22.92834248019008,
+      "sleepers_caught_mean": 3.3333333333333335,
+      "sleepers_caught_std": 0.4714045207910317,
+      "sleepers_missed_mean": 0.3333333333333333,
+      "sleepers_missed_std": 0.4714045207910317,
+      "invalid_actions_mean": 0,
+      "invalid_actions_std": 0.0,
+      "steps_mean": 90,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 0.8530333333333333,
+          "std": 0.06327402486188329
+        },
+        "revenue": {
+          "mean": 1.0,
+          "std": 0.0
+        },
+        "intelligence": {
+          "mean": 0.6964666666666667,
+          "std": 0.01813584541423116
+        },
+        "adaptability": {
+          "mean": 0.5833333333333334,
+          "std": 0.09428090415820635
+        },
+        "efficiency": {
+          "mean": 0.8,
+          "std": 0.0
+        }
+      },
+      "agent": "random"
+    },
+    {
+      "level": "hard",
+      "episodes": 3,
+      "pass_rate": 1.0,
+      "grade_mean": 0.8247666666666666,
+      "grade_std": 0.07593270412381975,
+      "reward_mean": 0.610749999999958,
+      "reward_std": 1.9741656782043393,
+      "revenue_mean": 205.21666666666528,
+      "revenue_std": 67.58561648424579,
+      "security_mean": 94.69999999999999,
+      "security_std": 2.4859605789312136,
+      "sleepers_caught_mean": 5.333333333333333,
+      "sleepers_caught_std": 0.9428090415820634,
+      "sleepers_missed_mean": 0,
+      "sleepers_missed_std": 0.0,
+      "invalid_actions_mean": 0,
+      "invalid_actions_std": 0.0,
+      "steps_mean": 120,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 0.9142333333333333,
+          "std": 0.12129238319953244
+        },
+        "revenue": {
+          "mean": 0.9977333333333334,
+          "std": 0.0032055507413790286
+        },
+        "intelligence": {
+          "mean": 0.7389,
+          "std": 0.1091623561489949
+        },
+        "adaptability": {
+          "mean": 0.6333333333333333,
+          "std": 0.09428090415820632
+        },
+        "efficiency": {
+          "mean": 0.8,
+          "std": 0.0
+        }
+      },
+      "agent": "random"
+    },
+    {
+      "level": "level_4",
+      "episodes": 3,
+      "pass_rate": 0.0,
+      "grade_mean": 0.5905,
+      "grade_std": 0.10573460486835266,
+      "reward_mean": -1.6589166666667108,
+      "reward_std": 2.5376088017177874,
+      "revenue_mean": 232.18333333333186,
+      "revenue_std": 85.67187970520003,
+      "security_mean": 4.566666666666655,
+      "security_std": 3.0346151137976016,
+      "sleepers_caught_mean": 4.333333333333333,
+      "sleepers_caught_std": 0.9428090415820634,
+      "sleepers_missed_mean": 1,
+      "sleepers_missed_std": 0.816496580927726,
+      "invalid_actions_mean": 0,
+      "invalid_actions_std": 0.0,
+      "steps_mean": 150,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 0.35536666666666666,
+          "std": 0.11271691187316224
+        },
+        "revenue": {
+          "mean": 1.0,
+          "std": 0.0
+        },
+        "intelligence": {
+          "mean": 0.5889,
+          "std": 0.17231682061443296
+        },
+        "adaptability": {
+          "mean": 0.5333333333333333,
+          "std": 0.2357022603955158
+        },
+        "efficiency": {
+          "mean": 0.8,
+          "std": 0.0
+        }
+      },
+      "agent": "random"
+    },
+    {
+      "level": "level_5",
+      "episodes": 3,
+      "pass_rate": 0.6666666666666666,
+      "grade_mean": 0.7326333333333334,
+      "grade_std": 0.07972729910276793,
+      "reward_mean": 25.574833333333196,
+      "reward_std": 13.883070963247047,
+      "revenue_mean": 352.0333333333321,
+      "revenue_std": 43.1023120674008,
+      "security_mean": 69.46666666666665,
+      "security_std": 39.08301705628958,
+      "sleepers_caught_mean": 6,
+      "sleepers_caught_std": 0.816496580927726,
+      "sleepers_missed_mean": 0,
+      "sleepers_missed_std": 0.0,
+      "invalid_actions_mean": 0,
+      "invalid_actions_std": 0.0,
+      "steps_mean": 160,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 0.6084,
+          "std": 0.1386867213062111
+        },
+        "revenue": {
+          "mean": 0.9985,
+          "std": 0.002121320343559618
+        },
+        "intelligence": {
+          "mean": 0.6211,
+          "std": 0.1139228686436573
+        },
+        "adaptability": {
+          "mean": 0.5333333333333333,
+          "std": 0.2357022603955158
+        },
+        "efficiency": {
+          "mean": 1.0,
+          "std": 0.0
+        }
+      },
+      "agent": "random"
+    },
+    {
+      "level": "easy",
+      "episodes": 3,
+      "pass_rate": 1.0,
+      "grade_mean": 0.7292666666666667,
+      "grade_std": 0.00041899350299922175,
+      "reward_mean": 4.184749999999982,
+      "reward_std": 0.09741406469294067,
+      "revenue_mean": 279.4916666666661,
+      "revenue_std": 3.2471354897646743,
+      "security_mean": 100.0,
+      "security_std": 0.0,
+      "sleepers_caught_mean": 1,
+      "sleepers_caught_std": 0.0,
+      "sleepers_missed_mean": 0,
+      "sleepers_missed_std": 0.0,
+      "invalid_actions_mean": 0,
+      "invalid_actions_std": 0.0,
+      "steps_mean": 60,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 1.0,
+          "std": 0.0
+        },
+        "revenue": {
+          "mean": 0.9137333333333333,
+          "std": 0.0018006171781425908
+        },
+        "intelligence": {
+          "mean": 0.4167,
+          "std": 0.0
+        },
+        "adaptability": {
+          "mean": 0.25,
+          "std": 0.0
+        },
+        "efficiency": {
+          "mean": 0.8,
+          "std": 0.0
+        }
+      },
+      "agent": "heuristic"
+    },
+    {
+      "level": "medium",
+      "episodes": 3,
+      "pass_rate": 1.0,
+      "grade_mean": 0.7223999999999999,
+      "grade_std": 0.0025664502073226964,
+      "reward_mean": 8.082499999999978,
+      "reward_std": 0.06030339957249463,
+      "revenue_mean": 429.4166666666659,
+      "revenue_std": 2.010113319083123,
+      "security_mean": 100.0,
+      "security_std": 0.0,
+      "sleepers_caught_mean": 2,
+      "sleepers_caught_std": 0.0,
+      "sleepers_missed_mean": 0,
+      "sleepers_missed_std": 0.0,
+      "invalid_actions_mean": 0,
+      "invalid_actions_std": 0.0,
+      "steps_mean": 90,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 1.0,
+          "std": 0.0
+        },
+        "revenue": {
+          "mean": 0.8739666666666667,
+          "std": 0.0028170118131728415
+        },
+        "intelligence": {
+          "mean": 0.3944333333333333,
+          "std": 0.015744910994420477
+        },
+        "adaptability": {
+          "mean": 0.3,
+          "std": 0.0
+        },
+        "efficiency": {
+          "mean": 0.8,
+          "std": 0.0
+        }
+      },
+      "agent": "heuristic"
+    },
+    {
+      "level": "hard",
+      "episodes": 3,
+      "pass_rate": 1.0,
+      "grade_mean": 0.6868000000000001,
+      "grade_std": 0.005162040940041714,
+      "reward_mean": 12.324999999999998,
+      "reward_std": 0.15163154355212824,
+      "revenue_mean": 590.8333333333336,
+      "revenue_std": 5.054384785070967,
+      "security_mean": 100.0,
+      "security_std": 0.0,
+      "sleepers_caught_mean": 3,
+      "sleepers_caught_std": 0.0,
+      "sleepers_missed_mean": 0,
+      "sleepers_missed_std": 0.0,
+      "invalid_actions_mean": 0,
+      "invalid_actions_std": 0.0,
+      "steps_mean": 120,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 1.0,
+          "std": 0.0
+        },
+        "revenue": {
+          "mean": 0.8798333333333334,
+          "std": 0.002389328124994321
+        },
+        "intelligence": {
+          "mean": 0.4278,
+          "std": 0.015697770542341352
+        },
+        "adaptability": {
+          "mean": 0.35,
+          "std": 0.0
+        },
+        "efficiency": {
+          "mean": 0.8,
+          "std": 0.0
+        }
+      },
+      "agent": "heuristic"
+    },
+    {
+      "level": "level_4",
+      "episodes": 3,
+      "pass_rate": 1.0,
+      "grade_mean": 0.7116,
+      "grade_std": 0.0384315842331105,
+      "reward_mean": 16.420916666666752,
+      "reward_std": 0.4420706171592346,
+      "revenue_mean": 764.4750000000031,
+      "revenue_std": 4.549221545128957,
+      "security_mean": 81.33333333333333,
+      "security_std": 13.199326582148887,
+      "sleepers_caught_mean": 3.3333333333333335,
+      "sleepers_caught_std": 0.4714045207910317,
+      "sleepers_missed_mean": 0.6666666666666666,
+      "sleepers_missed_std": 0.4714045207910317,
+      "invalid_actions_mean": 0,
+      "invalid_actions_std": 0.0,
+      "steps_mean": 150,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 0.8606666666666667,
+          "std": 0.0985235448453256
+        },
+        "revenue": {
+          "mean": 0.8583,
+          "std": 0.011679326464598348
+        },
+        "intelligence": {
+          "mean": 0.4211,
+          "std": 0.02794792777052831
+        },
+        "adaptability": {
+          "mean": 0.35,
+          "std": 0.0
+        },
+        "efficiency": {
+          "mean": 0.8,
+          "std": 0.0
+        }
+      },
+      "agent": "heuristic"
+    },
+    {
+      "level": "level_5",
+      "episodes": 3,
+      "pass_rate": 1.0,
+      "grade_mean": 0.6631666666666667,
+      "grade_std": 0.011154769781976182,
+      "reward_mean": 19.684250000000166,
+      "reward_std": 0.3897437192138706,
+      "revenue_mean": 894.2500000000043,
+      "revenue_std": 3.2705121923027356,
+      "security_mean": 65.7,
+      "security_std": 15.628392964942574,
+      "sleepers_caught_mean": 4,
+      "sleepers_caught_std": 0.0,
+      "sleepers_missed_mean": 1,
+      "sleepers_missed_std": 0.0,
+      "invalid_actions_mean": 0,
+      "invalid_actions_std": 0.0,
+      "steps_mean": 160,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 0.7971,
+          "std": 0.046885178894827725
+        },
+        "revenue": {
+          "mean": 0.8261333333333333,
+          "std": 0.005325619421459083
+        },
+        "intelligence": {
+          "mean": 0.43666666666666665,
+          "std": 0.009428090415820642
+        },
+        "adaptability": {
+          "mean": 0.35,
+          "std": 0.0
+        },
+        "efficiency": {
+          "mean": 1.0,
+          "std": 0.0
+        }
+      },
+      "agent": "heuristic"
+    },
+    {
+      "level": "easy",
+      "episodes": 3,
+      "pass_rate": 1.0,
+      "grade_mean": 0.5021666666666667,
+      "grade_std": 0.025502984574794805,
+      "reward_mean": 2.978166666666647,
+      "reward_std": 0.18504057362883738,
+      "revenue_mean": 260.9666666666659,
+      "revenue_std": 5.736082189865224,
+      "security_mean": 76.33333333333333,
+      "security_std": 0.4714045207910317,
+      "sleepers_caught_mean": 0,
+      "sleepers_caught_std": 0.0,
+      "sleepers_missed_mean": 1,
+      "sleepers_missed_std": 0.0,
+      "invalid_actions_mean": 0,
+      "invalid_actions_std": 0.0,
+      "steps_mean": 60,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 0.429,
+          "std": 0.0014142135623730963
+        },
+        "revenue": {
+          "mean": 0.9674,
+          "std": 0.0
+        },
+        "intelligence": {
+          "mean": 0.13333333333333333,
+          "std": 0.09428090415820635
+        },
+        "adaptability": {
+          "mean": 0.16666666666666669,
+          "std": 0.047140452079103175
+        },
+        "efficiency": {
+          "mean": 0.8,
+          "std": 0.0
+        }
+      },
+      "agent": "trained"
+    },
+    {
+      "level": "medium",
+      "episodes": 3,
+      "pass_rate": 0.0,
+      "grade_mean": 0.4404666666666667,
+      "grade_std": 0.016309574556751093,
+      "reward_mean": -14.979250000000032,
+      "reward_std": 12.852880174951698,
+      "revenue_mean": 300.4833333333322,
+      "revenue_std": 31.59942861649354,
+      "security_mean": 43.499999999999986,
+      "security_std": 20.537932385385535,
+      "sleepers_caught_mean": 0,
+      "sleepers_caught_std": 0.0,
+      "sleepers_missed_mean": 0.6666666666666666,
+      "sleepers_missed_std": 0.9428090415820634,
+      "invalid_actions_mean": 18,
+      "invalid_actions_std": 12.727922061357855,
+      "steps_mean": 90,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 0.3305,
+          "std": 0.06161379715615651
+        },
+        "revenue": {
+          "mean": 0.9572,
+          "std": 0.003179098404684356
+        },
+        "intelligence": {
+          "mean": 0.2,
+          "std": 0.0
+        },
+        "adaptability": {
+          "mean": 0.2,
+          "std": 0.0
+        },
+        "efficiency": {
+          "mean": 0.32,
+          "std": 0.33941125496954283
+        }
+      },
+      "agent": "trained"
+    },
+    {
+      "level": "hard",
+      "episodes": 3,
+      "pass_rate": 0.0,
+      "grade_mean": 0.36983333333333335,
+      "grade_std": 0.029454635552923672,
+      "reward_mean": -6.2160833333333825,
+      "reward_std": 17.74006910139366,
+      "revenue_mean": 451.4833333333321,
+      "revenue_std": 43.64214960588237,
+      "security_mean": 5.433333333333315,
+      "security_std": 7.259629620181862,
+      "sleepers_caught_mean": 0,
+      "sleepers_caught_std": 0.0,
+      "sleepers_missed_mean": 2,
+      "sleepers_missed_std": 1.4142135623730951,
+      "invalid_actions_mean": 12,
+      "invalid_actions_std": 16.97056274847714,
+      "steps_mean": 120,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 0.2163,
+          "std": 0.02177888886054566
+        },
+        "revenue": {
+          "mean": 0.9487333333333333,
+          "std": 0.00999377584076987
+        },
+        "intelligence": {
+          "mean": 0.13333333333333333,
+          "std": 0.09428090415820635
+        },
+        "adaptability": {
+          "mean": 0.2,
+          "std": 0.0
+        },
+        "efficiency": {
+          "mean": 0.56,
+          "std": 0.33941125496954283
+        }
+      },
+      "agent": "trained"
+    },
+    {
+      "level": "level_4",
+      "episodes": 3,
+      "pass_rate": 0.0,
+      "grade_mean": 0.4108,
+      "grade_std": 0.0044181444068748955,
+      "reward_mean": 2.482249999999958,
+      "reward_std": 6.822437137856236,
+      "revenue_mean": 570.133333333332,
+      "revenue_std": 15.844680144733148,
+      "security_mean": 0.3,
+      "security_std": 0.0,
+      "sleepers_caught_mean": 0,
+      "sleepers_caught_std": 0.0,
+      "sleepers_missed_mean": 4,
+      "sleepers_missed_std": 0.0,
+      "invalid_actions_mean": 6,
+      "invalid_actions_std": 6.48074069840786,
+      "steps_mean": 150,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 0.2009,
+          "std": 0.0
+        },
+        "revenue": {
+          "mean": 0.9501,
+          "std": 0.0
+        },
+        "intelligence": {
+          "mean": 0.26666666666666666,
+          "std": 0.09428090415820635
+        },
+        "adaptability": {
+          "mean": 0.2,
+          "std": 0.0
+        },
+        "efficiency": {
+          "mean": 0.7040000000000001,
+          "std": 0.10369185117452576
+        }
+      },
+      "agent": "trained"
+    },
+    {
+      "level": "level_5",
+      "episodes": 3,
+      "pass_rate": 0.0,
+      "grade_mean": 0.4334,
+      "grade_std": 0.05067089894604198,
+      "reward_mean": -35.38416666666668,
+      "reward_std": 42.84000685998883,
+      "revenue_mean": 532.716666666666,
+      "revenue_std": 123.21227166515935,
+      "security_mean": 13.733333333333329,
+      "security_std": 18.99760218787857,
+      "sleepers_caught_mean": 0,
+      "sleepers_caught_std": 0.0,
+      "sleepers_missed_mean": 3.3333333333333335,
+      "sleepers_missed_std": 2.3570226039551585,
+      "invalid_actions_mean": 43.666666666666664,
+      "invalid_actions_std": 40.45024378445972,
+      "steps_mean": 160,
+      "steps_std": 0.0,
+      "grader_dimensions": {
+        "security": {
+          "mean": 0.2412,
+          "std": 0.05699280656363572
+        },
+        "revenue": {
+          "mean": 0.9215666666666666,
+          "std": 0.03214978831794838
+        },
+        "intelligence": {
+          "mean": 0.26666666666666666,
+          "std": 0.09428090415820635
+        },
+        "adaptability": {
+          "mean": 0.2,
+          "std": 0.0
+        },
+        "efficiency": {
+          "mean": 0.49373333333333336,
+          "std": 0.36580305569466687
+        }
+      },
+      "agent": "trained"
+    }
+  ],
+  "plots": {
+    "comparison_grades": "plots/comparison_grades.png",
+    "comparison_operations": "plots/comparison_operations.png",
+    "comparison_radar": "plots/comparison_radar.png",
+    "scenario_timeline": "plots/scenario_timeline.png",
+    "reward_distributions": "plots/reward_distributions.png",
+    "reward_frontier": "plots/reward_frontier.png",
+    "reward_turn_dynamics": "plots/reward_turn_dynamics.png"
+  }
 }
