@@ -27,6 +27,7 @@ import os
 import random
 import shutil
 import sys
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import torch
@@ -49,6 +50,48 @@ from models import (
 
 os.environ["PYTHONUNBUFFERED"] = "1"
 
+
+def disable_incompatible_torchao():
+    try:
+        torchao_version = version("torchao")
+    except PackageNotFoundError:
+        return
+
+    def parse_parts(raw_version):
+        parts = []
+        for token in raw_version.replace("-", ".").split("."):
+            if token.isdigit():
+                parts.append(int(token))
+            else:
+                break
+        return tuple(parts)
+
+    if parse_parts(torchao_version) >= (0, 16, 0):
+        return
+
+    try:
+        import peft.import_utils as peft_import_utils
+
+        peft_import_utils.is_torchao_available = lambda: False
+    except Exception:
+        pass
+
+    try:
+        import peft.tuners.lora.torchao as peft_torchao
+
+        peft_torchao.is_torchao_available = lambda: False
+    except Exception:
+        pass
+
+    print(
+        f"[*] Disabled incompatible torchao {torchao_version}. "
+        "PEFT LoRA training does not require torchao for this notebook run."
+    )
+    sys.stdout.flush()
+
+
+disable_incompatible_torchao()
+
 GPU_DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 CPU_BASIC_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 DEFAULT_MODEL = GPU_DEFAULT_MODEL
@@ -57,14 +100,20 @@ LORA_ALPHA = 32
 EPISODES_PER_LEVEL = 20  # Default/fallback only; production GPU runs can override with --episodes 50
 DEFAULT_MAX_SEQ_LENGTH = 1024
 CPU_BASIC_MAX_SEQ_LENGTH = 384
+LOW_VRAM_GPU_MAX_SEQ_LENGTH = 512
 DEFAULT_TRAIN_EPOCHS = 3
 CPU_BASIC_TRAIN_EPOCHS = 1
+LOW_VRAM_GPU_TRAIN_EPOCHS = 2
 DEFAULT_BATCH_SIZE = 2
 CPU_BASIC_BATCH_SIZE = 1
+LOW_VRAM_GPU_BATCH_SIZE = 1
 DEFAULT_GRAD_ACCUM = 4
 CPU_BASIC_GRAD_ACCUM = 4
+LOW_VRAM_GPU_GRAD_ACCUM = 8
 DEFAULT_SAVE_STEPS = 50
 CPU_BASIC_SAVE_STEPS = 5
+LOW_VRAM_GPU_SAVE_STEPS = 25
+LOW_VRAM_GPU_THRESHOLD_GB = 20
 TRAJECTORY_SCHEMA_VERSION = "curriculum-expert-v2"
 LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
 
@@ -92,6 +141,21 @@ def resolve_precision():
 TRAIN_DTYPE, USE_BF16, USE_FP16 = resolve_precision()
 
 
+def is_low_vram_gpu():
+    if not torch.cuda.is_available():
+        return False
+    total_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+    return total_gb < LOW_VRAM_GPU_THRESHOLD_GB
+
+
+def runtime_profile_name(running_on_cpu, low_vram_gpu):
+    if running_on_cpu or CPU_BASIC_SAFE_MODE:
+        return "cpu-basic-safe"
+    if low_vram_gpu:
+        return "low-vram-gpu-safe"
+    return "default-gpu"
+
+
 def configure_runtime(args):
     global TRAIN_DTYPE
     global USE_BF16
@@ -106,6 +170,7 @@ def configure_runtime(args):
 
     TRAIN_DTYPE, USE_BF16, USE_FP16 = resolve_precision()
     running_on_cpu = not torch.cuda.is_available()
+    low_vram_gpu = is_low_vram_gpu()
     CPU_BASIC_SAFE_MODE = running_on_cpu or args.cpu_basic_safe
 
     if CPU_BASIC_SAFE_MODE:
@@ -117,6 +182,13 @@ def configure_runtime(args):
         GRADIENT_ACCUMULATION_STEPS = CPU_BASIC_GRAD_ACCUM
         SAVE_STEPS = CPU_BASIC_SAVE_STEPS
         GRADIENT_CHECKPOINTING = True
+    elif low_vram_gpu:
+        MAX_SEQ_LENGTH = args.max_seq_length or LOW_VRAM_GPU_MAX_SEQ_LENGTH
+        NUM_TRAIN_EPOCHS = args.epochs or LOW_VRAM_GPU_TRAIN_EPOCHS
+        PER_DEVICE_TRAIN_BATCH_SIZE = LOW_VRAM_GPU_BATCH_SIZE
+        GRADIENT_ACCUMULATION_STEPS = LOW_VRAM_GPU_GRAD_ACCUM
+        SAVE_STEPS = LOW_VRAM_GPU_SAVE_STEPS
+        GRADIENT_CHECKPOINTING = True
     else:
         MAX_SEQ_LENGTH = args.max_seq_length or DEFAULT_MAX_SEQ_LENGTH
         NUM_TRAIN_EPOCHS = args.epochs or DEFAULT_TRAIN_EPOCHS
@@ -127,7 +199,7 @@ def configure_runtime(args):
 
     print(
         "[*] Runtime profile: "
-        f"{'cpu-basic-safe' if CPU_BASIC_SAFE_MODE else 'default-gpu'} | "
+        f"{runtime_profile_name(running_on_cpu, low_vram_gpu)} | "
         f"device={'cuda' if torch.cuda.is_available() else 'cpu'} | "
         f"model={args.model}"
     )
@@ -138,6 +210,8 @@ def configure_runtime(args):
     )
     if CPU_BASIC_SAFE_MODE:
         print("[*] CPU-safe note: truncated contexts, 1 epoch, and rapid checkpoints are enabled.")
+    elif low_vram_gpu:
+        print("[*] Low-VRAM GPU note: using seq=512, batch=1, grad checkpointing, and slower accumulation for T4-class cards.")
     sys.stdout.flush()
     return args
 
