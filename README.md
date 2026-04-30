@@ -23,9 +23,9 @@
 📝 **Blog Post**: [blog.md](blog.md)  
 📓 **Submitted Colab URL**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)  
 📘 **Canonical Training Notebook in Repo**: [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)  
-📈 **Companion Plot Notebook**: [Panopticon_Plots_Colab.ipynb](Panopticon_Plots_Colab.ipynb)
+📈 **Compatibility Copy for Submitted Colab Link**: [Panopticon_Plots_Colab.ipynb](Panopticon_Plots_Colab.ipynb)
 
-> **Important notebook note:** the end-to-end training pipeline lives in `Panopticon_Training_FINAL.ipynb`. `Panopticon_Plots_Colab.ipynb` is the plotting companion used to regenerate the README figures from a finished run.
+> **Important notebook note:** the end-to-end training pipeline lives in `Panopticon_Training_FINAL.ipynb`. Because the already-submitted Google Colab URL cannot be changed, `Panopticon_Plots_Colab.ipynb` is now a compatibility copy of the same training pipeline with the historical filename preserved.
 
 
 ---

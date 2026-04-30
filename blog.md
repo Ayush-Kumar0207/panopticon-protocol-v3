@@ -43,10 +43,10 @@ The final public artifacts come from a **50-episode-per-level A10G run** using:
 The repo contains **two different notebooks**:
 
 - **Actual end-to-end training notebook:** [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)
-- **Plot regeneration notebook:** [Panopticon_Plots_Colab.ipynb](Panopticon_Plots_Colab.ipynb)
+- **Compatibility copy for the submitted Colab link:** [Panopticon_Plots_Colab.ipynb](Panopticon_Plots_Colab.ipynb)
 
-The training notebook runs the curriculum, saves `output_logs.txt`, merges the adapter, runs evaluation, and uploads artifacts.  
-The plot notebook is only for rebuilding the figure suite from a finished log or evaluation JSON.
+The canonical training notebook runs the curriculum, saves `output_logs.txt`, merges the adapter, runs evaluation, and uploads artifacts.  
+Because the already-submitted Colab URL cannot be changed, `Panopticon_Plots_Colab.ipynb` now mirrors the same end-to-end flow while keeping the historical filename that the shared link expects.
 
 ---
 
