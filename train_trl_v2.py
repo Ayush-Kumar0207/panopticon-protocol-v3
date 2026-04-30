@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import inspect
 import gc
 import json
 import os
@@ -722,25 +723,32 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         ],
     )
 
-    sft_config = SFTConfig(
-        output_dir=str(output_dir),
-        num_train_epochs=NUM_TRAIN_EPOCHS,
-        per_device_train_batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,
-        gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
-        learning_rate=2e-5,
-        warmup_ratio=0.03,
-        logging_steps=5,
-        save_strategy="steps",
-        save_steps=SAVE_STEPS,
-        save_total_limit=2,
-        bf16=USE_BF16,
-        fp16=USE_FP16,
-        gradient_checkpointing=GRADIENT_CHECKPOINTING,
-        report_to="none",
-        dataset_text_field="text",
-        max_seq_length=MAX_SEQ_LENGTH,
-        logging_nan_inf_filter=False,
-    )
+    sft_config_kwargs = {
+        "output_dir": str(output_dir),
+        "num_train_epochs": NUM_TRAIN_EPOCHS,
+        "per_device_train_batch_size": PER_DEVICE_TRAIN_BATCH_SIZE,
+        "gradient_accumulation_steps": GRADIENT_ACCUMULATION_STEPS,
+        "learning_rate": 2e-5,
+        "warmup_ratio": 0.03,
+        "logging_steps": 5,
+        "save_strategy": "steps",
+        "save_steps": SAVE_STEPS,
+        "save_total_limit": 2,
+        "bf16": USE_BF16,
+        "fp16": USE_FP16,
+        "gradient_checkpointing": GRADIENT_CHECKPOINTING,
+        "report_to": "none",
+        "dataset_text_field": "text",
+        "logging_nan_inf_filter": False,
+    }
+
+    sft_config_params = inspect.signature(SFTConfig).parameters
+    trainer_accepts_max_seq_length = "max_seq_length" in inspect.signature(SFTTrainer.__init__).parameters
+
+    if "max_seq_length" in sft_config_params:
+        sft_config_kwargs["max_seq_length"] = MAX_SEQ_LENGTH
+
+    sft_config = SFTConfig(**sft_config_kwargs)
 
     dataset = load_dataset("json", data_files=str(data_path), split="train")
 
@@ -783,13 +791,26 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     )
     sys.stdout.flush()
 
-    trainer = SFTTrainer(
-        model=model,
-        args=sft_config,
-        train_dataset=dataset,
-        processing_class=tokenizer,
-        peft_config=lora_config,
-    )
+    trainer_kwargs = {
+        "model": model,
+        "args": sft_config,
+        "train_dataset": dataset,
+        "peft_config": lora_config,
+    }
+
+    trainer_params = inspect.signature(SFTTrainer.__init__).parameters
+    if "processing_class" in trainer_params:
+        trainer_kwargs["processing_class"] = tokenizer
+    elif "tokenizer" in trainer_params:
+        trainer_kwargs["tokenizer"] = tokenizer
+
+    if "dataset_text_field" in trainer_params and "dataset_text_field" not in sft_config_params:
+        trainer_kwargs["dataset_text_field"] = "text"
+
+    if trainer_accepts_max_seq_length and "max_seq_length" not in sft_config_params:
+        trainer_kwargs["max_seq_length"] = MAX_SEQ_LENGTH
+
+    trainer = SFTTrainer(**trainer_kwargs)
 
     if hasattr(trainer.model, "enable_input_require_grads"):
         trainer.model.enable_input_require_grads()
