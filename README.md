@@ -20,9 +20,12 @@
 🤗 **Demo Space**: [panopticon-protocol-v3](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)  
 🧪 **Submitted Trainer Space**: [panopticon-trainer](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer)  
 🧠 **Model Repo**: [panopticon-argus-qwen-1.5B](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B)  
-📓 **Training Notebook (Colab)**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)  
-📈 **Plot Notebook**: [Panopticon_Plots_Colab.ipynb](Panopticon_Plots_Colab.ipynb)  
-📘 **Production Training Notebook**: [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)
+📝 **Blog Post**: [blog.md](blog.md)  
+📓 **Submitted Colab URL**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)  
+📘 **Canonical Training Notebook in Repo**: [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)  
+📈 **Companion Plot Notebook**: [Panopticon_Plots_Colab.ipynb](Panopticon_Plots_Colab.ipynb)
+
+> **Important notebook note:** the end-to-end training pipeline lives in `Panopticon_Training_FINAL.ipynb`. `Panopticon_Plots_Colab.ipynb` is the plotting companion used to regenerate the README figures from a finished run.
 
 
 ---
@@ -31,7 +34,8 @@
 
 - **OpenEnv environment hosted on Hugging Face Spaces:** [Demo Space](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
 - **Minimal TRL training script / Colab path:** [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)
-- **Real training evidence:** `output_logs.txt`, `plots/training_statistics.json`, and the figure suite in [`plots/`](plots)
+- **Submitted Colab link used in the form:** [Google Colab URL](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
+- **Real training evidence:** [`output_logs.txt`](output_logs.txt), [`plots/training_statistics.json`](plots/training_statistics.json), [`plots/`](plots), and the uploaded [`training_metrics/`](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/tree/main/training_metrics) folder in the model repo
 - **Trainer Space link preserved for judges:** [panopticon-trainer](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer)
 - **Merged model destination:** [panopticon-argus-qwen-1.5B](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B)
 

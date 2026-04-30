@@ -60,8 +60,14 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 ## Links
 
 - [OpenEnv Spec](https://github.com/OpenEnvs/openenv)
-- [Training Notebook (Colab)](https://colab.research.google.com/)
-- [HuggingFace Blog Post](https://huggingface.co/blog/)
+- [Canonical Training Notebook in Repo](https://github.com/Ayush-Kumar0207/panopticon-protocol-v3/blob/main/Panopticon_Training_FINAL.ipynb)
+- [Companion Plot Notebook](https://github.com/Ayush-Kumar0207/panopticon-protocol-v3/blob/main/Panopticon_Plots_Colab.ipynb)
+- [Submitted Colab URL](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
+- [Blog Post](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3/blob/main/blog.md)
+- [Model Repo](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B)
+- [Training Metrics](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/tree/main/training_metrics)
+
+> For avoidance of doubt: `Panopticon_Training_FINAL.ipynb` is the end-to-end training notebook. `Panopticon_Plots_Colab.ipynb` is the figure-regeneration companion notebook.
 
 ## License
 
