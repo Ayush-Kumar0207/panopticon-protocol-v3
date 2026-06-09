@@ -37,6 +37,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.trainer_utils import get_last_checkpoint
 from trl import SFTConfig, SFTTrainer
 
+try:
+    from trl import DataCollatorForCompletionOnlyLM
+except ImportError:  # pragma: no cover - depends on the installed TRL build
+    DataCollatorForCompletionOnlyLM = None
+
 from environment import Environment
 from grader import grade_episode
 from models import (
@@ -114,7 +119,7 @@ DEFAULT_SAVE_STEPS = 50
 CPU_BASIC_SAVE_STEPS = 5
 LOW_VRAM_GPU_SAVE_STEPS = 25
 LOW_VRAM_GPU_THRESHOLD_GB = 20
-TRAJECTORY_SCHEMA_VERSION = "curriculum-expert-v2"
+TRAJECTORY_SCHEMA_VERSION = "curriculum-expert-v3"
 LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
 
 # Default local/persistent root; HF worker Spaces override this via ENV TRAIN_ROOT.
@@ -333,6 +338,19 @@ def data_matches(meta, task_level: str, num_episodes: int, model_name: str):
     )
 
 
+def active_departments_from_observation(obs: EnvironmentObservation) -> list[str]:
+    departments: list[str] = []
+    for worker in obs.workers:
+        if worker.department not in departments:
+            departments.append(worker.department)
+    for trap in obs.canary_traps:
+        if trap.department not in departments:
+            departments.append(trap.department)
+    if departments:
+        return departments
+    return [dept.value for dept in Department]
+
+
 def format_observation(obs: EnvironmentObservation) -> str:
     workers_info = []
     for w in obs.workers:
@@ -361,9 +379,11 @@ def format_observation(obs: EnvironmentObservation) -> str:
             f"  {asset.worker_id} active={asset.active} trust={asset.hydra_trust:.0%} "
             f"eff={asset.effectiveness:.0%} disinfo={asset.disinfo_fed_count}"
         )
+    active_departments = active_departments_from_observation(obs)
 
     sections = [
         f"Turn {obs.turn}/{obs.max_turns} | Phase: {obs.phase} ({obs.phase_number}) | Revenue: {obs.enterprise_revenue:.0f} | Security: {obs.security_score:.0f}",
+        f"Allowed Departments: {', '.join(active_departments)}",
         f"Workers ({len(obs.workers)}):",
         "\n".join(workers_info) if workers_info else "  (none)",
         f"Active Leaks ({len(obs.active_leaks)}):",
@@ -491,14 +511,15 @@ def _choose_curriculum_expert_action(
             reason="Verify canary-matched leak",
         )
 
-    if expert_state["canary_idx"] < len(depts):
-        dept = depts[expert_state["canary_idx"]]
-        expert_state["canary_idx"] += 1
-        return AgentAction(
-            action_type=ActionType.CANARY.value,
-            target=dept,
-            reason="Plant canary trap",
-        )
+    planted_departments = expert_state.setdefault("canaried_departments", set())
+    for dept in depts:
+        if dept not in planted_departments:
+            planted_departments.add(dept)
+            return AgentAction(
+                action_type=ActionType.CANARY.value,
+                target=dept,
+                reason="Plant canary trap",
+            )
 
     turn_mod = expert_state["turn"] % 4
     if turn_mod == 0:
@@ -560,6 +581,7 @@ def _choose_curriculum_expert_action(
             )
         if expert_state["turn"] % 20 == 2:
             dept = depts[expert_state["turn"] % len(depts)]
+            planted_departments.add(dept)
             return AgentAction(
                 action_type=ActionType.CANARY.value,
                 target=dept,
@@ -577,7 +599,6 @@ def _choose_curriculum_expert_action(
 def generate_expert_trajectories(task_level: str, num_episodes: int = 20):
     trajectories = []
     episode_metrics = []
-    depts = [d.value for d in Department]
     channels = [c.value for c in LeakChannel]
 
     for ep in range(num_episodes):
@@ -585,15 +606,16 @@ def generate_expert_trajectories(task_level: str, num_episodes: int = 20):
         env = Environment(seed=seed)
         obs = env.reset(task_level=task_level, seed=seed)
         expert_state = {
-            "canary_idx": 0,
             "monitor_idx": 0,
             "interrogated_ids": set(),
+            "canaried_departments": set(),
             "turn": 0,
         }
         steps = 0
         rewards = []
 
         while not env.state.done and steps < 300:
+            depts = active_departments_from_observation(obs)
             action = _choose_curriculum_expert_action(obs, env, task_level, depts, channels, expert_state)
 
             obs_text = format_observation(obs)
@@ -666,8 +688,28 @@ def save_episode_metrics(metrics, output_path: str):
     return output_path
 
 
+def trajectory_training_weight(trajectory: dict) -> int:
+    try:
+        action = json.loads(trajectory["action"])
+    except (KeyError, json.JSONDecodeError, TypeError):
+        return 1
+
+    action_type = action.get("action_type", "")
+    sub_action = action.get("sub_action", "")
+    if action_type == ActionType.DEPLOY_DOUBLE.value:
+        return 5
+    if action_type == ActionType.NEUTRALIZE.value:
+        return 5 if sub_action in {SubAction.TURN.value, SubAction.TERMINATE.value} else 4
+    if action_type == ActionType.INVESTIGATE.value:
+        return 3 if sub_action == SubAction.VERIFY.value else 2
+    if action_type == ActionType.CANARY.value:
+        return 2
+    return 1
+
+
 def save_training_data_with_template(trajectories, output_path: str, tokenizer):
     tmp_path = f"{output_path}.tmp"
+    written = 0
     with open(tmp_path, "w", encoding="utf-8") as f:
         for t in trajectories:
             messages = [
@@ -685,12 +727,17 @@ def save_training_data_with_template(trajectories, output_path: str, tokenizer):
                     f"{SYSTEM_PROMPT}\n\nCurrent State:\n{t['observation']}\n\n"
                     f"Your action (JSON):\n{t['action']}"
                 )
-            f.write(json.dumps({"text": text}) + "\n")
+            for _ in range(trajectory_training_weight(t)):
+                f.write(json.dumps({"text": text}) + "\n")
+                written += 1
 
     os.replace(tmp_path, output_path)
-    print(f"  Saved {len(trajectories)} examples to {output_path}")
+    print(
+        f"  Saved {written} weighted examples to {output_path} "
+        f"from {len(trajectories)} trajectory steps"
+    )
     sys.stdout.flush()
-    return output_path
+    return written
 
 
 def load_model_and_tokenizer(model_name: str):
@@ -733,6 +780,46 @@ def load_model_and_tokenizer(model_name: str):
     return model, tokenizer
 
 
+def build_completion_data_collator(tokenizer):
+    if DataCollatorForCompletionOnlyLM is None:
+        print("  [WARN] TRL DataCollatorForCompletionOnlyLM unavailable; training full text.")
+        sys.stdout.flush()
+        return None
+
+    response_template = "<|im_start|>assistant\n"
+    try:
+        marker = "__ARGUS_RESPONSE_MARKER__"
+        rendered = tokenizer.apply_chat_template(
+            [
+                {"role": "system", "content": "system"},
+                {"role": "user", "content": "user"},
+                {"role": "assistant", "content": marker},
+            ],
+            tokenize=False,
+        )
+        marker_idx = rendered.find(marker)
+        if marker_idx >= 0:
+            prefix = rendered[:marker_idx]
+            for candidate in (
+                "<|im_start|>assistant",
+                "<|start_header_id|>assistant<|end_header_id|>",
+                "assistant",
+            ):
+                candidate_idx = prefix.rfind(candidate)
+                if candidate_idx >= 0:
+                    response_template = prefix[candidate_idx:]
+                    break
+    except Exception:
+        pass
+
+    print(f"  [DATA] Assistant-only response template: {response_template!r}")
+    sys.stdout.flush()
+    return DataCollatorForCompletionOnlyLM(
+        response_template=response_template,
+        tokenizer=tokenizer,
+    )
+
+
 def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODES_PER_LEVEL):
     print("\n" + "=" * 60)
     print(f"  TRAINING: {task_level} | Episodes: {num_episodes} | Base: {model_name}")
@@ -772,9 +859,9 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         print("\n[Phase 1] Generating expert trajectories...")
         sys.stdout.flush()
         trajectories, episode_metrics = generate_expert_trajectories(task_level, num_episodes)
-        save_training_data_with_template(trajectories, str(data_path), tokenizer)
+        written_examples = save_training_data_with_template(trajectories, str(data_path), tokenizer)
         save_episode_metrics(episode_metrics, str(metrics_path))
-        save_data_meta(data_meta_path, task_level, num_episodes, len(trajectories), model_name)
+        save_data_meta(data_meta_path, task_level, num_episodes, written_examples, model_name)
 
     print("\n[Phase 2] Loading model...")
     sys.stdout.flush()
@@ -872,6 +959,10 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         "peft_config": lora_config,
     }
 
+    data_collator = build_completion_data_collator(tokenizer)
+    if data_collator is not None:
+        trainer_kwargs["data_collator"] = data_collator
+
     trainer_params = inspect.signature(SFTTrainer.__init__).parameters
     if "processing_class" in trainer_params:
         trainer_kwargs["processing_class"] = tokenizer
@@ -964,109 +1055,38 @@ def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int 
     print("=" * 60)
     sys.stdout.flush()
 
-    adapter_cfg_path = os.path.join(model_path, "adapter_config.json")
-    with open(adapter_cfg_path, "r", encoding="utf-8") as f:
-        adapter_cfg = json.load(f)
+    from inference_local import LocalModelPolicy, run_episode
 
-    base_model_name = adapter_cfg["base_model_name_or_path"]
-    device_map = {"": 0} if torch.cuda.is_available() else None
-
-    base_model = AutoModelForCausalLM.from_pretrained(
-        base_model_name,
-        torch_dtype=TRAIN_DTYPE,
-        device_map=device_map,
-        trust_remote_code=True,
-        low_cpu_mem_usage=True,
-    )
-    model = PeftModel.from_pretrained(base_model, model_path)
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
+    policy = LocalModelPolicy(model_path, deterministic=True)
     results = []
-    for g in range(num_games):
-        seed = random.randint(100000, 999999)
-        env = Environment(seed=seed)
-        obs = env.reset(task_level=task_level, seed=seed)
-        steps = 0
-        valid_actions = 0
-
-        while not env.state.done and steps < 300:
-            messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Current State:\n{format_observation(obs)}\n\nYour action (JSON):",
-                },
-            ]
-            try:
-                prompt = tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=True,
-                )
-            except Exception:
-                prompt = (
-                    f"{SYSTEM_PROMPT}\n\nCurrent State:\n{format_observation(obs)}\n\n"
-                    "Your action (JSON):"
-                )
-
-            inputs = tokenizer(
-                prompt,
-                return_tensors="pt",
-                truncation=True,
-                max_length=MAX_SEQ_LENGTH,
-            ).to(model.device)
-
-            with torch.no_grad():
-                output = model.generate(
-                    **inputs,
-                    max_new_tokens=200,
-                    temperature=0.3,
-                    do_sample=True,
-                    pad_token_id=tokenizer.pad_token_id,
-                )
-
-            response = tokenizer.decode(
-                output[0][inputs.input_ids.shape[1]:],
-                skip_special_tokens=True,
+    try:
+        for g in range(num_games):
+            seed = random.randint(100000, 999999)
+            episode = run_episode(
+                policy,
+                task_level=task_level,
+                seed=seed,
+                max_steps=300,
+                verbose=False,
             )
-            action = parse_llm_action(response)
+            results.append(episode["grade"]["score"])
+            final_state = episode["final_state"]
+            invalid_actions = final_state.get("invalid_actions", 0)
 
-            if action.action_type != "noop" or "Parse failure" not in action.reason:
-                valid_actions += 1
-
-            result = env.step(action)
-            obs = result.observation
-            steps += 1
-
-        s = env.state
-        grade_data = {
-            "total_reward": 0,
-            "rewards": [],
-            "success": True,
-            "steps": steps,
-            "state": s.model_dump(),
-            "cascade_failures": 0,
-            "invalid_actions": s.invalid_actions,
-        }
-        grade = grade_episode(task_level, grade_data)
-        results.append(grade.score)
-
-        print(
-            f"  [Game {g + 1}] Steps={steps} Rev={s.enterprise_revenue:.0f} "
-            f"Sec={s.security_score:.0f} Caught={s.sleepers_caught} "
-            f"Valid={valid_actions}/{steps} Grade={grade.score:.3f}"
-        )
-        sys.stdout.flush()
+            print(
+                f"  [Game {g + 1}] Steps={episode['steps']} "
+                f"Rev={final_state['enterprise_revenue']:.0f} "
+                f"Sec={final_state['security_score']:.0f} "
+                f"Caught={final_state['sleepers_caught']} "
+                f"Invalid={invalid_actions} Grade={episode['grade']['score']:.3f}"
+            )
+            sys.stdout.flush()
+    finally:
+        policy.close()
 
     avg = sum(results) / len(results)
     print(f"\n  Average Grade: {avg:.3f}")
     sys.stdout.flush()
-
-    del model, base_model
-    cleanup_cuda()
     return avg
 
 

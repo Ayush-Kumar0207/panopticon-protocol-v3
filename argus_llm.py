@@ -135,6 +135,10 @@ def format_observation(
 
     suspicious_workers = sum(1 for worker in obs.workers if worker.suspicion_level > 0.25)
     triggered_canaries = sum(1 for trap in obs.canary_traps if trap.triggered)
+    active_departments = []
+    for worker in obs.workers:
+        if worker.department not in active_departments:
+            active_departments.append(worker.department)
     sections = [
         f"Turn {obs.turn}/{obs.max_turns} | Phase: {obs.phase} ({obs.phase_number}) | Revenue: {obs.enterprise_revenue:.0f} | Security: {obs.security_score:.0f}",
         (
@@ -142,6 +146,7 @@ def format_observation(
             f"triggered_canaries={triggered_canaries} | intel={len(obs.intel_reports)} | "
             f"double_agents={len(obs.double_agents)}"
         ),
+        f"Allowed Departments: {', '.join(active_departments)}",
         f"Workers ({len(obs.workers)}):",
         "\n".join(workers_info) if workers_info else "  (none)",
         f"  ... {omitted_workers} additional workers omitted" if omitted_workers else "",
@@ -317,9 +322,6 @@ class LocalArgusModel:
         }
         if deterministic:
             generation_kwargs["do_sample"] = False
-            generation_kwargs["temperature"] = 1.0
-            generation_kwargs["top_p"] = 1.0
-            generation_kwargs["top_k"] = 50
         else:
             generation_kwargs["do_sample"] = True
             generation_kwargs["temperature"] = temperature

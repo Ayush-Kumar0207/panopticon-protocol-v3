@@ -12,7 +12,7 @@ that follows the canonical ARGUS playbook:
 """
 import sys
 from environment import Environment
-from models import ActionType, SubAction, AgentAction, Department, LeakChannel
+from models import ActionType, SubAction, AgentAction, LeakChannel
 from grader import grade_episode
 
 
@@ -22,7 +22,6 @@ def run_heuristic_episode(task_level: str, max_steps: int = 200) -> tuple:
     obs = env.reset(task_level=task_level, seed=42)
     rewards, done, steps = [], False, 0
 
-    depts = [d.value for d in Department]
     channels = [c.value for c in LeakChannel]
     canary_phase_done = False
     canary_idx = 0
@@ -30,6 +29,10 @@ def run_heuristic_episode(task_level: str, max_steps: int = 200) -> tuple:
     interrogated_ids = set()  # Track who we've already interrogated
 
     while not done and steps < max_steps:
+        depts = []
+        for worker in obs.workers:
+            if worker.department not in depts:
+                depts.append(worker.department)
         action = AgentAction(action_type=ActionType.NOOP.value)
 
         # ── Priority 1: Terminate confirmed threats ──

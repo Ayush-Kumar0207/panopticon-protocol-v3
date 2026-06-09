@@ -95,12 +95,13 @@ class OpenEnvGymWrapper(gym.Env):
 
         sub_actions = list(SubAction)
         sa = sub_actions[idx_sub % len(sub_actions)]
+        dept_list = self._active_departments()
 
         # Resolve target based on action type
         target = ""
         if at in (ActionType.WORK, ActionType.HIRE, ActionType.CANARY):
             # Target is a department
-            target = DEPT_LIST[idx_target % len(DEPT_LIST)]
+            target = dept_list[idx_target % len(dept_list)]
         elif at == ActionType.MONITOR:
             # Target is a leak channel
             target = CHANNEL_LIST[idx_target % len(CHANNEL_LIST)]
@@ -114,7 +115,7 @@ class OpenEnvGymWrapper(gym.Env):
 
             # For INVESTIGATE, also resolve target as department for CORRELATE
             if at == ActionType.INVESTIGATE and sa == SubAction.CORRELATE:
-                target = DEPT_LIST[idx_target % len(DEPT_LIST)]
+                target = dept_list[idx_target % len(dept_list)]
             elif at == ActionType.INVESTIGATE and sa == SubAction.VERIFY:
                 # Target should be a leak ID
                 if self._last_obs and idx_target < len(self._last_obs.active_leaks):
@@ -134,6 +135,18 @@ class OpenEnvGymWrapper(gym.Env):
             sub_action=sa.value,
             reason="RL Policy Step",
         )
+
+    def _active_departments(self) -> list[str]:
+        if not self._last_obs:
+            return DEPT_LIST
+        departments: list[str] = []
+        for worker in self._last_obs.workers:
+            if worker.department not in departments:
+                departments.append(worker.department)
+        for trap in self._last_obs.canary_traps:
+            if trap.department not in departments:
+                departments.append(trap.department)
+        return departments or DEPT_LIST
 
     def _flatten_obs(self, obs: EnvironmentObservation) -> np.ndarray:
         """Convert structured observation to flat float32 tensor."""

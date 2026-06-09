@@ -95,6 +95,19 @@ def serialize_action(action: AgentAction) -> dict[str, Any]:
     return action.model_dump()
 
 
+def active_departments(obs: EnvironmentObservation) -> list[str]:
+    departments: list[str] = []
+    for worker in obs.workers:
+        if worker.department not in departments:
+            departments.append(worker.department)
+    for trap in obs.canary_traps:
+        if trap.department not in departments:
+            departments.append(trap.department)
+    if departments:
+        return departments
+    return [dept.value for dept in Department]
+
+
 def make_policy_decision(
     action: AgentAction,
     policy_name: str,
@@ -114,7 +127,7 @@ def make_policy_decision(
 def enumerate_valid_actions(obs: EnvironmentObservation) -> list[AgentAction]:
     actions: list[AgentAction] = [AgentAction(action_type=ActionType.NOOP.value, reason="Baseline NOOP")]
 
-    departments = [dept.value for dept in Department]
+    departments = active_departments(obs)
     channels = [channel.value for channel in LeakChannel]
     live_workers = [worker for worker in obs.workers if worker.state != "terminated"]
     active_double_agents = [asset.worker_id for asset in obs.double_agents if asset.active]
@@ -186,11 +199,36 @@ def _safe_fallback_action(obs: EnvironmentObservation) -> AgentAction:
             reason="Recovered: verify triggered canary leak",
         )
 
+    confirmed_worker = next(
+        (
+            worker
+            for worker in obs.workers
+            if worker.suspicion_level >= 0.9
+            and worker.state == "suspected"
+            and not worker.turning_in_progress
+        ),
+        None,
+    )
+    if confirmed_worker:
+        return AgentAction(
+            action_type=ActionType.NEUTRALIZE.value,
+            target=confirmed_worker.id,
+            sub_action=SubAction.TERMINATE.value,
+            reason="Recovered: terminate confirmed sleeper",
+        )
+
     suspicious_worker = max(
-        obs.workers,
+        [worker for worker in obs.workers if worker.state != "terminated" and not worker.turning_in_progress],
         key=lambda worker: worker.suspicion_level,
         default=None,
     )
+    if suspicious_worker and suspicious_worker.suspicion_level > 0.5:
+        return AgentAction(
+            action_type=ActionType.NEUTRALIZE.value,
+            target=suspicious_worker.id,
+            sub_action=SubAction.INTERROGATE.value,
+            reason="Recovered: interrogate high-suspicion worker",
+        )
     if suspicious_worker and suspicious_worker.suspicion_level > 0.2:
         return AgentAction(
             action_type=ActionType.INVESTIGATE.value,
@@ -200,7 +238,7 @@ def _safe_fallback_action(obs: EnvironmentObservation) -> AgentAction:
         )
 
     planted_departments = {trap.department for trap in obs.canary_traps if trap.active}
-    for dept in [dept.value for dept in Department]:
+    for dept in active_departments(obs):
         if dept not in planted_departments:
             return AgentAction(
                 action_type=ActionType.CANARY.value,
@@ -210,22 +248,27 @@ def _safe_fallback_action(obs: EnvironmentObservation) -> AgentAction:
 
     if obs.active_leaks:
         most_recent = max(obs.active_leaks, key=lambda leak: leak.turn_detected)
-        return AgentAction(
-            action_type=ActionType.MONITOR.value,
-            target=most_recent.channel,
-            reason="Recovered: monitor latest active leak channel",
+        correlate_action = AgentAction(
+            action_type=ActionType.INVESTIGATE.value,
+            target=most_recent.department,
+            sub_action=SubAction.CORRELATE.value,
+            reason="Recovered: correlate latest active leak department",
         )
+        if validate_action(correlate_action, obs)[0]:
+            return correlate_action
+        return AgentAction(action_type=ActionType.MONITOR.value, target=most_recent.channel, reason="Recovered: monitor latest active leak channel")
 
+    departments = active_departments(obs)
     return AgentAction(
         action_type=ActionType.WORK.value,
-        target=Department.ENGINEERING.value,
+        target=departments[0],
         reason="Recovered: maintain revenue while awaiting stronger signals",
     )
 
 
 def _recover_action_from_text(raw_text: str, obs: EnvironmentObservation) -> AgentAction | None:
     text = (raw_text or "").lower()
-    departments = {dept.value for dept in Department}
+    departments = set(active_departments(obs))
     worker_ids = {worker.id for worker in obs.workers if worker.state != "terminated"}
     leak_ids = {leak.id for leak in obs.active_leaks}
     double_agents = [asset.worker_id for asset in obs.double_agents if asset.active]
@@ -292,8 +335,101 @@ def _recover_action_from_text(raw_text: str, obs: EnvironmentObservation) -> Age
     return None
 
 
+def _priority_repair_action(obs: EnvironmentObservation) -> AgentAction | None:
+    active_double_agents = [asset.worker_id for asset in obs.double_agents if asset.active]
+    if active_double_agents and obs.phase_number >= 5 and obs.turn % 3 == 0:
+        action = AgentAction(
+            action_type=ActionType.DEPLOY_DOUBLE.value,
+            target=active_double_agents[0],
+            reason="Repair: deploy available double agent in late phase",
+        )
+        if validate_action(action, obs)[0]:
+            return action
+
+    canary_leak = next((leak for leak in obs.active_leaks if leak.is_canary and not leak.verified), None)
+    if canary_leak:
+        action = AgentAction(
+            action_type=ActionType.INVESTIGATE.value,
+            target=canary_leak.id,
+            sub_action=SubAction.VERIFY.value,
+            reason="Repair: verify triggered canary leak",
+        )
+        if validate_action(action, obs)[0]:
+            return action
+
+    confirmed = next(
+        (
+            worker
+            for worker in obs.workers
+            if worker.suspicion_level >= 0.9
+            and worker.state == "suspected"
+            and not worker.turning_in_progress
+        ),
+        None,
+    )
+    if confirmed:
+        action = AgentAction(
+            action_type=ActionType.NEUTRALIZE.value,
+            target=confirmed.id,
+            sub_action=SubAction.TERMINATE.value,
+            reason="Repair: terminate confirmed sleeper",
+        )
+        if validate_action(action, obs)[0]:
+            return action
+
+    suspicious = max(
+        (
+            worker
+            for worker in obs.workers
+            if worker.suspicion_level > 0.5
+            and worker.state != "terminated"
+            and not worker.turning_in_progress
+        ),
+        key=lambda worker: worker.suspicion_level,
+        default=None,
+    )
+    if suspicious:
+        action = AgentAction(
+            action_type=ActionType.NEUTRALIZE.value,
+            target=suspicious.id,
+            sub_action=SubAction.INTERROGATE.value,
+            reason="Repair: interrogate high-suspicion worker",
+        )
+        if validate_action(action, obs)[0]:
+            return action
+
+    planted_departments = {trap.department for trap in obs.canary_traps if trap.active}
+    departments = active_departments(obs)
+    if obs.turn < max(4, len(departments) * 2):
+        for dept in departments:
+            if dept not in planted_departments:
+                action = AgentAction(
+                    action_type=ActionType.CANARY.value,
+                    target=dept,
+                    reason="Repair: plant missing early canary",
+                )
+                if validate_action(action, obs)[0]:
+                    return action
+
+    if obs.active_leaks:
+        leak_departments: dict[str, int] = {}
+        for leak in obs.active_leaks:
+            leak_departments[leak.department] = leak_departments.get(leak.department, 0) + 1
+        target_dept = max(leak_departments, key=leak_departments.get)
+        action = AgentAction(
+            action_type=ActionType.INVESTIGATE.value,
+            target=target_dept,
+            sub_action=SubAction.CORRELATE.value,
+            reason="Repair: correlate active leak department",
+        )
+        if validate_action(action, obs)[0]:
+            return action
+
+    return None
+
+
 def repair_trained_action(action: AgentAction, raw_text: str, obs: EnvironmentObservation) -> AgentAction:
-    departments = {dept.value for dept in Department}
+    departments = set(active_departments(obs))
     channels = {channel.value for channel in LeakChannel}
     worker_ids = {worker.id for worker in obs.workers if worker.state != "terminated"}
     leak_ids = {leak.id for leak in obs.active_leaks}
@@ -320,6 +456,16 @@ def repair_trained_action(action: AgentAction, raw_text: str, obs: EnvironmentOb
         if recovered is not None and validate_action(recovered, obs)[0]:
             return recovered
         return _safe_fallback_action(obs)
+
+    if normalized.action_type in {
+        ActionType.NOOP.value,
+        ActionType.WORK.value,
+        ActionType.MONITOR.value,
+        ActionType.CANARY.value,
+    }:
+        priority_action = _priority_repair_action(obs)
+        if priority_action is not None:
+            return priority_action
 
     if normalized.action_type == ActionType.MONITOR.value:
         if normalized.target in leak_ids:
@@ -441,7 +587,6 @@ class RandomPolicy:
 class HeuristicPolicy:
     def __init__(self):
         self.policy_name = "heuristic"
-        self._depts = [dept.value for dept in Department]
         self._channels = [channel.value for channel in LeakChannel]
         self.reset()
 
@@ -454,6 +599,7 @@ class HeuristicPolicy:
 
     def act(self, obs: EnvironmentObservation) -> PolicyDecision:
         self._turn += 1
+        depts = active_departments(obs)
         action = AgentAction(action_type=ActionType.NOOP.value, reason="Heuristic fallback")
 
         confirmed = next(
@@ -503,15 +649,15 @@ class HeuristicPolicy:
                 reason="Verify canary-matched leak",
             )
         elif not self._canary_phase_done:
-            if self._canary_idx < min(len(self._depts), 4):
-                dept = self._depts[self._canary_idx]
+            if self._canary_idx < min(len(depts), 4):
+                dept = depts[self._canary_idx]
                 action = AgentAction(
                     action_type=ActionType.CANARY.value,
                     target=dept,
                     reason="Plant canary trap",
                 )
                 self._canary_idx += 1
-                if self._canary_idx >= min(4, len(self._depts)):
+                if self._canary_idx >= min(4, len(depts)):
                     self._canary_phase_done = True
             else:
                 self._canary_phase_done = True
@@ -554,7 +700,7 @@ class HeuristicPolicy:
                         reason=f"Auditing recent hire {target.name}",
                     )
                 else:
-                    dept = self._depts[self._turn % len(self._depts)]
+                    dept = depts[self._turn % len(depts)]
                     action = AgentAction(
                         action_type=ActionType.WORK.value,
                         target=dept,
@@ -575,8 +721,8 @@ class HeuristicPolicy:
                     sub_action=SubAction.AUDIT.value,
                     reason=f"Auditing {target.name}",
                 )
-            elif self._turn % 20 == 2 and self._canary_idx < len(self._depts):
-                dept = self._depts[self._canary_idx % len(self._depts)]
+            elif self._turn % 20 == 2 and self._canary_idx < len(depts):
+                dept = depts[self._canary_idx % len(depts)]
                 action = AgentAction(
                     action_type=ActionType.CANARY.value,
                     target=dept,
@@ -584,14 +730,14 @@ class HeuristicPolicy:
                 )
                 self._canary_idx += 1
             else:
-                dept = self._depts[self._turn % len(self._depts)]
+                dept = depts[self._turn % len(depts)]
                 action = AgentAction(
                     action_type=ActionType.WORK.value,
                     target=dept,
                     reason="Maintain revenue",
                 )
         else:
-            dept = self._depts[self._turn % len(self._depts)]
+            dept = depts[self._turn % len(depts)]
             action = AgentAction(
                 action_type=ActionType.WORK.value,
                 target=dept,

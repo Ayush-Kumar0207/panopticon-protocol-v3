@@ -148,7 +148,7 @@ class TaskGrader:
         if total == 0:
             return 0.8  # No threats = decent baseline
 
-        catch_rate = caught / max(total, 1)
+        catch_rate = min(caught, total) / max(total, 1)
         false_penalty = min(0.4, false_acc * 0.15)  # Each false accusation hurts
         sec_health = sec_score / 100.0
 

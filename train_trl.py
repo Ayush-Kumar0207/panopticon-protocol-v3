@@ -61,6 +61,11 @@ Respond ONLY with a JSON object."""
 
 def format_observation(obs: EnvironmentObservation) -> str:
     """Convert observation to a compact text prompt for the LLM."""
+    active_departments = []
+    for worker in obs.workers:
+        if worker.department not in active_departments:
+            active_departments.append(worker.department)
+
     workers_info = []
     for w in obs.workers:
         status = f"suspicion={w.suspicion_level:.0%}" if w.suspicion_level > 0.05 else "clean"
@@ -75,6 +80,7 @@ def format_observation(obs: EnvironmentObservation) -> str:
 
     sections = [
         f"Turn {obs.turn}/{obs.max_turns} | Phase: {obs.phase} | Revenue: {obs.enterprise_revenue:.0f} | Security: {obs.security_score:.0f}",
+        f"Allowed Departments: {', '.join(active_departments)}",
         f"Workers ({len(obs.workers)}):",
         "\n".join(workers_info) if workers_info else "  (none)",
         f"Active Leaks ({len(obs.active_leaks)}):",
@@ -113,10 +119,9 @@ def parse_llm_action(text: str) -> AgentAction:
 def generate_expert_trajectories(task_level: str, num_episodes: int = 10, seed: int = 42):
     """Generate training data by running the heuristic agent and recording
     observation→action pairs as (prompt, completion) for SFT training."""
-    from models import Department, LeakChannel
+    from models import LeakChannel
 
     trajectories = []
-    depts = [d.value for d in Department]
     channels = [c.value for c in LeakChannel]
 
     for ep in range(num_episodes):
@@ -128,6 +133,10 @@ def generate_expert_trajectories(task_level: str, num_episodes: int = 10, seed: 
         steps = 0
 
         while not env.state.done and steps < 300:
+            depts = []
+            for worker in obs.workers:
+                if worker.department not in depts:
+                    depts.append(worker.department)
             # Heuristic policy (same as smoke_test.py)
             action = AgentAction(action_type=ActionType.NOOP.value)
 

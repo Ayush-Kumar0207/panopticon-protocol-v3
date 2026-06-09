@@ -219,14 +219,37 @@ class Environment:
         valid, reason = validate_action(action, obs)
         if not valid:
             s.invalid_actions += 1
-            s.turn += 1
+            rev_before = s.enterprise_revenue
+            sec_before = s.security_score
             info["valid"] = False
             info["reason"] = reason
-            reward = INVALID_ACTION_PENALTY
+
+            hydra_events = self._hydra_turn()
+            info["events"].extend(hydra_events)
+            self._progress_turnings(info)
+            self._economy_tick()
+
+            reward = INVALID_ACTION_PENALTY + self._compute_reward(rev_before, sec_before)
+            s.turn += 1
+            self._update_phase()
             s.total_reward += reward
             s.reward_history.append(reward)
-            self._update_phase()
+            s.revenue_history.append(s.enterprise_revenue)
             done = s.turn >= s.max_turns
+            if s.enterprise_revenue <= 0:
+                done = True
+                info["events"].append("GAME OVER: Enterprise bankrupt!")
+            if s.security_score <= 0:
+                done = True
+                info["events"].append("GAME OVER: Total security breach!")
+            if done:
+                missed = sum(
+                    1 for w in s.workers
+                    if w.is_sleeper
+                    and w.state != WorkerState.TERMINATED.value
+                    and w.hidden_state != HiddenWorkerState.TURNED.value
+                )
+                s.sleepers_missed = missed
             s.done = done
             return StepResult(
                 observation=self.get_observation(),
@@ -256,11 +279,9 @@ class Environment:
         # ── Compute reward ──
         reward = self._compute_reward(rev_before, sec_before)
 
-        # ── Update phase ──
-        self._update_phase()
-
         # ── Check end conditions ──
         s.turn += 1
+        self._update_phase()
         s.total_reward += reward
         s.reward_history.append(reward)
         s.revenue_history.append(s.enterprise_revenue)
@@ -546,6 +567,12 @@ class Environment:
         if not worker:
             return ["NEUTRALIZE: Target worker not found."]
 
+        if (
+            worker.state in (WorkerState.DOUBLE_AGENT.value, WorkerState.COMPROMISED.value)
+            or worker.hidden_state == HiddenWorkerState.TURNED.value
+        ):
+            return [f"NEUTRALIZE: {worker.name} is already resolved."]
+
         if sa == SubAction.TERMINATE:
             # ── TERMINATE: Immediate removal ──
             if worker.is_sleeper:
@@ -563,6 +590,7 @@ class Environment:
 
                 worker.state = WorkerState.TERMINATED.value
                 worker.hidden_state = HiddenWorkerState.CLEAN.value  # No longer a threat
+                worker.is_sleeper = False
                 s.sleepers_caught += 1
                 s.security_score = min(100.0, s.security_score + 5.0)
             else:

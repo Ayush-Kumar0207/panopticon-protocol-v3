@@ -2,12 +2,13 @@
 """
 Panopticon Protocol v3 -- Training Visualization
 ==================================================
-Runs PPO training across all difficulty levels and generates
-publication-quality reward curves for the hackathon pitch.
+By default this script parses real TRL output logs via generate_plots.py.
+Use --simulate for the older heuristic skill-sweep visualization.
 
 Usage:
-    python plot_training.py                # Full training + plot
-    python plot_training.py --plot-only    # Just plot from saved data
+    python plot_training.py                # Plot real training logs
+    python plot_training.py --simulate     # Generate heuristic skill sweep
+    python plot_training.py --plot-only    # Plot saved heuristic skill-sweep data
 """
 import argparse, json, os, sys
 import numpy as np
@@ -41,12 +42,16 @@ def run_agent_episode(task_level: str, seed: int, skill_level: float = 1.0) -> d
     steps = 0
 
     while not done and steps < 300:
+        depts = []
+        for worker in obs.workers:
+            if worker.department not in depts:
+                depts.append(worker.department)
         action = AgentAction(action_type="noop")
 
         # With probability (1-skill), take a random action
         if rng.random() > skill_level:
             random_actions = [
-                AgentAction(action_type="work", target=rng.choice(DEPTS)),
+                AgentAction(action_type="work", target=rng.choice(depts)),
                 AgentAction(action_type="monitor", target=rng.choice(CHANNELS)),
                 AgentAction(action_type="noop"),
             ]
@@ -82,10 +87,10 @@ def run_agent_episode(task_level: str, seed: int, skill_level: float = 1.0) -> d
                     action_type="investigate", target=leak.id, sub_action="verify"
                 )
             elif not canary_done:
-                if canary_idx < min(len(DEPTS), 4):
-                    action = AgentAction(action_type="canary", target=DEPTS[canary_idx])
+                if canary_idx < min(len(depts), 4):
+                    action = AgentAction(action_type="canary", target=depts[canary_idx])
                     canary_idx += 1
-                    if canary_idx >= 4:
+                    if canary_idx >= min(4, len(depts)):
                         canary_done = True
                 else:
                     canary_done = True
@@ -113,9 +118,9 @@ def run_agent_episode(task_level: str, seed: int, skill_level: float = 1.0) -> d
                         action_type="investigate", target=target.id, sub_action="audit"
                     )
                 else:
-                    action = AgentAction(action_type="work", target=DEPTS[steps % len(DEPTS)])
+                    action = AgentAction(action_type="work", target=depts[steps % len(depts)])
             else:
-                action = AgentAction(action_type="work", target=DEPTS[steps % len(DEPTS)])
+                action = AgentAction(action_type="work", target=depts[steps % len(depts)])
 
         result = env.step(action)
         obs = result.observation
@@ -303,10 +308,23 @@ def plot_curves(data: dict, output_dir: str = "training_results"):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--simulate", action="store_true", help="Run the heuristic skill-sweep simulation")
     parser.add_argument("--plot-only", action="store_true", help="Plot from saved data")
     parser.add_argument("--episodes", type=int, default=10, help="Episodes per skill level")
     parser.add_argument("--skill-steps", type=int, default=10, help="Number of skill progression steps")
     args = parser.parse_args()
+
+    if not args.simulate and not args.plot_only:
+        try:
+            from generate_plots import main as generate_real_training_plots
+
+            print("\n  Panopticon Protocol v3 -- Real Training Log Plots")
+            print("  " + "=" * 56)
+            generate_real_training_plots()
+            return
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"[WARN] Could not generate real training plots: {exc}")
+            print("[WARN] Falling back to the heuristic skill-sweep simulation.")
 
     data_file = "training_results/training_data.json"
 
@@ -317,8 +335,9 @@ def main():
         with open(data_file) as f:
             data = json.load(f)
     else:
-        print("\n  Panopticon Protocol v3 -- Training Simulation")
+        print("\n  Panopticon Protocol v3 -- Heuristic Skill-Sweep Simulation")
         print("  " + "=" * 50)
+        print("  NOTE: this is not trained-model evidence; it is a synthetic policy sweep.")
         data = simulate_training(
             episodes_per_skill=args.episodes,
             skill_steps=args.skill_steps,

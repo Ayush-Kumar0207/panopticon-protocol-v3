@@ -357,6 +357,14 @@ class EnvironmentState(BaseModel):
 # VALIDATION
 # =============================================================================
 
+def _observable_departments(obs: EnvironmentObservation) -> set[str]:
+    departments = {w.department for w in obs.workers}
+    departments.update(trap.department for trap in obs.canary_traps)
+    if departments:
+        return departments
+    return {d.value for d in Department}
+
+
 def validate_action(action: AgentAction, obs: EnvironmentObservation) -> tuple[bool, str]:
     """Validate an action against the current observation."""
 
@@ -374,23 +382,35 @@ def validate_action(action: AgentAction, obs: EnvironmentObservation) -> tuple[b
 
     # WORK requires a valid department
     if at == ActionType.WORK:
-        valid_depts = {d.value for d in Department}
+        valid_depts = _observable_departments(obs)
+        active_depts = {
+            w.department
+            for w in obs.workers
+            if w.state != WorkerState.TERMINATED.value
+        }
         if action.target not in valid_depts:
-            return False, f"WORK requires a valid department target. Got: '{action.target}'"
+            return False, f"WORK requires a department active in this scenario. Got: '{action.target}'"
+        if action.target not in active_depts:
+            return False, f"WORK requires at least one non-terminated worker in '{action.target}'"
         return True, "Valid WORK action"
 
     # HIRE requires a department
     if at == ActionType.HIRE:
-        valid_depts = {d.value for d in Department}
+        valid_depts = _observable_departments(obs)
         if action.target not in valid_depts:
-            return False, f"HIRE requires a department target. Got: '{action.target}'"
+            return False, f"HIRE requires a department active in this scenario. Got: '{action.target}'"
+        if not any(
+            w.department == action.target and w.state == WorkerState.TERMINATED.value
+            for w in obs.workers
+        ):
+            return False, f"HIRE requires a terminated worker slot in '{action.target}'"
         return True, "Valid HIRE action"
 
     # CANARY requires a department
     if at == ActionType.CANARY:
-        valid_depts = {d.value for d in Department}
+        valid_depts = _observable_departments(obs)
         if action.target not in valid_depts:
-            return False, f"CANARY requires a department target. Got: '{action.target}'"
+            return False, f"CANARY requires a department active in this scenario. Got: '{action.target}'"
         return True, "Valid CANARY action"
 
     # MONITOR requires a leak channel
@@ -407,6 +427,27 @@ def validate_action(action: AgentAction, obs: EnvironmentObservation) -> tuple[b
             return False, f"INVESTIGATE requires sub_action: audit/verify/correlate. Got: '{action.sub_action}'"
         if not action.target:
             return False, "INVESTIGATE requires a target (worker ID, leak ID, or department)"
+        if action.sub_action == SubAction.AUDIT.value:
+            worker_ids = {
+                w.id
+                for w in obs.workers
+                if w.state not in {
+                    WorkerState.TERMINATED.value,
+                    WorkerState.DOUBLE_AGENT.value,
+                    WorkerState.COMPROMISED.value,
+                }
+                and not w.turning_in_progress
+            }
+            if action.target not in worker_ids:
+                return False, f"INVESTIGATE/audit requires an active worker. Got: '{action.target}'"
+        elif action.sub_action == SubAction.VERIFY.value:
+            leak_ids = {leak.id for leak in obs.active_leaks if not leak.verified}
+            if action.target not in leak_ids:
+                return False, f"INVESTIGATE/verify requires an active leak ID. Got: '{action.target}'"
+        elif action.sub_action == SubAction.CORRELATE.value:
+            valid_depts = _observable_departments(obs)
+            if action.target not in valid_depts:
+                return False, f"INVESTIGATE/correlate requires an active department. Got: '{action.target}'"
         return True, "Valid INVESTIGATE action"
 
     # NEUTRALIZE requires a worker target and sub-action
@@ -414,9 +455,18 @@ def validate_action(action: AgentAction, obs: EnvironmentObservation) -> tuple[b
         valid_subs = {SubAction.TERMINATE.value, SubAction.INTERROGATE.value, SubAction.TURN.value}
         if action.sub_action not in valid_subs:
             return False, f"NEUTRALIZE requires sub_action: terminate/interrogate/turn. Got: '{action.sub_action}'"
-        worker_ids = {w.id for w in obs.workers if w.state != WorkerState.TERMINATED.value}
+        worker_ids = {
+            w.id
+            for w in obs.workers
+            if w.state not in {
+                WorkerState.TERMINATED.value,
+                WorkerState.DOUBLE_AGENT.value,
+                WorkerState.COMPROMISED.value,
+            }
+            and not w.turning_in_progress
+        }
         if action.target not in worker_ids:
-            return False, f"NEUTRALIZE target must be a non-terminated worker. Got: '{action.target}'"
+            return False, f"NEUTRALIZE target must be an active unresolved worker. Got: '{action.target}'"
         return True, "Valid NEUTRALIZE action"
 
     # DEPLOY_DOUBLE requires an active double agent
