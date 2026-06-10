@@ -27,13 +27,14 @@ import os
 import random
 import shutil
 import sys
+import time
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import torch
 from datasets import load_dataset
 from peft import LoraConfig, PeftModel, TaskType
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainerCallback
 from transformers.trainer_utils import get_last_checkpoint
 from trl import SFTConfig, SFTTrainer
 
@@ -126,6 +127,7 @@ LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
 RUN_ROOT = Path(os.environ.get("TRAIN_ROOT", "/data/panopticon-ep20"))
 RUN_ROOT.mkdir(parents=True, exist_ok=True)
 STATE_PATH = RUN_ROOT / "curriculum_state.json"
+EVENTS_PATH = RUN_ROOT / "training_events.jsonl"
 MAX_SEQ_LENGTH = DEFAULT_MAX_SEQ_LENGTH
 NUM_TRAIN_EPOCHS = DEFAULT_TRAIN_EPOCHS
 PER_DEVICE_TRAIN_BATCH_SIZE = DEFAULT_BATCH_SIZE
@@ -133,6 +135,75 @@ GRADIENT_ACCUMULATION_STEPS = DEFAULT_GRAD_ACCUM
 SAVE_STEPS = DEFAULT_SAVE_STEPS
 GRADIENT_CHECKPOINTING = False
 CPU_BASIC_SAFE_MODE = False
+
+
+def _json_default(value):
+    if isinstance(value, Path):
+        return str(value)
+    return str(value)
+
+
+def _format_log_value(value):
+    if value is None:
+        return "NA"
+    if isinstance(value, float):
+        return f"{value:.6g}"
+    return str(value)
+
+
+def log_event(event: str, *, echo: bool = True, **fields):
+    payload = {"event": event, "time_unix": round(time.time(), 3), **fields}
+    line = json.dumps(payload, sort_keys=True, default=_json_default)
+    if echo:
+        print("[TRAIN_EVENT] " + line)
+    try:
+        with open(EVENTS_PATH, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError as exc:
+        if echo:
+            print(f"[WARN] Could not append training event log: {exc}")
+    sys.stdout.flush()
+
+
+class CurriculumProgressCallback(TrainerCallback):
+    def __init__(self, task_level: str, level_index: int, total_levels: int):
+        self.task_level = task_level
+        self.level_index = max(1, level_index)
+        self.total_levels = max(1, total_levels)
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        logs = logs or {}
+        max_steps = max(1, int(state.max_steps or 1))
+        step = int(state.global_step or 0)
+        level_pct = min(100.0, 100.0 * step / max_steps)
+        curriculum_pct = min(
+            100.0,
+            100.0 * ((self.level_index - 1) + (level_pct / 100.0)) / self.total_levels,
+        )
+        print(
+            "[TRAIN_PROGRESS] "
+            f"level={self.task_level} "
+            f"step={step}/{max_steps} "
+            f"level_pct={level_pct:.1f}% "
+            f"curriculum_pct={curriculum_pct:.1f}% "
+            f"epoch={_format_log_value(state.epoch)} "
+            f"loss={_format_log_value(logs.get('loss'))} "
+            f"grad_norm={_format_log_value(logs.get('grad_norm'))} "
+            f"lr={_format_log_value(logs.get('learning_rate'))}"
+        )
+        log_event(
+            "train_progress",
+            level=self.task_level,
+            step=step,
+            max_steps=max_steps,
+            level_pct=round(level_pct, 3),
+            curriculum_pct=round(curriculum_pct, 3),
+            epoch=state.epoch,
+            loss=logs.get("loss"),
+            grad_norm=logs.get("grad_norm"),
+            learning_rate=logs.get("learning_rate"),
+        )
+        sys.stdout.flush()
 
 
 def resolve_precision():
@@ -638,6 +709,37 @@ def generate_expert_trajectories(task_level: str, num_episodes: int = 20):
             rewards.append(result.reward)
             steps += 1
             expert_state["turn"] += 1
+            post_state = env.state
+            log_event(
+                "expert_step",
+                echo=False,
+                level=task_level,
+                episode=ep + 1,
+                episodes=num_episodes,
+                turn=post_state.turn,
+                max_turns=post_state.max_turns,
+                phase=post_state.phase,
+                phase_number=post_state.phase_number,
+                action_type=action.action_type,
+                target=action.target,
+                sub_action=action.sub_action or "none",
+                valid_action=bool(result.info.get("valid", True)),
+                reward=round(result.reward, 6),
+                total_reward=round(post_state.total_reward, 6),
+                revenue=round(post_state.enterprise_revenue, 3),
+                security=round(post_state.security_score, 3),
+                sleepers_caught=post_state.sleepers_caught,
+                sleepers_spawned=post_state.total_sleepers_spawned,
+                sleepers_missed=post_state.sleepers_missed,
+                false_accusations=post_state.false_accusations,
+                invalid_actions=post_state.invalid_actions,
+                active_leaks=len(obs.active_leaks),
+                canary_traps=len(post_state.canary_traps),
+                triggered_canaries=sum(1 for trap in post_state.canary_traps if trap.triggered),
+                double_agents=len(post_state.double_agents),
+                active_double_agents=sum(1 for asset in post_state.double_agents if asset.active),
+                event_count=len(result.info.get("events", [])),
+            )
 
         s = env.state
         grade_data = {
@@ -660,15 +762,49 @@ def generate_expert_trajectories(task_level: str, num_episodes: int = 20):
                 "revenue": s.enterprise_revenue,
                 "security": s.security_score,
                 "sleepers_caught": s.sleepers_caught,
+                "sleepers_spawned": s.total_sleepers_spawned,
+                "sleepers_missed": s.sleepers_missed,
+                "false_accusations": s.false_accusations,
+                "invalid_actions": s.invalid_actions,
                 "double_agents": len(s.double_agents),
+                "active_double_agents": sum(1 for asset in s.double_agents if asset.active),
+                "canary_traps": len(s.canary_traps),
+                "triggered_canaries": sum(1 for trap in s.canary_traps if trap.triggered),
+                "active_leaks": len(obs.active_leaks),
                 "grade": grade.score,
                 "passed": grade.passed,
             }
         )
+        progress_pct = 100.0 * (ep + 1) / max(1, num_episodes)
         print(
             f"  [Expert Ep {ep + 1}/{num_episodes}] Steps={steps} Reward={sum(rewards):.2f} "
             f"Rev={s.enterprise_revenue:.0f} Sec={s.security_score:.0f} "
             f"Caught={s.sleepers_caught} DAs={len(s.double_agents)} Grade={grade.score:.3f}"
+        )
+        print(
+            f"  [DATA_PROGRESS] level={task_level} episode={ep + 1}/{num_episodes} "
+            f"pct={progress_pct:.1f}% examples_so_far={len(trajectories)}"
+        )
+        log_event(
+            "expert_episode",
+            level=task_level,
+            episode=ep + 1,
+            episodes=num_episodes,
+            pct=round(progress_pct, 3),
+            seed=seed,
+            steps=steps,
+            reward=round(sum(rewards), 6),
+            revenue=s.enterprise_revenue,
+            security=s.security_score,
+            sleepers_caught=s.sleepers_caught,
+            sleepers_spawned=s.total_sleepers_spawned,
+            sleepers_missed=s.sleepers_missed,
+            false_accusations=s.false_accusations,
+            invalid_actions=s.invalid_actions,
+            double_agents=len(s.double_agents),
+            grade=grade.score,
+            passed=grade.passed,
+            trajectory_examples_so_far=len(trajectories),
         )
         sys.stdout.flush()
 
@@ -707,11 +843,25 @@ def trajectory_training_weight(trajectory: dict) -> int:
     return 1
 
 
-def save_training_data_with_template(trajectories, output_path: str, tokenizer):
+def save_training_data_with_template(trajectories, output_path: str, tokenizer, task_level: str):
     tmp_path = f"{output_path}.tmp"
     written = 0
+    action_counts: dict[str, int] = {}
+    weighted_action_counts: dict[str, int] = {}
     with open(tmp_path, "w", encoding="utf-8") as f:
         for t in trajectories:
+            try:
+                action_payload = json.loads(t["action"])
+                action_key = action_payload.get("action_type", "unknown")
+                sub_action = action_payload.get("sub_action", "none")
+                if sub_action and sub_action != "none":
+                    action_key = f"{action_key}/{sub_action}"
+            except (KeyError, TypeError, json.JSONDecodeError):
+                action_key = "unknown"
+            weight = trajectory_training_weight(t)
+            action_counts[action_key] = action_counts.get(action_key, 0) + 1
+            weighted_action_counts[action_key] = weighted_action_counts.get(action_key, 0) + weight
+
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {
@@ -727,7 +877,7 @@ def save_training_data_with_template(trajectories, output_path: str, tokenizer):
                     f"{SYSTEM_PROMPT}\n\nCurrent State:\n{t['observation']}\n\n"
                     f"Your action (JSON):\n{t['action']}"
                 )
-            for _ in range(trajectory_training_weight(t)):
+            for _ in range(weight):
                 f.write(json.dumps({"text": text}) + "\n")
                 written += 1
 
@@ -735,6 +885,17 @@ def save_training_data_with_template(trajectories, output_path: str, tokenizer):
     print(
         f"  Saved {written} weighted examples to {output_path} "
         f"from {len(trajectories)} trajectory steps"
+    )
+    print(f"  [DATA_ACTIONS] raw={json.dumps(action_counts, sort_keys=True)}")
+    print(f"  [DATA_ACTIONS_WEIGHTED] weighted={json.dumps(weighted_action_counts, sort_keys=True)}")
+    log_event(
+        "dataset_written",
+        level=task_level,
+        output_path=output_path,
+        raw_examples=len(trajectories),
+        weighted_examples=written,
+        action_counts=action_counts,
+        weighted_action_counts=weighted_action_counts,
     )
     sys.stdout.flush()
     return written
@@ -820,11 +981,32 @@ def build_completion_data_collator(tokenizer):
     )
 
 
-def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODES_PER_LEVEL):
+def train_on_level(
+    model_name: str,
+    task_level: str,
+    num_episodes: int = EPISODES_PER_LEVEL,
+    level_index: int = 1,
+    total_levels: int = 1,
+):
+    level_started_at = time.time()
     print("\n" + "=" * 60)
     print(f"  TRAINING: {task_level} | Episodes: {num_episodes} | Base: {model_name}")
     print("=" * 60)
     sys.stdout.flush()
+    log_event(
+        "level_start",
+        level=task_level,
+        level_index=level_index,
+        total_levels=total_levels,
+        episodes=num_episodes,
+        base_model=model_name,
+        run_root=str(RUN_ROOT),
+        max_seq_length=MAX_SEQ_LENGTH,
+        epochs=NUM_TRAIN_EPOCHS,
+        batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,
+        gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
+        runtime_profile="cpu-basic-safe" if CPU_BASIC_SAFE_MODE else "default-gpu",
+    )
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
@@ -854,19 +1036,36 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
 
     if has_matching_data:
         print(f"\n[Phase 1] Reusing existing training data: {data_path}")
+        log_event(
+            "dataset_reused",
+            level=task_level,
+            data_path=str(data_path),
+            meta=data_meta,
+        )
         sys.stdout.flush()
     else:
         print("\n[Phase 1] Generating expert trajectories...")
         sys.stdout.flush()
         trajectories, episode_metrics = generate_expert_trajectories(task_level, num_episodes)
-        written_examples = save_training_data_with_template(trajectories, str(data_path), tokenizer)
+        written_examples = save_training_data_with_template(trajectories, str(data_path), tokenizer, task_level)
         save_episode_metrics(episode_metrics, str(metrics_path))
         save_data_meta(data_meta_path, task_level, num_episodes, written_examples, model_name)
+        log_event(
+            "expert_generation_complete",
+            level=task_level,
+            episodes=num_episodes,
+            raw_examples=len(trajectories),
+            weighted_examples=written_examples,
+            metrics_path=str(metrics_path),
+            data_path=str(data_path),
+        )
 
     print("\n[Phase 2] Loading model...")
     sys.stdout.flush()
+    log_event("model_load_start", level=task_level, model=model_name)
     model, tokenizer = load_model_and_tokenizer(model_name)
     tokenizer.model_max_length = MAX_SEQ_LENGTH
+    log_event("model_load_complete", level=task_level, model=model_name, train_dtype=str(TRAIN_DTYPE))
 
     lora_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
@@ -923,17 +1122,38 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         f"  [DATA] Max: {max(sample_lengths)}, Min: {min(sample_lengths)}, "
         f"Avg: {sum(sample_lengths) / len(sample_lengths):.0f}"
     )
+    log_event(
+        "token_stats",
+        level=task_level,
+        sample_count=len(sample_lengths),
+        token_min=min(sample_lengths),
+        token_max=max(sample_lengths),
+        token_avg=round(sum(sample_lengths) / len(sample_lengths), 3),
+        token_samples=sample_lengths,
+    )
     sys.stdout.flush()
 
     if torch.cuda.is_available():
+        gpu_total_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        gpu_allocated_gb = torch.cuda.memory_allocated() / 1024**3
+        gpu_reserved_gb = torch.cuda.memory_reserved() / 1024**3
         print(f"\n  [GPU] {torch.cuda.get_device_name(0)}")
         print(f"  [GPU] dtype: {TRAIN_DTYPE}")
         print(
             f"  [GPU] VRAM Total:     "
-            f"{torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB"
+            f"{gpu_total_gb:.1f} GB"
         )
-        print(f"  [GPU] VRAM Allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
-        print(f"  [GPU] VRAM Reserved:  {torch.cuda.memory_reserved() / 1024**3:.2f} GB")
+        print(f"  [GPU] VRAM Allocated: {gpu_allocated_gb:.2f} GB")
+        print(f"  [GPU] VRAM Reserved:  {gpu_reserved_gb:.2f} GB")
+        log_event(
+            "gpu_snapshot",
+            level=task_level,
+            gpu=torch.cuda.get_device_name(0),
+            train_dtype=str(TRAIN_DTYPE),
+            vram_total_gb=round(gpu_total_gb, 3),
+            vram_allocated_gb=round(gpu_allocated_gb, 3),
+            vram_reserved_gb=round(gpu_reserved_gb, 3),
+        )
         sys.stdout.flush()
 
     sample = tokenizer(
@@ -949,6 +1169,15 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
 
     print(
         f"\n[Phase 3] SFT Training ({len(dataset)} examples, {sft_config.num_train_epochs} epochs)..."
+    )
+    log_event(
+        "train_start",
+        level=task_level,
+        examples=len(dataset),
+        epochs=float(sft_config.num_train_epochs),
+        learning_rate=sft_config.learning_rate,
+        max_seq_length=MAX_SEQ_LENGTH,
+        output_dir=str(output_dir),
     )
     sys.stdout.flush()
 
@@ -976,6 +1205,7 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         trainer_kwargs["max_seq_length"] = MAX_SEQ_LENGTH
 
     trainer = SFTTrainer(**trainer_kwargs)
+    trainer.add_callback(CurriculumProgressCallback(task_level, level_index, total_levels))
 
     if hasattr(trainer.model, "enable_input_require_grads"):
         trainer.model.enable_input_require_grads()
@@ -986,6 +1216,13 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
     valid_labels = int((first_batch["labels"] != -100).sum().item())
     print(f"  [SANITY] First batch input shape: {tuple(first_batch['input_ids'].shape)}")
     print(f"  [SANITY] First batch valid label tokens: {valid_labels}")
+    log_event(
+        "train_sanity",
+        level=task_level,
+        first_batch_shape=list(first_batch["input_ids"].shape),
+        valid_label_tokens=valid_labels,
+        max_steps=int(trainer.state.max_steps or 0),
+    )
     sys.stdout.flush()
 
     if valid_labels == 0:
@@ -995,11 +1232,23 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
         print(f"  [RESUME] Found checkpoint: {last_checkpoint}")
         sys.stdout.flush()
 
-    trainer.train(resume_from_checkpoint=last_checkpoint)
+    train_output = trainer.train(resume_from_checkpoint=last_checkpoint)
+    log_event(
+        "train_complete",
+        level=task_level,
+        metrics=getattr(train_output, "metrics", {}),
+        runtime_sec=round(time.time() - level_started_at, 3),
+    )
     trainer.save_model(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
 
     print(f"  [DONE] Model saved to {output_dir}/")
+    log_event(
+        "level_complete",
+        level=task_level,
+        output_dir=str(output_dir),
+        runtime_sec=round(time.time() - level_started_at, 3),
+    )
     sys.stdout.flush()
 
     del model, trainer
@@ -1008,8 +1257,10 @@ def train_on_level(model_name: str, task_level: str, num_episodes: int = EPISODE
 
 
 def merge_and_save_final_model(adapter_path: str, output_path: str):
+    merge_started_at = time.time()
     print("\n[Phase 4] Merging adapter into standalone model...")
     sys.stdout.flush()
+    log_event("merge_start", adapter_path=adapter_path, output_path=output_path)
 
     output_dir = Path(output_path)
     output_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -1042,6 +1293,12 @@ def merge_and_save_final_model(adapter_path: str, output_path: str):
     tokenizer.save_pretrained(str(output_dir))
 
     print(f"  [DONE] Merged model saved to {output_dir}/")
+    log_event(
+        "merge_complete",
+        adapter_path=adapter_path,
+        output_path=str(output_dir),
+        runtime_sec=round(time.time() - merge_started_at, 3),
+    )
     sys.stdout.flush()
 
     del model, base_model
@@ -1050,10 +1307,12 @@ def merge_and_save_final_model(adapter_path: str, output_path: str):
 
 
 def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int = 5):
+    eval_started_at = time.time()
     print("\n" + "=" * 60)
     print(f"  EVALUATING: {model_path} on {task_level} ({num_games} games)")
     print("=" * 60)
     sys.stdout.flush()
+    log_event("inline_eval_start", model_path=model_path, level=task_level, games=num_games)
 
     from inference_local import LocalModelPolicy, run_episode
 
@@ -1080,17 +1339,43 @@ def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int 
                 f"Caught={final_state['sleepers_caught']} "
                 f"Invalid={invalid_actions} Grade={episode['grade']['score']:.3f}"
             )
+            log_event(
+                "inline_eval_game",
+                model_path=model_path,
+                level=task_level,
+                game=g + 1,
+                games=num_games,
+                seed=seed,
+                steps=episode["steps"],
+                reward=episode["total_reward"],
+                grade=episode["grade"]["score"],
+                passed=episode["grade"]["passed"],
+                revenue=final_state["enterprise_revenue"],
+                security=final_state["security_score"],
+                sleepers_caught=final_state["sleepers_caught"],
+                sleepers_spawned=final_state["total_sleepers_spawned"],
+                invalid_actions=invalid_actions,
+            )
             sys.stdout.flush()
     finally:
         policy.close()
 
     avg = sum(results) / len(results)
     print(f"\n  Average Grade: {avg:.3f}")
+    log_event(
+        "inline_eval_complete",
+        model_path=model_path,
+        level=task_level,
+        games=num_games,
+        average_grade=avg,
+        runtime_sec=round(time.time() - eval_started_at, 3),
+    )
     sys.stdout.flush()
     return avg
 
 
 def main():
+    run_started_at = time.time()
     parser = argparse.ArgumentParser(description="Train LLM on Panopticon v3")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--level", default="easy")
@@ -1109,6 +1394,25 @@ def main():
     args = parser.parse_args()
     args = configure_runtime(args)
     runtime_profile = "cpu-basic-safe" if CPU_BASIC_SAFE_MODE else "default-gpu"
+    requested_levels = LEVELS if args.curriculum else [args.level]
+    print(f"[*] Structured event log: {EVENTS_PATH}")
+    sys.stdout.flush()
+    log_event(
+        "run_start",
+        curriculum=bool(args.curriculum),
+        requested_levels=requested_levels,
+        episodes=args.episodes,
+        model=args.model,
+        run_root=str(RUN_ROOT),
+        events_path=str(EVENTS_PATH),
+        runtime_profile=runtime_profile,
+        max_seq_length=MAX_SEQ_LENGTH,
+        epochs=NUM_TRAIN_EPOCHS,
+        batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,
+        gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
+        merge=bool(args.merge or args.curriculum),
+        eval=bool(args.eval),
+    )
 
     if args.curriculum:
         state = load_state()
@@ -1134,16 +1438,35 @@ def main():
 
         if completed_levels:
             print(f"[*] Resuming curriculum. Already completed: {ordered_completed_levels(completed_levels)}")
+            log_event(
+                "curriculum_resume",
+                completed_levels=ordered_completed_levels(completed_levels),
+                current_model=current_model,
+            )
             sys.stdout.flush()
 
-        for level in LEVELS:
+        for level_index, level in enumerate(LEVELS, start=1):
             if level in completed_levels:
                 print(f"[*] Skipping completed level: {level}")
                 current_model = str(RUN_ROOT / f"trl_model_{level}")
+                log_event(
+                    "level_skipped",
+                    level=level,
+                    level_index=level_index,
+                    total_levels=len(LEVELS),
+                    curriculum_pct=round(100.0 * level_index / len(LEVELS), 3),
+                    current_model=current_model,
+                )
                 sys.stdout.flush()
                 continue
 
-            current_model = train_on_level(current_model, level, args.episodes)
+            current_model = train_on_level(
+                current_model,
+                level,
+                args.episodes,
+                level_index=level_index,
+                total_levels=len(LEVELS),
+            )
 
             completed_levels.add(level)
             state["completed_levels"] = ordered_completed_levels(completed_levels)
@@ -1153,15 +1476,23 @@ def main():
             save_state(state)
 
             print(f"[*] Progress saved: {level} complete")
+            log_event(
+                "curriculum_progress",
+                completed_levels=ordered_completed_levels(completed_levels),
+                completed_count=len(completed_levels),
+                total_levels=len(LEVELS),
+                curriculum_pct=round(100.0 * len(completed_levels) / len(LEVELS), 3),
+                current_model=current_model,
+            )
             sys.stdout.flush()
 
         final_model = current_model
     else:
-        final_model = train_on_level(args.model, args.level, args.episodes)
+        final_model = train_on_level(args.model, args.level, args.episodes, level_index=1, total_levels=1)
 
     if args.merge or args.curriculum:
         merged_path = str(RUN_ROOT / "merged_model")
-        merge_and_save_final_model(final_model, merged_path)
+        final_model = merge_and_save_final_model(final_model, merged_path)
 
     if args.eval:
         eval_level = "level_5" if args.curriculum else args.level
@@ -1169,6 +1500,12 @@ def main():
 
     print("\n[*] All training complete!")
     print(f"[*] Persistent root: {RUN_ROOT}")
+    log_event(
+        "run_complete",
+        final_model=final_model,
+        run_root=str(RUN_ROOT),
+        runtime_sec=round(time.time() - run_started_at, 3),
+    )
     sys.stdout.flush()
 
 

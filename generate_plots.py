@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import statistics
 from dataclasses import dataclass
@@ -195,6 +196,208 @@ def parse_levels(log_text: str) -> dict[str, LevelData]:
         raise ValueError("No complete training blocks found in the provided training log.")
 
     return parsed
+
+
+def resolve_event_file() -> Path | None:
+    candidates: list[Path] = []
+    env_path = os.environ.get("TRAIN_EVENTS_PATH")
+    if env_path:
+        candidates.append(Path(env_path))
+    train_root = os.environ.get("TRAIN_ROOT")
+    if train_root:
+        candidates.append(Path(train_root) / "training_events.jsonl")
+    candidates.append(Path("training_events.jsonl"))
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if not str(candidate):
+            continue
+        resolved = candidate.expanduser()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.exists() and resolved.is_file():
+            return resolved
+    return None
+
+
+def parse_train_events(log_text: str, event_file: Path | None = None) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+
+    if event_file is not None:
+        for line in event_file.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict) and payload.get("event"):
+                events.append(payload)
+
+    if events:
+        return events
+
+    event_pattern = re.compile(r"^\[TRAIN_EVENT\]\s+({.*})\s*$", re.MULTILINE)
+    for match in event_pattern.finditer(log_text):
+        try:
+            payload = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("event"):
+            events.append(payload)
+
+    return events
+
+
+def _as_float(value, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_int(value, default: int = 0) -> int:
+    if value is None:
+        return default
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def levels_from_events(events: list[dict[str, object]]) -> dict[str, LevelData]:
+    partials: dict[str, dict[str, object]] = {}
+
+    for event in events:
+        level = str(event.get("level", "") or "")
+        if not level:
+            continue
+        level_parts = partials.setdefault(
+            level,
+            {
+                "episodes": 0,
+                "expert_steps": [],
+                "expert_reward": [],
+                "expert_revenue": [],
+                "expert_security": [],
+                "expert_caught": [],
+                "expert_grade": [],
+                "loss": [],
+                "grad_norm": [],
+                "learning_rate": [],
+                "epoch": [],
+            },
+        )
+
+        event_name = event.get("event")
+        if event_name == "level_start":
+            level_parts["episodes"] = max(_as_int(level_parts.get("episodes")), _as_int(event.get("episodes")))
+        elif event_name == "expert_episode":
+            level_parts["episodes"] = max(_as_int(level_parts.get("episodes")), _as_int(event.get("episodes")))
+            level_parts["expert_steps"].append(_as_int(event.get("steps")))
+            level_parts["expert_reward"].append(_as_float(event.get("reward")))
+            level_parts["expert_revenue"].append(_as_int(event.get("revenue")))
+            level_parts["expert_security"].append(_as_int(event.get("security")))
+            level_parts["expert_caught"].append(_as_int(event.get("sleepers_caught")))
+            level_parts["expert_grade"].append(_as_float(event.get("grade")))
+        elif event_name == "dataset_written":
+            level_parts["examples"] = _as_int(event.get("weighted_examples"))
+            level_parts["raw_examples"] = _as_int(event.get("raw_examples"))
+            level_parts["action_counts"] = event.get("action_counts", {})
+            level_parts["weighted_action_counts"] = event.get("weighted_action_counts", {})
+        elif event_name == "token_stats":
+            level_parts["token_min"] = _as_int(event.get("token_min"))
+            level_parts["token_max"] = _as_int(event.get("token_max"))
+            level_parts["token_avg"] = _as_int(event.get("token_avg"))
+        elif event_name == "train_progress" and event.get("loss") is not None:
+            level_parts["loss"].append(_as_float(event.get("loss")))
+            level_parts["grad_norm"].append(_as_float(event.get("grad_norm")))
+            level_parts["learning_rate"].append(_as_float(event.get("learning_rate")))
+            level_parts["epoch"].append(_as_float(event.get("epoch")))
+
+    parsed: dict[str, LevelData] = {}
+    for level in LEVEL_ORDER:
+        level_parts = partials.get(level)
+        if not level_parts:
+            continue
+
+        required_lists = [
+            "expert_steps",
+            "expert_reward",
+            "expert_revenue",
+            "expert_security",
+            "expert_caught",
+            "expert_grade",
+            "loss",
+            "grad_norm",
+            "learning_rate",
+            "epoch",
+        ]
+        if any(not level_parts.get(key) for key in required_lists):
+            continue
+
+        token_avg = _as_int(level_parts.get("token_avg"))
+        token_min = _as_int(level_parts.get("token_min"), token_avg)
+        token_max = _as_int(level_parts.get("token_max"), token_avg)
+        examples = _as_int(level_parts.get("examples"), _as_int(level_parts.get("raw_examples")))
+        if examples <= 0 or token_avg <= 0:
+            continue
+
+        parsed[level] = LevelData(
+            name=level,
+            episodes=_as_int(level_parts.get("episodes"), len(level_parts["expert_reward"])),
+            examples=examples,
+            token_min=token_min,
+            token_max=token_max,
+            token_avg=token_avg,
+            expert_steps=list(level_parts["expert_steps"]),
+            expert_reward=list(level_parts["expert_reward"]),
+            expert_revenue=list(level_parts["expert_revenue"]),
+            expert_security=list(level_parts["expert_security"]),
+            expert_caught=list(level_parts["expert_caught"]),
+            expert_grade=list(level_parts["expert_grade"]),
+            loss=list(level_parts["loss"]),
+            grad_norm=list(level_parts["grad_norm"]),
+            learning_rate=list(level_parts["learning_rate"]),
+            epoch=list(level_parts["epoch"]),
+        )
+
+    return parsed
+
+
+def build_event_summary(events: list[dict[str, object]]) -> dict[str, object]:
+    counts: dict[str, int] = {}
+    per_level: dict[str, dict[str, object]] = {}
+    for event in events:
+        event_name = str(event.get("event", "unknown"))
+        counts[event_name] = counts.get(event_name, 0) + 1
+        level = str(event.get("level", "") or "")
+        if not level:
+            continue
+        level_stats = per_level.setdefault(level, {"events": 0, "latest_curriculum_pct": 0.0})
+        level_stats["events"] = int(level_stats["events"]) + 1
+        if event_name == "train_progress":
+            level_stats["latest_curriculum_pct"] = max(
+                _as_float(level_stats.get("latest_curriculum_pct")),
+                _as_float(event.get("curriculum_pct")),
+            )
+        if event_name == "dataset_written":
+            level_stats["raw_examples"] = _as_int(event.get("raw_examples"))
+            level_stats["weighted_examples"] = _as_int(event.get("weighted_examples"))
+            level_stats["action_counts"] = event.get("action_counts", {})
+            level_stats["weighted_action_counts"] = event.get("weighted_action_counts", {})
+        if event_name == "level_complete":
+            level_stats["runtime_sec"] = _as_float(event.get("runtime_sec"))
+
+    return {
+        "event_count": len(events),
+        "event_type_counts": counts,
+        "per_level": per_level,
+    }
 
 
 def resolve_log_file() -> Path:
@@ -754,6 +957,266 @@ def plot_curriculum_heatmap(levels: dict[str, LevelData], summary: dict[str, obj
     save_figure("curriculum_heatmap.png")
 
 
+def _events_by_level(events: list[dict[str, object]], event_name: str) -> dict[str, list[dict[str, object]]]:
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for event in events:
+        if event.get("event") != event_name:
+            continue
+        level = str(event.get("level", "") or "")
+        if not level:
+            continue
+        grouped.setdefault(level, []).append(event)
+    return grouped
+
+
+def _event_x_values(events: list[dict[str, object]]) -> tuple[np.ndarray, str]:
+    times = [_as_float(event.get("time_unix"), default=float("nan")) for event in events]
+    if times and all(not math.isnan(value) for value in times):
+        first = times[0]
+        return np.asarray([(value - first) / 60.0 for value in times], dtype=float), "Elapsed minutes"
+    return np.arange(1, len(events) + 1, dtype=float), "Event index"
+
+
+def plot_curriculum_progress_timeline(events: list[dict[str, object]]) -> list[str]:
+    progress = [event for event in events if event.get("event") == "train_progress"]
+    if not progress:
+        return []
+
+    setup_style()
+    fig, axes = plt.subplots(2, 1, figsize=(14, 8.2), sharex=False)
+    x_all, x_label = _event_x_values(progress)
+    curriculum_pct = [_as_float(event.get("curriculum_pct")) for event in progress]
+    axes[0].plot(x_all, curriculum_pct, color="#111827", linewidth=2.2)
+    axes[0].fill_between(x_all, curriculum_pct, color="#94A3B8", alpha=0.25)
+    axes[0].set_title("End-to-End Curriculum Completion")
+    axes[0].set_ylabel("Curriculum complete (%)")
+    axes[0].set_ylim(0, 105)
+    axes[0].grid(True)
+
+    grouped = _events_by_level(events, "train_progress")
+    for level in LEVEL_ORDER:
+        rows = [event for event in grouped.get(level, []) if event.get("loss") is not None]
+        if not rows:
+            continue
+        x = np.arange(1, len(rows) + 1)
+        y = [_as_float(event.get("loss")) for event in rows]
+        axes[1].plot(
+            x,
+            y,
+            color=LEVEL_COLORS[level],
+            alpha=0.22,
+            linewidth=1.0,
+        )
+        axes[1].plot(
+            x,
+            rolling_mean(y, max(3, len(y) // 12)),
+            color=LEVEL_COLORS[level],
+            linewidth=2.0,
+            label=LEVEL_LABELS[level],
+        )
+
+    axes[1].set_title("Logged SFT Loss by Curriculum Level")
+    axes[1].set_xlabel("Logged update within level")
+    axes[1].set_ylabel("Loss")
+    axes[1].grid(True)
+    axes[1].legend(ncol=5, loc="upper center", bbox_to_anchor=(0.5, 1.2))
+    axes[0].set_xlabel(x_label)
+
+    fig.tight_layout()
+    save_figure("curriculum_progress_timeline.png")
+    return ["curriculum_progress_timeline.png"]
+
+
+def plot_training_action_mix(events: list[dict[str, object]]) -> list[str]:
+    latest_by_level: dict[str, dict[str, object]] = {}
+    for event in events:
+        if event.get("event") == "dataset_written" and event.get("level"):
+            latest_by_level[str(event["level"])] = event
+
+    counts_by_level: dict[str, dict[str, int]] = {}
+    for level, event in latest_by_level.items():
+        raw_counts = event.get("weighted_action_counts") or event.get("action_counts") or {}
+        if isinstance(raw_counts, dict):
+            counts_by_level[level] = {str(key): _as_int(value) for key, value in raw_counts.items()}
+
+    if not counts_by_level:
+        for level, rows in _events_by_level(events, "expert_step").items():
+            level_counts: dict[str, int] = {}
+            for event in rows:
+                action = str(event.get("action_type", "unknown"))
+                sub_action = str(event.get("sub_action", "none") or "none")
+                key = f"{action}/{sub_action}" if sub_action != "none" else action
+                level_counts[key] = level_counts.get(key, 0) + 1
+            if level_counts:
+                counts_by_level[level] = level_counts
+
+    if not counts_by_level:
+        return []
+
+    totals: dict[str, int] = {}
+    for counts in counts_by_level.values():
+        for key, value in counts.items():
+            totals[key] = totals.get(key, 0) + value
+    action_keys = [key for key, _ in sorted(totals.items(), key=lambda item: item[1], reverse=True)[:10]]
+    names = [name for name in LEVEL_ORDER if name in counts_by_level]
+    if not names:
+        return []
+
+    setup_style()
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5.8))
+    x = np.arange(len(names))
+    bottoms = np.zeros(len(names))
+    palette = plt.get_cmap("tab20").colors
+
+    for idx, action_key in enumerate(action_keys):
+        values = np.asarray([counts_by_level[name].get(action_key, 0) for name in names], dtype=float)
+        axes[0].bar(x, values, bottom=bottoms, color=palette[idx % len(palette)], label=action_key, alpha=0.86)
+        bottoms += values
+
+    axes[0].set_xticks(x, [LEVEL_LABELS[name] for name in names])
+    axes[0].set_title("Weighted Training Action Mix by Level")
+    axes[0].set_ylabel("Examples / action count")
+    axes[0].grid(True, axis="y")
+    axes[0].legend(loc="upper left", bbox_to_anchor=(1.02, 1.0), fontsize=8)
+
+    all_values = np.asarray([totals[key] for key in action_keys], dtype=float)
+    axes[1].barh(action_keys[::-1], all_values[::-1], color="#334155", alpha=0.82)
+    axes[1].set_title("Overall Action Coverage")
+    axes[1].set_xlabel("Logged count")
+    axes[1].grid(True, axis="x")
+
+    fig.tight_layout()
+    save_figure("training_action_mix.png")
+    return ["training_action_mix.png"]
+
+
+def plot_expert_step_dynamics(events: list[dict[str, object]]) -> list[str]:
+    grouped = _events_by_level(events, "expert_step")
+    if not any(grouped.values()):
+        return []
+
+    setup_style()
+    fig, axes = plt.subplots(2, 2, figsize=(15, 9))
+
+    for level in LEVEL_ORDER:
+        rows = grouped.get(level, [])
+        if not rows:
+            continue
+        x = np.arange(1, len(rows) + 1)
+        color = LEVEL_COLORS[level]
+        reward = [_as_float(event.get("reward")) for event in rows]
+        revenue = [_as_float(event.get("revenue")) for event in rows]
+        security = [_as_float(event.get("security")) for event in rows]
+        active_leaks = [_as_float(event.get("active_leaks")) for event in rows]
+        canaries = [_as_float(event.get("canary_traps")) for event in rows]
+        double_agents = [_as_float(event.get("double_agents")) for event in rows]
+        window = max(5, len(rows) // 40)
+
+        axes[0, 0].plot(x, rolling_mean(reward, window), color=color, linewidth=1.8, label=LEVEL_LABELS[level])
+        axes[0, 1].plot(x, rolling_mean(revenue, window), color=color, linewidth=1.8, label=LEVEL_LABELS[level])
+        axes[1, 0].plot(x, rolling_mean(security, window), color=color, linewidth=1.8, label=LEVEL_LABELS[level])
+        axes[1, 1].plot(x, rolling_mean(active_leaks, window), color=color, linewidth=1.6, linestyle="-")
+        axes[1, 1].plot(x, rolling_mean(canaries, window), color=color, linewidth=1.2, linestyle="--")
+        axes[1, 1].plot(x, rolling_mean(double_agents, window), color=color, linewidth=1.2, linestyle=":")
+
+    axes[0, 0].set_title("Expert Turn Reward Dynamics")
+    axes[0, 0].set_ylabel("Reward per turn")
+    axes[0, 1].set_title("Revenue During Demonstrations")
+    axes[0, 1].set_ylabel("Revenue")
+    axes[1, 0].set_title("Security During Demonstrations")
+    axes[1, 0].set_ylabel("Security score")
+    axes[1, 1].set_title("Leaks, Canaries, and Double-Agent Activity")
+    axes[1, 1].set_ylabel("Rolling count")
+
+    for ax in axes.flatten():
+        ax.set_xlabel("Logged expert step within level")
+        ax.grid(True)
+    axes[0, 0].legend(ncol=3, loc="upper center", bbox_to_anchor=(1.08, 1.26))
+    axes[1, 1].text(
+        0.02,
+        0.96,
+        "solid=active leaks | dashed=canary traps | dotted=double agents",
+        transform=axes[1, 1].transAxes,
+        va="top",
+        fontsize=9,
+        bbox={"boxstyle": "round,pad=0.25", "facecolor": "#F5F7FA", "edgecolor": "#D7DCE2"},
+    )
+
+    fig.tight_layout()
+    save_figure("expert_step_dynamics.png")
+    return ["expert_step_dynamics.png"]
+
+
+def plot_runtime_breakdown(events: list[dict[str, object]]) -> list[str]:
+    latest: dict[str, dict[str, object]] = {}
+    for event in events:
+        if event.get("event") == "level_complete" and event.get("level"):
+            latest[str(event["level"])] = event
+
+    names = [name for name in LEVEL_ORDER if name in latest and _as_float(latest[name].get("runtime_sec")) > 0]
+    if not names:
+        return []
+
+    setup_style()
+    fig, ax = plt.subplots(figsize=(11.5, 5.6))
+    minutes = [_as_float(latest[name].get("runtime_sec")) / 60.0 for name in names]
+    labels = [LEVEL_LABELS[name] for name in names]
+    colors = [LEVEL_COLORS[name] for name in names]
+    ax.bar(labels, minutes, color=colors, alpha=0.84)
+    for idx, value in enumerate(minutes):
+        ax.text(idx, value + max(minutes) * 0.025, f"{value:.1f}m", ha="center", fontsize=9)
+    ax.set_title("Training Runtime Breakdown by Curriculum Level")
+    ax.set_ylabel("Minutes")
+    ax.grid(True, axis="y")
+
+    fig.tight_layout()
+    save_figure("runtime_breakdown.png")
+    return ["runtime_breakdown.png"]
+
+
+def plot_inline_evaluation_summary(events: list[dict[str, object]]) -> list[str]:
+    rows = [event for event in events if event.get("event") == "inline_eval_game"]
+    if not rows:
+        return []
+
+    setup_style()
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 8.5))
+    games = np.arange(1, len(rows) + 1)
+    grades = [_as_float(event.get("grade")) for event in rows]
+    revenue = [_as_float(event.get("revenue")) for event in rows]
+    security = [_as_float(event.get("security")) for event in rows]
+    invalid = [_as_float(event.get("invalid_actions")) for event in rows]
+    caught = [_as_float(event.get("sleepers_caught")) for event in rows]
+
+    axes[0, 0].plot(games, grades, marker="o", color="#111827", linewidth=2.0)
+    axes[0, 0].axhline(np.mean(grades), color="#2F6BFF", linestyle="--", linewidth=1.4, label=f"mean={np.mean(grades):.3f}")
+    axes[0, 0].set_title("Inline Evaluation Grade by Game")
+    axes[0, 0].set_ylabel("Grade")
+    axes[0, 0].legend()
+
+    width = 0.38
+    axes[0, 1].bar(games - width / 2, revenue, width, label="Revenue", color="#2E8B57", alpha=0.78)
+    axes[0, 1].bar(games + width / 2, security, width, label="Security", color="#2F6BFF", alpha=0.78)
+    axes[0, 1].set_title("Final Revenue and Security")
+    axes[0, 1].legend()
+
+    axes[1, 0].bar(games, invalid, color="#C13C37", alpha=0.78)
+    axes[1, 0].set_title("Invalid Actions")
+    axes[1, 0].set_ylabel("Count")
+
+    axes[1, 1].bar(games, caught, color="#6B4EA0", alpha=0.78)
+    axes[1, 1].set_title("Sleepers Caught")
+    axes[1, 1].set_ylabel("Count")
+
+    for ax in axes.flatten():
+        ax.set_xlabel("Evaluation game")
+        ax.grid(True, axis="y")
+
+    fig.tight_layout()
+    save_figure("inline_evaluation_summary.png")
+    return ["inline_evaluation_summary.png"]
+
+
 def write_statistics_files(summary: dict[str, object]) -> None:
     json_path = OUTPUT_DIR / "training_statistics.json"
     json_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -801,9 +1264,24 @@ def write_statistics_files(summary: dict[str, object]) -> None:
 def main() -> None:
     log_file = resolve_log_file()
     log_text = log_file.read_text(encoding="utf-8", errors="replace")
-    levels = parse_levels(log_text)
+    event_file = resolve_event_file()
+    events = parse_train_events(log_text, event_file)
+
+    event_levels = levels_from_events(events) if events else {}
+    if event_levels:
+        levels = event_levels
+        print(f"Parsed {len(events)} structured training events.")
+        if event_file is not None:
+            print(f"Structured event source: {event_file}")
+    else:
+        levels = parse_levels(log_text)
+
     summary = build_summary(levels)
     summary["source_log"] = str(log_file)
+    if event_file is not None:
+        summary["source_events"] = str(event_file)
+    if events:
+        summary["events"] = build_event_summary(events)
 
     plot_curriculum_loss_overview(levels, summary)
     plot_per_level_convergence(levels, summary)
@@ -813,6 +1291,12 @@ def main() -> None:
     plot_optimization_diagnostics(levels, summary)
     plot_dataset_scaling(levels, summary)
     plot_curriculum_heatmap(levels, summary)
+    event_plot_files: list[str] = []
+    event_plot_files.extend(plot_curriculum_progress_timeline(events))
+    event_plot_files.extend(plot_training_action_mix(events))
+    event_plot_files.extend(plot_expert_step_dynamics(events))
+    event_plot_files.extend(plot_runtime_breakdown(events))
+    event_plot_files.extend(plot_inline_evaluation_summary(events))
     write_statistics_files(summary)
 
     print("Generated plot set:")
@@ -825,6 +1309,7 @@ def main() -> None:
         "optimization_diagnostics.png",
         "dataset_scaling.png",
         "curriculum_heatmap.png",
+        *event_plot_files,
         "training_statistics.json",
         "training_statistics.md",
     ]:
