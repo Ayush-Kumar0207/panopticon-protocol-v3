@@ -120,7 +120,7 @@ DEFAULT_SAVE_STEPS = 50
 CPU_BASIC_SAVE_STEPS = 5
 LOW_VRAM_GPU_SAVE_STEPS = 25
 LOW_VRAM_GPU_THRESHOLD_GB = 20
-TRAJECTORY_SCHEMA_VERSION = "curriculum-expert-v3"
+TRAJECTORY_SCHEMA_VERSION = "curriculum-expert-v4-compact"
 LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
 
 # Default local/persistent root; HF worker Spaces override this via ENV TRAIN_ROOT.
@@ -230,6 +230,10 @@ def runtime_profile_name(running_on_cpu, low_vram_gpu):
     if low_vram_gpu:
         return "low-vram-gpu-safe"
     return "default-gpu"
+
+
+def current_runtime_profile_name():
+    return runtime_profile_name(not torch.cuda.is_available(), is_low_vram_gpu())
 
 
 def configure_runtime(args):
@@ -388,7 +392,7 @@ def save_data_meta(
         "max_seq_length": MAX_SEQ_LENGTH,
         "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
         "model_name": model_name,
-        "runtime_profile": "cpu-basic-safe" if CPU_BASIC_SAFE_MODE else "default-gpu",
+        "runtime_profile": current_runtime_profile_name(),
     }
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
@@ -405,7 +409,7 @@ def data_matches(meta, task_level: str, num_episodes: int, model_name: str):
         and meta.get("max_seq_length") == MAX_SEQ_LENGTH
         and meta.get("trajectory_schema_version") == TRAJECTORY_SCHEMA_VERSION
         and meta.get("model_name") == model_name
-        and meta.get("runtime_profile") == ("cpu-basic-safe" if CPU_BASIC_SAFE_MODE else "default-gpu")
+        and meta.get("runtime_profile") == current_runtime_profile_name()
     )
 
 
@@ -843,11 +847,119 @@ def trajectory_training_weight(trajectory: dict) -> int:
     return 1
 
 
+def render_training_text(tokenizer, observation: str, action: str) -> str:
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": f"Current State:\n{observation}\n\nYour action (JSON):",
+        },
+        {"role": "assistant", "content": action},
+    ]
+    try:
+        return tokenizer.apply_chat_template(messages, tokenize=False)
+    except Exception:
+        return (
+            f"{SYSTEM_PROMPT}\n\nCurrent State:\n{observation}\n\n"
+            f"Your action (JSON):\n{action}"
+        )
+
+
+def compact_observation_lines(observation: str) -> str:
+    lines = observation.splitlines()
+    kept: list[str] = []
+    clean_workers: list[str] = []
+    canary_lines: list[str] = []
+    report_lines: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if line.startswith("  ") and " state=loyal clean" in line:
+            clean_workers.append(line)
+            continue
+        if line.startswith("  canary-"):
+            canary_lines.append(line)
+            continue
+        if line.startswith("  report-"):
+            report_lines.append(line)
+            continue
+        kept.append(line)
+
+    if clean_workers:
+        kept.append(f"  clean loyal workers omitted: {len(clean_workers)}")
+    if canary_lines:
+        kept.append("Recent Canary Traps:")
+        kept.extend(canary_lines[-6:])
+    if report_lines:
+        kept.append("Recent Intel Reports:")
+        kept.extend(report_lines[-4:])
+
+    return "\n".join(kept)
+
+
+def truncate_observation_tokens(tokenizer, observation: str, token_budget: int) -> str:
+    token_budget = max(32, token_budget)
+    token_ids = tokenizer.encode(observation, add_special_tokens=False)
+    if len(token_ids) <= token_budget:
+        return observation
+
+    separator = "\n[... compacted for training context ...]\n"
+    separator_tokens = tokenizer.encode(separator, add_special_tokens=False)
+    available = max(16, token_budget - len(separator_tokens))
+    head_budget = max(8, int(available * 0.62))
+    tail_budget = max(8, available - head_budget)
+    head = tokenizer.decode(token_ids[:head_budget], skip_special_tokens=False)
+    tail = tokenizer.decode(token_ids[-tail_budget:], skip_special_tokens=False)
+    return head.rstrip() + separator + tail.lstrip()
+
+
+def fit_training_text(tokenizer, observation: str, action: str) -> tuple[str, int, bool]:
+    text = render_training_text(tokenizer, observation, action)
+    length = len(tokenizer(text, truncation=False)["input_ids"])
+    if length <= MAX_SEQ_LENGTH:
+        return text, length, False
+
+    compact = compact_observation_lines(observation)
+    text = render_training_text(tokenizer, compact, action)
+    length = len(tokenizer(text, truncation=False)["input_ids"])
+    if length <= MAX_SEQ_LENGTH:
+        return text, length, True
+
+    obs_ids = tokenizer.encode(compact, add_special_tokens=False)
+    low = 32
+    high = max(low, len(obs_ids))
+    best_text = text
+    best_length = length
+
+    while low <= high:
+        mid = (low + high) // 2
+        candidate_obs = truncate_observation_tokens(tokenizer, compact, mid)
+        candidate_text = render_training_text(tokenizer, candidate_obs, action)
+        candidate_length = len(tokenizer(candidate_text, truncation=False)["input_ids"])
+        if candidate_length <= MAX_SEQ_LENGTH:
+            best_text = candidate_text
+            best_length = candidate_length
+            low = mid + 1
+        else:
+            high = mid - 1
+
+    if best_length > MAX_SEQ_LENGTH:
+        tiny_obs = "\n".join(compact.splitlines()[:4]) or "State compacted for training."
+        best_text = render_training_text(tokenizer, tiny_obs, action)
+        best_length = len(tokenizer(best_text, truncation=False)["input_ids"])
+
+    return best_text, best_length, True
+
+
 def save_training_data_with_template(trajectories, output_path: str, tokenizer, task_level: str):
     tmp_path = f"{output_path}.tmp"
     written = 0
     action_counts: dict[str, int] = {}
     weighted_action_counts: dict[str, int] = {}
+    token_lengths: list[int] = []
+    compacted_examples = 0
     with open(tmp_path, "w", encoding="utf-8") as f:
         for t in trajectories:
             try:
@@ -862,21 +974,10 @@ def save_training_data_with_template(trajectories, output_path: str, tokenizer, 
             action_counts[action_key] = action_counts.get(action_key, 0) + 1
             weighted_action_counts[action_key] = weighted_action_counts.get(action_key, 0) + weight
 
-            messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Current State:\n{t['observation']}\n\nYour action (JSON):",
-                },
-                {"role": "assistant", "content": t["action"]},
-            ]
-            try:
-                text = tokenizer.apply_chat_template(messages, tokenize=False)
-            except Exception:
-                text = (
-                    f"{SYSTEM_PROMPT}\n\nCurrent State:\n{t['observation']}\n\n"
-                    f"Your action (JSON):\n{t['action']}"
-                )
+            text, token_length, was_compacted = fit_training_text(tokenizer, t["observation"], t["action"])
+            token_lengths.append(token_length)
+            if was_compacted:
+                compacted_examples += 1
             for _ in range(weight):
                 f.write(json.dumps({"text": text}) + "\n")
                 written += 1
@@ -888,12 +989,23 @@ def save_training_data_with_template(trajectories, output_path: str, tokenizer, 
     )
     print(f"  [DATA_ACTIONS] raw={json.dumps(action_counts, sort_keys=True)}")
     print(f"  [DATA_ACTIONS_WEIGHTED] weighted={json.dumps(weighted_action_counts, sort_keys=True)}")
+    if token_lengths:
+        print(
+            "  [DATA_COMPACT] "
+            f"compacted={compacted_examples}/{len(token_lengths)} "
+            f"token_min={min(token_lengths)} token_max={max(token_lengths)} "
+            f"token_avg={sum(token_lengths) / len(token_lengths):.0f}"
+        )
     log_event(
         "dataset_written",
         level=task_level,
         output_path=output_path,
         raw_examples=len(trajectories),
         weighted_examples=written,
+        compacted_examples=compacted_examples,
+        prompt_token_min=min(token_lengths) if token_lengths else None,
+        prompt_token_max=max(token_lengths) if token_lengths else None,
+        prompt_token_avg=round(sum(token_lengths) / len(token_lengths), 3) if token_lengths else None,
         action_counts=action_counts,
         weighted_action_counts=weighted_action_counts,
     )
@@ -1005,7 +1117,7 @@ def train_on_level(
         epochs=NUM_TRAIN_EPOCHS,
         batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,
         gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
-        runtime_profile="cpu-basic-safe" if CPU_BASIC_SAFE_MODE else "default-gpu",
+        runtime_profile=current_runtime_profile_name(),
     )
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -1393,7 +1505,7 @@ def main():
     parser.add_argument("--merge", action="store_true", help="Merge final adapter into standalone model")
     args = parser.parse_args()
     args = configure_runtime(args)
-    runtime_profile = "cpu-basic-safe" if CPU_BASIC_SAFE_MODE else "default-gpu"
+    runtime_profile = current_runtime_profile_name()
     requested_levels = LEVELS if args.curriculum else [args.level]
     print(f"[*] Structured event log: {EVENTS_PATH}")
     sys.stdout.flush()
