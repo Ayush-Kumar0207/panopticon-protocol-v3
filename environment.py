@@ -54,6 +54,7 @@ class StepResult:
 # =============================================================================
 
 INVALID_ACTION_PENALTY = -1.0
+REWARD_SCHEMA_VERSION = "security-first-v2"
 PHASE_BOUNDARIES = {1: 0, 2: 30, 3: 60, 4: 90, 5: 120, 6: 140}
 PHASE_NAMES = {
     1: GamePhase.ORIENTATION, 2: GamePhase.FIRST_CONTACT,
@@ -221,6 +222,8 @@ class Environment:
             s.invalid_actions += 1
             rev_before = s.enterprise_revenue
             sec_before = s.security_score
+            caught_before = s.sleepers_caught
+            false_accusations_before = s.false_accusations
             info["valid"] = False
             info["reason"] = reason
 
@@ -229,7 +232,12 @@ class Environment:
             self._progress_turnings(info)
             self._economy_tick()
 
-            reward = INVALID_ACTION_PENALTY + self._compute_reward(rev_before, sec_before)
+            reward = INVALID_ACTION_PENALTY + self._compute_reward(
+                rev_before,
+                sec_before,
+                caught_before,
+                false_accusations_before,
+            )
             s.turn += 1
             self._update_phase()
             s.total_reward += reward
@@ -260,6 +268,8 @@ class Environment:
         # ── Snapshot metrics before action ──
         rev_before = s.enterprise_revenue
         sec_before = s.security_score
+        caught_before = s.sleepers_caught
+        false_accusations_before = s.false_accusations
 
         # ── Process agent action ──
         at = ActionType(action.action_type)
@@ -277,7 +287,12 @@ class Environment:
         self._economy_tick()
 
         # ── Compute reward ──
-        reward = self._compute_reward(rev_before, sec_before)
+        reward = self._compute_reward(
+            rev_before,
+            sec_before,
+            caught_before,
+            false_accusations_before,
+        )
 
         # ── Check end conditions ──
         s.turn += 1
@@ -996,7 +1011,13 @@ class Environment:
         # Track peak
         s.peak_revenue = max(s.peak_revenue, s.enterprise_revenue)
 
-    def _compute_reward(self, rev_before: float, sec_before: float) -> float:
+    def _compute_reward(
+        self,
+        rev_before: float,
+        sec_before: float,
+        caught_before: int,
+        false_accusations_before: int,
+    ) -> float:
         """
         Dual-objective reward: productivity + security.
         Normalized to prevent one objective from dominating.
@@ -1014,6 +1035,25 @@ class Environment:
         # Base reward: weighted combination
         total = 0.45 * productivity_reward + 0.55 * security_reward
 
+        # Threat resolution must dominate short-term productivity.
+        caught_delta = max(0, s.sleepers_caught - caught_before)
+        false_accusation_delta = max(0, s.false_accusations - false_accusations_before)
+        active_threats = sum(
+            1
+            for worker in s.workers
+            if worker.is_sleeper
+            and worker.hidden_state in (
+                HiddenWorkerState.SLEEPER_ACTIVE.value,
+                HiddenWorkerState.DEAD_SWITCH_ARMED.value,
+            )
+            and worker.state != WorkerState.TERMINATED.value
+        )
+        total += 0.75 * caught_delta
+        total -= 1.0 * false_accusation_delta
+        total -= 0.03 * active_threats
+        if s.security_score < 90.0:
+            total -= min(0.45, (90.0 - s.security_score) * 0.01)
+
         # ── Phase 6 Counterstrike Bonus ──
         if s.phase_number >= 6 and s.double_agents:
             active_das = [da for da in s.double_agents if da.active]
@@ -1021,13 +1061,6 @@ class Environment:
                 # SURGE multiplier — the crescendo
                 surge = 0.3 * len(active_das) * (s.enterprise_revenue / 100.0)
                 total += surge
-
-        # ── Bonus for catching sleepers ──
-        # (Implicit through security score increase in neutralize action)
-
-        # ── Penalty for false accusations (delta-based, not cumulative) ──
-        # The revenue/security hit is already in the step; this is a small
-        # additional signal applied only via the security & revenue deltas.
 
         # Small time pressure
         total -= 0.02

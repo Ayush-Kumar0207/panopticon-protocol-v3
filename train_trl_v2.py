@@ -50,8 +50,12 @@ from models import (
     AgentAction,
     Department,
     EnvironmentObservation,
-    LeakChannel,
     SubAction,
+)
+from security_policy import (
+    choose_security_first_action,
+    expert_episode_meets_security_gate,
+    new_security_expert_state,
 )
 
 os.environ["PYTHONUNBUFFERED"] = "1"
@@ -120,7 +124,7 @@ DEFAULT_SAVE_STEPS = 50
 CPU_BASIC_SAVE_STEPS = 5
 LOW_VRAM_GPU_SAVE_STEPS = 25
 LOW_VRAM_GPU_THRESHOLD_GB = 20
-TRAJECTORY_SCHEMA_VERSION = "curriculum-expert-v4-compact"
+TRAJECTORY_SCHEMA_VERSION = "curriculum-expert-v5-security-first"
 LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
 
 # Default local/persistent root; HF worker Spaces override this via ENV TRAIN_ROOT.
@@ -309,7 +313,7 @@ Read the observation carefully. Output a single JSON action. Available actions:
 Departments: engineering, finance, rd, operations, executive, legal
 Channels: market_chatter, dark_web, competitor_filing, press_leak, insider_trade
 
-RULES: Verify leaks before accusing. Plant canaries early. Interrogate before terminating uncertain suspects. In deep_cover/crisis, consider turning high-confidence sleepers if enough turns remain. If active double agents exist, use deploy_double in crisis/counterstrike.
+PRIORITIES: Confirmed threats outrank all revenue and double-agent actions. Keep security at or above 90. Catch every sleeper with zero false accusations. Verify leaks before accusing. Plant canaries early. Interrogate uncertain suspects. Turn at most one confirmed sleeper in advanced levels, then terminate the remaining confirmed threats. Deploy a double agent only when no confirmed/high-suspicion threat is waiting and security is at least 95.
 Respond ONLY with a JSON object."""
 
 
@@ -331,6 +335,7 @@ def load_state():
             "current_model": DEFAULT_MODEL,
             "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
             "runtime_profile": "",
+            "seed": None,
         }
 
     try:
@@ -342,12 +347,14 @@ def load_state():
             "current_model": DEFAULT_MODEL,
             "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
             "runtime_profile": "",
+            "seed": None,
         }
 
     state.setdefault("completed_levels", [])
     state.setdefault("current_model", DEFAULT_MODEL)
     state.setdefault("trajectory_schema_version", "")
     state.setdefault("runtime_profile", "")
+    state.setdefault("seed", None)
     state["completed_levels"] = ordered_completed_levels(state["completed_levels"])
     return state
 
@@ -359,6 +366,7 @@ def save_state(state):
         "current_model": state.get("current_model", DEFAULT_MODEL),
         "trajectory_schema_version": state.get("trajectory_schema_version", TRAJECTORY_SCHEMA_VERSION),
         "runtime_profile": state.get("runtime_profile", ""),
+        "seed": state.get("seed"),
     }
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
@@ -383,6 +391,7 @@ def save_data_meta(
     num_episodes: int,
     num_examples: int,
     model_name: str,
+    seed: int,
 ):
     tmp_path = meta_path.with_suffix(".tmp")
     payload = {
@@ -392,6 +401,7 @@ def save_data_meta(
         "max_seq_length": MAX_SEQ_LENGTH,
         "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
         "model_name": model_name,
+        "seed": seed,
         "runtime_profile": current_runtime_profile_name(),
     }
     with open(tmp_path, "w", encoding="utf-8") as f:
@@ -401,7 +411,7 @@ def save_data_meta(
     os.replace(tmp_path, meta_path)
 
 
-def data_matches(meta, task_level: str, num_episodes: int, model_name: str):
+def data_matches(meta, task_level: str, num_episodes: int, model_name: str, seed: int):
     return (
         meta is not None
         and meta.get("task_level") == task_level
@@ -409,6 +419,7 @@ def data_matches(meta, task_level: str, num_episodes: int, model_name: str):
         and meta.get("max_seq_length") == MAX_SEQ_LENGTH
         and meta.get("trajectory_schema_version") == TRAJECTORY_SCHEMA_VERSION
         and meta.get("model_name") == model_name
+        and meta.get("seed") == seed
         and meta.get("runtime_profile") == current_runtime_profile_name()
     )
 
@@ -492,206 +503,29 @@ def parse_llm_action(text: str) -> AgentAction:
     return AgentAction(action_type="noop", reason="Parse failure")
 
 
-def _hidden_worker_by_id(env: Environment, worker_id: str):
-    return next((worker for worker in env.state.workers if worker.id == worker_id), None)
-
-
 def _choose_curriculum_expert_action(
     obs: EnvironmentObservation,
-    env: Environment,
     task_level: str,
-    depts: list[str],
-    channels: list[str],
     expert_state: dict,
 ) -> AgentAction:
-    active_double_agents = [asset for asset in obs.double_agents if asset.active]
-    confirmed = next(
-        (
-            worker
-            for worker in obs.workers
-            if worker.suspicion_level >= 0.9
-            and worker.state == "suspected"
-            and not worker.turning_in_progress
-        ),
-        None,
-    )
-
-    if active_double_agents and obs.phase_number >= 5 and obs.turn % 3 == 0:
-        asset = max(
-            active_double_agents,
-            key=lambda item: (item.hydra_trust, item.effectiveness, -item.disinfo_fed_count),
-        )
-        return AgentAction(
-            action_type=ActionType.DEPLOY_DOUBLE.value,
-            target=asset.worker_id,
-            reason="Feed disinformation through active double agent",
-        )
-
-    if confirmed:
-        hidden = _hidden_worker_by_id(env, confirmed.id)
-        if hidden is not None and not hidden.is_sleeper:
-            return AgentAction(
-                action_type=ActionType.NEUTRALIZE.value,
-                target=confirmed.id,
-                sub_action=SubAction.INTERROGATE.value,
-                reason=f"Resolve possible false flag against {confirmed.name}",
-            )
-        enough_runway = (obs.max_turns - obs.turn) >= 6
-        should_turn = (
-            hidden is not None
-            and hidden.is_sleeper
-            and task_level in {"level_4", "level_5"}
-            and hidden.generation >= (4 if task_level == "level_4" else 3)
-            and enough_runway
-            and not active_double_agents
-        )
-        if should_turn:
-            return AgentAction(
-                action_type=ActionType.NEUTRALIZE.value,
-                target=confirmed.id,
-                sub_action=SubAction.TURN.value,
-                reason=f"Convert {confirmed.name} into a double agent before counterstrike",
-            )
-        return AgentAction(
-            action_type=ActionType.NEUTRALIZE.value,
-            target=confirmed.id,
-            sub_action=SubAction.TERMINATE.value,
-            reason=f"Confirmed threat: {confirmed.name}",
-        )
-
-    suspicious_candidates = [
-        worker
-        for worker in obs.workers
-        if worker.suspicion_level > 0.5
-        and worker.state not in ("terminated", "double_agent", "compromised")
-        and worker.id not in expert_state["interrogated_ids"]
-        and not worker.turning_in_progress
-    ]
-    if suspicious_candidates:
-        target = max(suspicious_candidates, key=lambda worker: worker.suspicion_level)
-        expert_state["interrogated_ids"].add(target.id)
-        return AgentAction(
-            action_type=ActionType.NEUTRALIZE.value,
-            target=target.id,
-            sub_action=SubAction.INTERROGATE.value,
-            reason=f"Interrogating {target.name}",
-        )
-
-    canary_leak = next((leak for leak in obs.active_leaks if leak.is_canary and not leak.verified), None)
-    if canary_leak:
-        return AgentAction(
-            action_type=ActionType.INVESTIGATE.value,
-            target=canary_leak.id,
-            sub_action=SubAction.VERIFY.value,
-            reason="Verify canary-matched leak",
-        )
-
-    planted_departments = expert_state.setdefault("canaried_departments", set())
-    for dept in depts:
-        if dept not in planted_departments:
-            planted_departments.add(dept)
-            return AgentAction(
-                action_type=ActionType.CANARY.value,
-                target=dept,
-                reason="Plant canary trap",
-            )
-
-    turn_mod = expert_state["turn"] % 4
-    if turn_mod == 0:
-        channel = channels[expert_state["monitor_idx"] % len(channels)]
-        expert_state["monitor_idx"] += 1
-        return AgentAction(
-            action_type=ActionType.MONITOR.value,
-            target=channel,
-            reason="Scan for leaks",
-        )
-
-    if turn_mod == 1:
-        if obs.active_leaks:
-            leak_departments = {}
-            for leak in obs.active_leaks:
-                leak_departments[leak.department] = leak_departments.get(leak.department, 0) + 1
-            target_dept = max(leak_departments, key=leak_departments.get)
-            return AgentAction(
-                action_type=ActionType.INVESTIGATE.value,
-                target=target_dept,
-                sub_action=SubAction.CORRELATE.value,
-                reason=f"Correlating signals in {target_dept}",
-            )
-
-        recent_hires = sorted(
-            [
-                worker
-                for worker in obs.workers
-                if worker.state not in ("terminated", "double_agent", "compromised")
-                and not worker.turning_in_progress
-            ],
-            key=lambda worker: worker.hire_turn,
-            reverse=True,
-        )
-        if recent_hires:
-            target = recent_hires[0]
-            return AgentAction(
-                action_type=ActionType.INVESTIGATE.value,
-                target=target.id,
-                sub_action=SubAction.AUDIT.value,
-                reason=f"Auditing recent hire {target.name}",
-            )
-
-    if turn_mod == 2:
-        suspicious = [
-            worker
-            for worker in obs.workers
-            if worker.suspicion_level > 0.1
-            and worker.state not in ("terminated", "double_agent", "compromised")
-            and not worker.turning_in_progress
-        ]
-        if suspicious:
-            target = max(suspicious, key=lambda worker: worker.suspicion_level)
-            return AgentAction(
-                action_type=ActionType.INVESTIGATE.value,
-                target=target.id,
-                sub_action=SubAction.AUDIT.value,
-                reason=f"Auditing {target.name}",
-            )
-        if expert_state["turn"] % 20 == 2:
-            dept = depts[expert_state["turn"] % len(depts)]
-            planted_departments.add(dept)
-            return AgentAction(
-                action_type=ActionType.CANARY.value,
-                target=dept,
-                reason="Refresh canary coverage",
-            )
-
-    dept = depts[expert_state["turn"] % len(depts)]
-    return AgentAction(
-        action_type=ActionType.WORK.value,
-        target=dept,
-        reason="Maintain revenue while preserving counter-intelligence tempo",
-    )
+    return choose_security_first_action(obs, task_level, expert_state)
 
 
-def generate_expert_trajectories(task_level: str, num_episodes: int = 20):
+def generate_expert_trajectories(task_level: str, num_episodes: int = 20, seed: int = 42):
     trajectories = []
     episode_metrics = []
-    channels = [c.value for c in LeakChannel]
+    seed_rng = random.Random(f"{seed}:{task_level}")
 
     for ep in range(num_episodes):
-        seed = random.randint(0, 999999)
-        env = Environment(seed=seed)
-        obs = env.reset(task_level=task_level, seed=seed)
-        expert_state = {
-            "monitor_idx": 0,
-            "interrogated_ids": set(),
-            "canaried_departments": set(),
-            "turn": 0,
-        }
+        episode_seed = seed_rng.randint(0, 999999)
+        env = Environment(seed=episode_seed)
+        obs = env.reset(task_level=task_level, seed=episode_seed)
+        expert_state = new_security_expert_state()
         steps = 0
         rewards = []
 
         while not env.state.done and steps < 300:
-            depts = active_departments_from_observation(obs)
-            action = _choose_curriculum_expert_action(obs, env, task_level, depts, channels, expert_state)
+            action = _choose_curriculum_expert_action(obs, task_level, expert_state)
 
             obs_text = format_observation(obs)
             action_json = json.dumps(
@@ -712,7 +546,6 @@ def generate_expert_trajectories(task_level: str, num_episodes: int = 20):
             obs = result.observation
             rewards.append(result.reward)
             steps += 1
-            expert_state["turn"] += 1
             post_state = env.state
             log_event(
                 "expert_step",
@@ -760,7 +593,7 @@ def generate_expert_trajectories(task_level: str, num_episodes: int = 20):
             {
                 "task_level": task_level,
                 "episode": ep + 1,
-                "seed": seed,
+                "seed": episode_seed,
                 "steps": steps,
                 "total_reward": sum(rewards),
                 "revenue": s.enterprise_revenue,
@@ -779,6 +612,13 @@ def generate_expert_trajectories(task_level: str, num_episodes: int = 20):
                 "passed": grade.passed,
             }
         )
+        if not expert_episode_meets_security_gate(episode_metrics[-1]):
+            raise RuntimeError(
+                "Security-first expert gate failed before training: "
+                f"level={task_level} seed={episode_seed} security={s.security_score:.1f} "
+                f"caught={s.sleepers_caught}/{s.total_sleepers_spawned} "
+                f"missed={s.sleepers_missed} false={s.false_accusations}"
+            )
         progress_pct = 100.0 * (ep + 1) / max(1, num_episodes)
         print(
             f"  [Expert Ep {ep + 1}/{num_episodes}] Steps={steps} Reward={sum(rewards):.2f} "
@@ -795,7 +635,7 @@ def generate_expert_trajectories(task_level: str, num_episodes: int = 20):
             episode=ep + 1,
             episodes=num_episodes,
             pct=round(progress_pct, 3),
-            seed=seed,
+            seed=episode_seed,
             steps=steps,
             reward=round(sum(rewards), 6),
             revenue=s.enterprise_revenue,
@@ -837,11 +677,14 @@ def trajectory_training_weight(trajectory: dict) -> int:
     action_type = action.get("action_type", "")
     sub_action = action.get("sub_action", "")
     if action_type == ActionType.DEPLOY_DOUBLE.value:
-        return 5
+        return 2
     if action_type == ActionType.NEUTRALIZE.value:
-        return 5 if sub_action in {SubAction.TURN.value, SubAction.TERMINATE.value} else 4
+        if sub_action == SubAction.TERMINATE.value:
+            return 8
+        if sub_action in {SubAction.INTERROGATE.value, SubAction.TURN.value}:
+            return 6
     if action_type == ActionType.INVESTIGATE.value:
-        return 3 if sub_action == SubAction.VERIFY.value else 2
+        return 4 if sub_action in {SubAction.VERIFY.value, SubAction.CORRELATE.value} else 3
     if action_type == ActionType.CANARY.value:
         return 2
     return 1
@@ -1099,6 +942,7 @@ def train_on_level(
     num_episodes: int = EPISODES_PER_LEVEL,
     level_index: int = 1,
     total_levels: int = 1,
+    seed: int = 42,
 ):
     level_started_at = time.time()
     print("\n" + "=" * 60)
@@ -1135,7 +979,13 @@ def train_on_level(
 
     last_checkpoint = get_last_checkpoint(str(output_dir)) if output_dir.is_dir() else None
     data_meta = load_data_meta(data_meta_path)
-    has_matching_data = data_path.exists() and data_matches(data_meta, task_level, num_episodes, model_name)
+    has_matching_data = data_path.exists() and data_matches(
+        data_meta,
+        task_level,
+        num_episodes,
+        model_name,
+        seed,
+    )
 
     if last_checkpoint and not has_matching_data:
         print(
@@ -1158,10 +1008,10 @@ def train_on_level(
     else:
         print("\n[Phase 1] Generating expert trajectories...")
         sys.stdout.flush()
-        trajectories, episode_metrics = generate_expert_trajectories(task_level, num_episodes)
+        trajectories, episode_metrics = generate_expert_trajectories(task_level, num_episodes, seed)
         written_examples = save_training_data_with_template(trajectories, str(data_path), tokenizer, task_level)
         save_episode_metrics(episode_metrics, str(metrics_path))
-        save_data_meta(data_meta_path, task_level, num_episodes, written_examples, model_name)
+        save_data_meta(data_meta_path, task_level, num_episodes, written_examples, model_name, seed)
         log_event(
             "expert_generation_complete",
             level=task_level,
@@ -1493,6 +1343,7 @@ def main():
     parser.add_argument("--level", default="easy")
     parser.add_argument("--curriculum", action="store_true", help="Chain training across all 5 levels")
     parser.add_argument("--episodes", type=int, default=EPISODES_PER_LEVEL)
+    parser.add_argument("--seed", type=int, default=42, help="Deterministic expert-data seed")
     parser.add_argument("--epochs", type=int, help="Override SFT epochs for this run")
     parser.add_argument("--max-seq-length", type=int, help="Override tokenizer/training sequence length")
     parser.add_argument(
@@ -1522,6 +1373,7 @@ def main():
         epochs=NUM_TRAIN_EPOCHS,
         batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,
         gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
+        seed=args.seed,
         merge=bool(args.merge or args.curriculum),
         eval=bool(args.eval),
     )
@@ -1531,6 +1383,7 @@ def main():
         if (
             state.get("trajectory_schema_version") != TRAJECTORY_SCHEMA_VERSION
             or state.get("runtime_profile") != runtime_profile
+            or state.get("seed") != args.seed
         ):
             print(
                 "[*] Curriculum state was produced by an older expert/runtime profile. "
@@ -1542,6 +1395,7 @@ def main():
                 "current_model": args.model,
                 "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
                 "runtime_profile": runtime_profile,
+                "seed": args.seed,
             }
             save_state(state)
 
@@ -1578,6 +1432,7 @@ def main():
                 args.episodes,
                 level_index=level_index,
                 total_levels=len(LEVELS),
+                seed=args.seed,
             )
 
             completed_levels.add(level)
@@ -1585,6 +1440,7 @@ def main():
             state["current_model"] = current_model
             state["trajectory_schema_version"] = TRAJECTORY_SCHEMA_VERSION
             state["runtime_profile"] = runtime_profile
+            state["seed"] = args.seed
             save_state(state)
 
             print(f"[*] Progress saved: {level} complete")
@@ -1600,7 +1456,14 @@ def main():
 
         final_model = current_model
     else:
-        final_model = train_on_level(args.model, args.level, args.episodes, level_index=1, total_levels=1)
+        final_model = train_on_level(
+            args.model,
+            args.level,
+            args.episodes,
+            level_index=1,
+            total_levels=1,
+            seed=args.seed,
+        )
 
     if args.merge or args.curriculum:
         merged_path = str(RUN_ROOT / "merged_model")

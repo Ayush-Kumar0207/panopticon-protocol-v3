@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+GRADER_SCHEMA_VERSION = "security-gated-v2"
+
 
 @dataclass(frozen=True)
 class ScoringWeights:
@@ -36,7 +38,7 @@ STANDARD_WEIGHTS = ScoringWeights(0.30, 0.25, 0.20, 0.15, 0.10)
 SECURITY_HEAVY = ScoringWeights(0.40, 0.20, 0.15, 0.15, 0.10)
 INTEL_HEAVY = ScoringWeights(0.25, 0.20, 0.30, 0.15, 0.10)
 BALANCED = ScoringWeights(0.25, 0.25, 0.20, 0.20, 0.10)
-ENDGAME = ScoringWeights(0.25, 0.25, 0.20, 0.20, 0.10)
+ENDGAME = ScoringWeights(0.40, 0.15, 0.20, 0.15, 0.10)
 
 
 @dataclass
@@ -68,6 +70,9 @@ class TaskGrader:
     optimal_steps: int = 30
     weights: ScoringWeights = STANDARD_WEIGHTS
     expected_sleepers: int = 1
+    minimum_final_security: float = 20.0
+    minimum_catch_rate: float = 0.0
+    maximum_false_accusations: int | None = None
 
     def grade(self, episode_data: dict[str, Any]) -> GraderResult:
         state = episode_data.get("state", {})
@@ -113,8 +118,17 @@ class TaskGrader:
         )
         composite = max(0.001, min(0.999, composite))
 
-        # Determine pass — needs composite AND security above threshold
-        passed = composite >= self.success_threshold and security_score > 20
+        catch_rate = min(sleepers_caught, total_spawned) / max(total_spawned, 1)
+        false_accusation_gate = (
+            self.maximum_false_accusations is None
+            or false_accusations <= self.maximum_false_accusations
+        )
+        passed = (
+            composite >= self.success_threshold
+            and security_score >= self.minimum_final_security
+            and catch_rate >= self.minimum_catch_rate
+            and false_accusation_gate
+        )
 
         return GraderResult(
             task_id=self.task_id,
@@ -140,6 +154,13 @@ class TaskGrader:
                 "phase_reached": phase_number,
                 "invalid_actions": invalid_actions,
                 "grader_type": "programmatic_panopticon_v3",
+                "grader_schema_version": GRADER_SCHEMA_VERSION,
+                "security_gate": {
+                    "minimum_final_security": self.minimum_final_security,
+                    "minimum_catch_rate": self.minimum_catch_rate,
+                    "maximum_false_accusations": self.maximum_false_accusations,
+                    "actual_catch_rate": catch_rate,
+                },
             },
         )
 
@@ -257,6 +278,10 @@ class TaskGrader:
             "function": f"{self.__class__.__name__}.grade",
             "description": f"Panopticon v3 grader for {self.task_name}",
             "success_threshold": self.success_threshold,
+            "grader_schema_version": GRADER_SCHEMA_VERSION,
+            "minimum_final_security": self.minimum_final_security,
+            "minimum_catch_rate": self.minimum_catch_rate,
+            "maximum_false_accusations": self.maximum_false_accusations,
             "scoring": {
                 "method": "multi_dimensional_espionage",
                 "dimensions": ["security", "revenue", "intelligence", "adaptability", "efficiency"],
@@ -312,6 +337,9 @@ class CellGrader(TaskGrader):
     optimal_steps = 65
     weights = SECURITY_HEAVY
     expected_sleepers = 4
+    minimum_final_security = 90.0
+    minimum_catch_rate = 1.0
+    maximum_false_accusations = 0
 
 
 class ManchurianGrader(TaskGrader):
@@ -322,6 +350,9 @@ class ManchurianGrader(TaskGrader):
     optimal_steps = 80
     weights = ENDGAME
     expected_sleepers = 5
+    minimum_final_security = 90.0
+    minimum_catch_rate = 1.0
+    maximum_false_accusations = 0
 
 
 # =============================================================================
@@ -352,8 +383,12 @@ def list_graders() -> list[dict]:
         {
             "task_id": g.task_id, "task_name": g.task_name,
             "grader_type": "programmatic_panopticon_v3",
+            "grader_schema_version": GRADER_SCHEMA_VERSION,
             "module": "grader", "class": g.__class__.__name__,
             "success_threshold": g.success_threshold,
+            "minimum_final_security": g.minimum_final_security,
+            "minimum_catch_rate": g.minimum_catch_rate,
+            "maximum_false_accusations": g.maximum_false_accusations,
             "has_grader": True,
             "dimensions": ["security", "revenue", "intelligence", "adaptability", "efficiency"],
         }
@@ -367,4 +402,5 @@ __all__ = [
     "GraderResult", "ScoringWeights",
     "GRADERS", "get_grader", "grade_episode", "list_graders",
     "STANDARD_WEIGHTS", "SECURITY_HEAVY", "INTEL_HEAVY", "BALANCED", "ENDGAME",
+    "GRADER_SCHEMA_VERSION",
 ]

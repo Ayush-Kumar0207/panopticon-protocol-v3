@@ -54,6 +54,7 @@ DEPARTMENTS: engineering, finance, rd, operations, executive, legal
 CHANNELS: market_chatter, dark_web, competitor_filing, press_leak, insider_trade
 
 STRATEGY GUIDE:
+0. Confirmed and high-suspicion threats outrank WORK and DEPLOY_DOUBLE actions
 1. Plant canaries in departments early (cover your departments)
 2. Monitor channels regularly for canary matches
 3. When a canary triggers, VERIFY the leak to trace the source
@@ -65,6 +66,7 @@ STRATEGY GUIDE:
 
 CRITICAL: Gen-3+ sleepers plant FALSE FLAGS framing innocent workers!
 Always VERIFY before acting. A false accusation damages your score severely.
+Keep final security at or above 90, catch every sleeper, and deploy double agents only when immediate threats are controlled.
 
 Respond with a single JSON action object. Include a "reason" field explaining your thinking.
 """

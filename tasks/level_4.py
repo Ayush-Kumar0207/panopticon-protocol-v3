@@ -21,6 +21,9 @@ LEVEL_4_TASK = {
     "success_criteria": {
         "no_dead_switch_triggered": True,
         "double_agent_turned": True,
+        "all_sleepers_caught": True,
+        "zero_false_accusations": True,
+        "final_security_at_least_90": True,
         "revenue_above_40": True,
     },
 }

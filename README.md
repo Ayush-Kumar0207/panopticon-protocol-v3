@@ -36,6 +36,7 @@
 - **Minimal TRL training script / Colab path:** [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)
 - **Submitted Colab link used in the form:** [Google Colab URL](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
 - **Newest fixed-run training evidence:** [`training_events_fixed_ep20.jsonl`](training_events_fixed_ep20.jsonl), [`plots/training_statistics.json`](plots/training_statistics.json), and [`plots/`](plots)
+- **Newest matched evaluation evidence:** [`evaluation_comparison_latest.json`](evaluation_comparison_latest.json) and the latest fixed-model evaluation gallery in [`plots/`](plots)
 - **Historical training evidence:** [`output_logs.txt`](output_logs.txt) and the uploaded [`training_metrics/`](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/tree/main/training_metrics) folder in the previous model repo
 - **Trainer Space link preserved for judges:** [panopticon-trainer](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer)
 - **Merged model destination:** [panopticon-argus-qwen-1.5B](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B)
@@ -185,6 +186,8 @@ graph TB
 
 > **Note:** Weights are adjusted per difficulty tier. The Manchurian level uses security-heavy weights (40% security) because false flags and dead-man's switches make every decision critical.
 
+Level 4 and Level 5 also use fail-closed security gates: a passing episode must finish with at least `90` security, catch every spawned sleeper, and make zero false accusations. A high composite grade alone is no longer enough.
+
 ### Scoring Examples
 
 | Agent Behavior | Security | Revenue | Intel | Adapt | Efficiency | **Final** |
@@ -305,7 +308,7 @@ The run completed all five chained stages and merged the final adapter into a st
 | **Level-5 sleepers caught** | 3.14 | 3.20 | Slightly higher advanced-tier capture coverage |
 | **Best final logged loss** | 0.0212 | 0.0107 | Better optimization endpoint, not a policy benchmark |
 
-The new run is better instrumented and includes the corrected action/observation pipeline, but its training-time metrics are mixed relative to the previous run. A held-out merged-model evaluation is still required for a model-quality verdict.
+The new run is better instrumented and includes the corrected action/observation pipeline. The matched held-out evaluation below now supplies the model-quality verdict that training-time loss alone could not.
 
 ### Research Plot Gallery
 
@@ -403,33 +406,100 @@ Artifacts written to `plots/`:
 
 > 📊 **Everything above is derived from the committed raw fixed-run event log rather than hand-entered numbers.**
 
-### New Fixed-Model Benchmark Status
+### Latest Fixed-Model Benchmark
 
-**Status: not yet measured.** The completed Drive folder contains the merged fixed model and training artifacts, but no `evaluationResults_fixed.json` or `showcaseResults_fixed.json`. Therefore, the new fixed model cannot yet be honestly declared better than the untrained base model or the previous trained model.
+Both matched evaluations completed **75/75 episode checkpoints**: five episodes for each of three agent families across all five levels, using seed `42`. In the base payload, the `trained` slot evaluates untrained `Qwen/Qwen2.5-1.5B-Instruct`; in the fixed payload, it evaluates the merged `/panopticon-fixed-v3-ep20/merged_model`.
 
-The tables and evaluation gallery below are retained as the **previous pre-fix model benchmark** from [`evaluationResults.json`](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/blob/main/evaluationResults.json). They are the comparison target, not results from the new June 14 fixed run.
+This environment does not define classification accuracy. The primary accuracy-like outcome is the weighted **composite grade**, supported by reward, revenue, final security, and sleepers caught.
 
-| Agent | Easy Grade | Medium Grade | Hard Grade | Level 4 Grade | Level 5 Grade |
+| Agent | Easy Grade | Medium Grade | Hard Grade | Level 4 Grade | Level 5 Grade | Level-Macro Grade |
+|---|---:|---:|---:|---:|---:|---:|
+| **Base untrained** | 0.731 | 0.731 | 0.671 | 0.628 | 0.618 | **0.6758** |
+| **Fixed trained** | 0.731 | 0.731 | 0.671 | 0.699 | 0.669 | **0.7002** |
+| **Heuristic** | 0.728 | 0.731 | 0.691 | 0.698 | 0.605 | **0.6906** |
+| **Random** | 0.630 | 0.654 | 0.604 | 0.647 | 0.669 | **0.6408** |
+
+| Comparison | Grade | Reward | Revenue | Security | Sleepers Caught |
 |---|---:|---:|---:|---:|---:|
-| **Random** | 0.602 | 0.813 | 0.825 | 0.591 | 0.733 |
-| **Heuristic** | 0.729 | 0.722 | 0.687 | 0.712 | 0.663 |
-| **Trained** | 0.502 | 0.441 | 0.370 | 0.411 | 0.433 |
+| **Fixed trained** | **0.7002** | 10.260 | 528.58 | 89.92 | 2.68 |
+| **Base untrained** | 0.6758 | 9.462 | 494.76 | **97.82** | **3.00** |
+| **Heuristic** | 0.6906 | **12.540** | **594.64** | 81.46 | 2.44 |
+| **Fixed minus base** | **+0.0244** | **+0.798** | **+33.82** | **-7.90** | **-0.32** |
+| **Fixed minus heuristic** | **+0.0096** | -2.280 | -66.06 | **+8.46** | **+0.24** |
 
-| Agent | Overall Grade | Mean Reward | Mean Revenue | Mean Security | Mean Sleepers Caught | Diagnostic Read |
-|---|---:|---:|---:|---:|---:|---|
-| **Random** | 0.713 | 5.08 | 228.5 | 68.4 | 4.00 | Chaotic but sometimes “succeeds” by brute-force disruption rather than disciplined defense |
-| **Heuristic** | 0.703 | 12.14 | 591.7 | 89.4 | 2.67 | Best balanced baseline with strong security discipline and stable sleeper handling |
-| **Trained** | 0.431 | -10.22 | 423.2 | 27.9 | 0.00 | Learns dense imitation/loss structure, but still fails the held-out security-preserving mission objective |
+**Measured verdict:** the fixed trained model is better than the untrained base on the benchmark's headline composite grade, with all improvement concentrated at Level 4 (`+0.071`) and Level 5 (`+0.051`). It also slightly beats the heuristic on macro grade while retaining substantially more Level-5 security. However, it is not an unqualified win: versus base, Level-4/5 security drops by `18.3`/`21.2` points and sleepers caught drops by `0.8` at both tiers.
 
-The previous benchmark's key lesson remains that **training improvement and deployment success are not the same thing**. The old trained policy caught zero sleepers in held-out evaluation. The fixed run was designed to address that failure, but its success must be judged from a new structured benchmark rather than inferred from lower loss.
+Compared with the previous pre-fix trained model, the fixed run is a major recovery: macro grade rises from `0.4313` to `0.7002`, security from `27.86` to `89.92`, and sleepers caught from `0.00` to `2.68`. The honest conclusion is **partially successful and directionally strong, but not yet fully aligned with the security-first objective**.
 
-The historical gallery below is rendered directly from the previous structured `evaluationResults.json` export rather than a console screenshot.
+Exact comparison values and provenance are stored in [`evaluation_comparison_latest.json`](evaluation_comparison_latest.json).
+
+> **Historical benchmark note:** these figures describe the completed EP20 model before the new `security-first-v2` reward and `security-gated-v2` grader. They remain the correct diagnosis of that model, but a new model must be trained and both base/candidate benchmarks must be rerun under matching v2 schemas.
+
+### Security-First V5 Acceptance Gate
+
+The next model is accepted only when `benchmark_acceptance.py` passes every check:
+
+- candidate macro grade is higher than the matched base model;
+- no level's mean grade regresses;
+- every level has a `100%` pass rate;
+- Level 4/5 security and sleepers caught do not regress versus base;
+- Level 4/5 have zero missed sleepers and zero false accusations.
+
+The training pipeline now uses a security-first expert that prioritizes confirmed threats over revenue or double-agent actions, requires every generated expert episode to finish with `security >= 90`, all sleepers caught, and zero false accusations, reduces double-agent oversampling, strengthens neutralization examples, and uses deterministic expert-data seeds.
+
+Run the local security checks before starting an expensive training job:
+
+```bash
+python smoke_test.py
+python security_regression_test.py
+```
+
+Start a fresh curriculum run. The V5 trajectory schema forces regeneration instead of reusing the old unsafe demonstrations:
+
+```bash
+TRAIN_ROOT=/content/drive/MyDrive/panopticon-security-v5-ep50 \
+python -u train_trl_v2.py \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --curriculum \
+  --episodes 50 \
+  --seed 42 \
+  --merge
+```
+
+After training, rerun both sides under the same code and release seed plan, then enforce the gate:
+
+```bash
+python full_evaluation.py \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --episodes 20 --seed 42 \
+  --output evaluationResults_base_security_v2.json \
+  --plot-dir plots_base_security_v2
+
+python full_evaluation.py \
+  --model /content/drive/MyDrive/panopticon-security-v5-ep50/merged_model \
+  --episodes 20 --seed 42 \
+  --output evaluationResults_fixed_security_v2.json \
+  --plot-dir plots
+
+python benchmark_acceptance.py \
+  --base evaluationResults_base_security_v2.json \
+  --candidate evaluationResults_fixed_security_v2.json \
+  --report benchmark_acceptance_report.json
+```
+
+<p align="center">
+  <img src="plots/base_vs_fixed_comparison.png" alt="Latest base versus fixed trained comparison" width="100%">
+</p>
+
+<sub><b>Direct Matched Comparison.</b> Base untrained, fixed trained, and heuristic behavior across all five levels. The fixed model improves composite grade while exposing the advanced-tier security/capture tradeoff.</sub>
+
+The scoreboard and evaluation gallery below are the latest outputs generated by the completed fixed-model evaluation.
 
 <p align="center">
   <img src="plots/benchmark_summary_table.png" alt="Benchmark summary table" width="100%">
 </p>
 
-<sub><b>Previous Structured Benchmark Scoreboard.</b> Pre-fix model summary rendered from the structured `evaluationResults.json` payload. This is the target the new fixed model must beat.</sub>
+<sub><b>Latest Fixed-Model Benchmark Scoreboard.</b> Random, heuristic, and fixed-trained summaries from the completed fixed-model evaluation.</sub>
 
 ### Evaluation & Reward Plot Gallery
 
@@ -468,13 +538,13 @@ The historical gallery below is rendered directly from the previous structured `
 
 ### How to Read the Evaluation Plots
 
-- **Figure 9 - Comparison Grades:** this is the headline metric for the previous pre-fix benchmark. It shows that the old fine-tuned model trailed both baselines once grading accounted for operational reality rather than token-level imitation success.
+- **Figure 9 - Comparison Grades:** this is the headline view for the latest fixed-model benchmark. The fixed trained model leads the level-macro composite grade, driven by improvements at Levels 4 and 5.
 - **Figure 10 - Comparison Operations:** use this to separate *why* an agent scored the way it did. Reward, revenue, security, and sleepers caught are split apart so hidden tradeoffs become visible.
 - **Figure 11 - Comparison Radar:** this is the balanced-performance view. It makes it easy to see whether an agent is broadly competent or only strong on one or two axes.
 - **Figure 12 - Reward Distributions:** this exposes variance and brittleness. If an agent has a high average reward but a wide or unstable distribution, it is not reliably solving the task.
-- **Figure 13 - Reward Frontier:** this is the clearest reward-misalignment figure from the previous benchmark. It shows whether higher reward was bought by sacrificing security.
+- **Figure 13 - Reward Frontier:** this is the clearest reward-misalignment view. It shows where higher reward or revenue is bought by sacrificing security.
 - **Figure 14 - Reward Turn Dynamics:** this figure is about escalation behavior. It shows how reward and security move as scenario difficulty intensifies, rather than only reporting final means.
-- **Figure 15 - Scenario Timeline:** this historical episode-level panorama shows that the previous trained model could accumulate revenue or local reward while failing the actual sleeper-detection mission.
+- **Figure 15 - Scenario Timeline:** this latest episode-level panorama exposes run-to-run variance and where the fixed policy's advanced-tier outcomes diverge from the baselines.
 
 ### Evaluation Reproducibility
 
@@ -483,9 +553,9 @@ To rerun the full benchmark and generate the reward-analysis figures:
 ```bash
 python full_evaluation.py \
   --model /content/drive/MyDrive/panopticon-fixed-v3-ep20/merged_model \
-  --episodes 3 \
+  --episodes 5 \
   --output evaluationResults_fixed.json \
-  --plot-dir plots/evaluation_fixed_ep20 \
+  --plot-dir plots \
   --showcase-output showcaseResults_fixed.json
 ```
 
@@ -494,12 +564,19 @@ To regenerate the fixed-model figure suite from a saved evaluation JSON without 
 ```bash
 python generate_evaluation_plots.py \
   --input evaluationResults_fixed.json \
-  --plot-dir plots/evaluation_fixed_ep20 \
+  --plot-dir plots \
   --timeline-level level_5
 ```
 
-For lightweight frontend/demo artifacts, we keep compact derived summaries in:
+To regenerate the direct matched comparison from the compact checked-in summary:
 
+```bash
+python generate_latest_evaluation_comparison.py
+```
+
+For lightweight analysis and frontend/demo artifacts, we keep compact derived summaries in:
+
+- `evaluation_comparison_latest.json`
 - `ui/src/data/evaluationResults.json`
 - `ui/src/data/showcaseResults.json`
 

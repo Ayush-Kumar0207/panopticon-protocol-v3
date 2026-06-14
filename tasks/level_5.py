@@ -26,6 +26,8 @@ LEVEL_5_TASK = {
         "counterstrike_reached": True,
         "double_agent_deployed": True,
         "revenue_exceeds_initial": True,
-        "final_security_above_50": True,
+        "all_sleepers_caught": True,
+        "zero_false_accusations": True,
+        "final_security_at_least_90": True,
     },
 }

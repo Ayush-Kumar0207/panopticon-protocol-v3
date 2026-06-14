@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from generate_evaluation_plots import render_evaluation_plots, to_builtin
+from environment import REWARD_SCHEMA_VERSION
+from grader import GRADER_SCHEMA_VERSION
 from inference_local import (
     DEFAULT_MODEL,
     LEVELS,
@@ -159,6 +161,8 @@ def main() -> None:
                 "timeline_level": args.timeline_level,
                 "deterministic_trained_eval": not args.sampled,
                 "max_steps": args.max_steps,
+                "reward_schema_version": REWARD_SCHEMA_VERSION,
+                "grader_schema_version": GRADER_SCHEMA_VERSION,
             },
             "seed_plan": seed_plan,
             "agents": agent_payloads,

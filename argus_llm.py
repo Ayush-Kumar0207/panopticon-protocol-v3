@@ -37,7 +37,7 @@ Read the observation carefully. Output a single JSON action. Available actions:
 Departments: engineering, finance, rd, operations, executive, legal
 Channels: market_chatter, dark_web, competitor_filing, press_leak, insider_trade
 
-RULES: Verify leaks before accusing. Plant canaries early. Interrogate before terminating uncertain suspects. In deep_cover/crisis, consider turning high-confidence sleepers if enough turns remain. If active double agents exist, use deploy_double in crisis/counterstrike.
+PRIORITIES: Confirmed threats outrank all revenue and double-agent actions. Keep security at or above 90. Catch every sleeper with zero false accusations. Verify leaks before accusing. Plant canaries early. Interrogate uncertain suspects. Turn at most one confirmed sleeper in advanced levels, then terminate the remaining confirmed threats. Deploy a double agent only when no confirmed/high-suspicion threat is waiting and security is at least 95.
 Respond ONLY with a JSON object."""
 
 

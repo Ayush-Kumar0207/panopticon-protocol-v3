@@ -190,15 +190,6 @@ def enumerate_valid_actions(obs: EnvironmentObservation) -> list[AgentAction]:
 
 
 def _safe_fallback_action(obs: EnvironmentObservation) -> AgentAction:
-    canary_leak = next((leak for leak in obs.active_leaks if leak.is_canary and not leak.verified), None)
-    if canary_leak:
-        return AgentAction(
-            action_type=ActionType.INVESTIGATE.value,
-            target=canary_leak.id,
-            sub_action=SubAction.VERIFY.value,
-            reason="Recovered: verify triggered canary leak",
-        )
-
     confirmed_worker = next(
         (
             worker
@@ -235,6 +226,15 @@ def _safe_fallback_action(obs: EnvironmentObservation) -> AgentAction:
             target=suspicious_worker.id,
             sub_action=SubAction.AUDIT.value,
             reason="Recovered: audit highest-suspicion worker",
+        )
+
+    canary_leak = next((leak for leak in obs.active_leaks if leak.is_canary and not leak.verified), None)
+    if canary_leak:
+        return AgentAction(
+            action_type=ActionType.INVESTIGATE.value,
+            target=canary_leak.id,
+            sub_action=SubAction.VERIFY.value,
+            reason="Recovered: verify triggered canary leak",
         )
 
     planted_departments = {trap.department for trap in obs.canary_traps if trap.active}
@@ -336,27 +336,6 @@ def _recover_action_from_text(raw_text: str, obs: EnvironmentObservation) -> Age
 
 
 def _priority_repair_action(obs: EnvironmentObservation) -> AgentAction | None:
-    active_double_agents = [asset.worker_id for asset in obs.double_agents if asset.active]
-    if active_double_agents and obs.phase_number >= 5 and obs.turn % 3 == 0:
-        action = AgentAction(
-            action_type=ActionType.DEPLOY_DOUBLE.value,
-            target=active_double_agents[0],
-            reason="Repair: deploy available double agent in late phase",
-        )
-        if validate_action(action, obs)[0]:
-            return action
-
-    canary_leak = next((leak for leak in obs.active_leaks if leak.is_canary and not leak.verified), None)
-    if canary_leak:
-        action = AgentAction(
-            action_type=ActionType.INVESTIGATE.value,
-            target=canary_leak.id,
-            sub_action=SubAction.VERIFY.value,
-            reason="Repair: verify triggered canary leak",
-        )
-        if validate_action(action, obs)[0]:
-            return action
-
     confirmed = next(
         (
             worker
@@ -373,6 +352,32 @@ def _priority_repair_action(obs: EnvironmentObservation) -> AgentAction | None:
             target=confirmed.id,
             sub_action=SubAction.TERMINATE.value,
             reason="Repair: terminate confirmed sleeper",
+        )
+        if validate_action(action, obs)[0]:
+            return action
+
+    canary_leak = next((leak for leak in obs.active_leaks if leak.is_canary and not leak.verified), None)
+    if canary_leak:
+        action = AgentAction(
+            action_type=ActionType.INVESTIGATE.value,
+            target=canary_leak.id,
+            sub_action=SubAction.VERIFY.value,
+            reason="Repair: verify triggered canary leak",
+        )
+        if validate_action(action, obs)[0]:
+            return action
+
+    active_double_agents = [asset.worker_id for asset in obs.double_agents if asset.active]
+    if (
+        active_double_agents
+        and obs.phase_number >= 5
+        and obs.security_score >= 95
+        and obs.turn % 10 == 0
+    ):
+        action = AgentAction(
+            action_type=ActionType.DEPLOY_DOUBLE.value,
+            target=active_double_agents[0],
+            reason="Repair: deploy double agent only after threats are controlled",
         )
         if validate_action(action, obs)[0]:
             return action
@@ -771,6 +776,7 @@ def summarize_level_results(level: str, episodes: list[dict[str, Any]]) -> dict[
     securities = [episode["final_state"]["security_score"] for episode in episodes]
     caught = [episode["final_state"]["sleepers_caught"] for episode in episodes]
     missed = [episode["final_state"]["sleepers_missed"] for episode in episodes]
+    false_accusations = [episode["final_state"]["false_accusations"] for episode in episodes]
     invalid = [episode["final_state"]["invalid_actions"] for episode in episodes]
     steps = [episode["steps"] for episode in episodes]
     pass_rate = sum(1 for episode in episodes if episode["grade"]["passed"]) / max(len(episodes), 1)
@@ -788,6 +794,7 @@ def summarize_level_results(level: str, episodes: list[dict[str, Any]]) -> dict[
     security_mean, security_std = mean_std(securities)
     caught_mean, caught_std = mean_std(caught)
     missed_mean, missed_std = mean_std(missed)
+    false_accusations_mean, false_accusations_std = mean_std(false_accusations)
     invalid_mean, invalid_std = mean_std(invalid)
     steps_mean, steps_std = mean_std(steps)
 
@@ -807,6 +814,8 @@ def summarize_level_results(level: str, episodes: list[dict[str, Any]]) -> dict[
         "sleepers_caught_std": caught_std,
         "sleepers_missed_mean": missed_mean,
         "sleepers_missed_std": missed_std,
+        "false_accusations_mean": false_accusations_mean,
+        "false_accusations_std": false_accusations_std,
         "invalid_actions_mean": invalid_mean,
         "invalid_actions_std": invalid_std,
         "steps_mean": steps_mean,
