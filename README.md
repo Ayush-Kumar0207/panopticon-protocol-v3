@@ -35,7 +35,8 @@
 - **OpenEnv environment hosted on Hugging Face Spaces:** [Demo Space](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
 - **Minimal TRL training script / Colab path:** [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)
 - **Submitted Colab link used in the form:** [Google Colab URL](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
-- **Real training evidence:** [`output_logs.txt`](output_logs.txt), [`plots/training_statistics.json`](plots/training_statistics.json), [`plots/`](plots), and the uploaded [`training_metrics/`](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/tree/main/training_metrics) folder in the model repo
+- **Newest fixed-run training evidence:** [`training_events_fixed_ep20.jsonl`](training_events_fixed_ep20.jsonl), [`plots/training_statistics.json`](plots/training_statistics.json), and [`plots/`](plots)
+- **Historical training evidence:** [`output_logs.txt`](output_logs.txt) and the uploaded [`training_metrics/`](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/tree/main/training_metrics) folder in the previous model repo
 - **Trainer Space link preserved for judges:** [panopticon-trainer](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer)
 - **Merged model destination:** [panopticon-argus-qwen-1.5B](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B)
 
@@ -248,7 +249,9 @@ The full gauntlet. Gen-5 Manchurian candidates with active counter-intelligence.
 
 ## 📈 Training Results & Improvement Evidence
 
-We trained **Qwen/Qwen2.5-1.5B-Instruct** with **TRL SFT + LoRA** across the full five-stage curriculum and committed the resulting worker log as [`output_logs.txt`](output_logs.txt). The figures below are regenerated directly from that finished 50-episode A10G run, so the README is tied to the same training trace the plot notebook consumes.
+The fixed curriculum run completed on **June 14, 2026** using **Qwen/Qwen2.5-1.5B-Instruct**, **TRL SFT + LoRA**, and the corrected compact trajectory schema. Its raw append-only Drive log is committed as [`training_events_fixed_ep20.jsonl`](training_events_fixed_ep20.jsonl). The plot pipeline removes interrupted-session and resume duplicates before calculating the figures below, selecting the final dataset-generation block and completed optimizer trajectory for each level.
+
+The run completed all five chained stages and merged the final adapter into a standalone model. This section reports verified **training-time evidence**. It does not substitute for a held-out benchmark of the merged model.
 
 ### Training Configuration
 
@@ -257,36 +260,52 @@ We trained **Qwen/Qwen2.5-1.5B-Instruct** with **TRL SFT + LoRA** across the ful
 | **Base Model** | `Qwen/Qwen2.5-1.5B-Instruct` |
 | **Method** | Supervised Fine-Tuning (SFT) with LoRA |
 | **Curriculum** | 5 chained levels (`easy` -> `level_5`) |
-| **Episodes per Level** | `50` |
-| **Expert Data** | 250 expert episodes total, 29,000 supervised examples |
-| **Approx. Token Budget** | 17.91M tokens parsed from the final saved log |
-| **Logged Optimization Steps** | 2,174 updates across all levels |
-| **Hardware** | NVIDIA A10G, `bfloat16` |
+| **Episodes per Level** | `20` |
+| **Expert Data** | 100 expert episodes, 11,600 raw trajectory steps, 18,940 weighted supervised examples |
+| **Approx. Token Budget** | 8.81M tokens |
+| **Logged Optimization Steps** | 945 canonical updates after resume/retry deduplication |
+| **Epochs / Max Sequence** | 2 epochs per level / 512 tokens |
+| **Hardware** | NVIDIA Tesla T4, `bfloat16` |
 | **Framework** | Hugging Face TRL + PEFT |
 
 ### Quantitative Snapshot
 
 | Signal | Value |
 |--------|-------|
-| **Best final loss** | `0.0212` on `level_4` |
-| **Fastest half-loss convergence** | `8` steps on `medium` |
-| **Hardest-tier expert reward mean** | `34.48 +/- 0.52` on `level_5` |
-| **Easy-level expert grade** | `0.725 +/- 0.002` |
-| **Level-5 expert grade** | `0.820 +/- 0.013` |
-| **Largest single-level dataset** | `8,000` examples (`level_5`) |
-| **Strongest loss reduction** | `99.0%` (`easy`) |
+| **Best final logged loss** | `0.0107` on `level_5` |
+| **Fastest half-loss convergence** | `4` logged updates on `level_4` |
+| **Hardest-tier expert reward mean** | `29.35 +/- 0.39` on `level_5` |
+| **Easy-level expert grade** | `0.720 +/- 0.004` |
+| **Level-5 expert grade** | `0.819 +/- 0.014` |
+| **Largest single-level dataset** | `5,763` weighted examples (`level_5`) |
+| **Advanced Level-5 coverage** | 900 weighted `deploy_double` and 100 weighted `neutralize/turn` examples |
+| **Strongest loss reduction** | `99.1%` (`level_5`) |
+| **Resume-log processing** | 16,653 raw events -> 12,708 canonical events |
 
 ### Per-Level Summary
 
 | Level | Examples | Avg Tokens | Expert Grade | Reward Mean | Revenue Mean | Security Mean | Caught Mean | Final Loss | Loss Reduction |
 |-------|---------:|-----------:|-------------:|-------------:|--------------:|------------:|-----------:|---------------:|
-| **Easy** | 3,000 | 573 | 0.725 +/- 0.002 | 4.26 | 282.0 | 100.0 | 1.00 | 0.0249 | 99.0% |
-| **Medium** | 4,500 | 589 | 0.721 +/- 0.003 | 7.93 | 424.2 | 100.0 | 2.00 | 0.0220 | 90.6% |
-| **Hard** | 6,000 | 608 | 0.678 +/- 0.006 | 12.05 | 581.6 | 100.0 | 3.00 | 0.0238 | 98.9% |
-| **Level 4** | 7,500 | 629 | 0.712 +/- 0.074 | 16.53 | 772.8 | 76.2 | 3.14 | 0.0212 | 91.0% |
-| **Level 5** | 8,000 | 647 | 0.820 +/- 0.013 | 34.48 | 896.0 | 59.6 | 3.14 | 0.0226 | 98.8% |
+| **Easy** | 1,767 | 459 | 0.720 +/- 0.004 | 5.53 | 324.4 | 100.0 | 1.00 | 0.0292 | 98.0% |
+| **Medium** | 2,740 | 462 | 0.724 +/- 0.004 | 8.32 | 437.3 | 100.0 | 2.00 | 0.0282 | 75.9% |
+| **Hard** | 3,804 | 464 | 0.677 +/- 0.006 | 12.75 | 604.9 | 100.0 | 3.00 | 0.0244 | 97.9% |
+| **Level 4** | 4,866 | 466 | 0.715 +/- 0.078 | 16.47 | 770.7 | 76.4 | 3.15 | 0.0266 | 74.9% |
+| **Level 5** | 5,763 | 468 | 0.819 +/- 0.014 | 29.35 | 895.3 | 59.9 | 3.20 | 0.0107 | 99.1% |
 
-> **Interpretation:** `easy` through `hard` stay security-perfect while reward and revenue scale cleanly. The later tiers intentionally trade some security for long-horizon counter-intelligence mechanics such as dead-man's switches, turning, and counterstrike timing.
+> **Interpretation:** the corrected expert data remains security-perfect from `easy` through `hard`, while the later tiers exercise turning and double-agent deployment. The fixed Level-5 dataset slightly improves caught-sleeper coverage over the previous run (`3.20` vs. `3.14`) and reaches a much lower final logged loss, but those are training-time signals rather than proof of merged-model deployment quality.
+
+### Fixed Run vs. Previous Training Evidence
+
+| Signal | Previous 50-Episode Run | Fixed 20-Episode Run | Read |
+|---|---:|---:|---|
+| **Weighted examples** | 29,000 | 18,940 | Smaller practical T4 run |
+| **Approx. tokens** | 17.91M | 8.81M | Roughly half the token budget |
+| **Level-5 expert grade** | 0.820 | 0.819 | Effectively unchanged |
+| **Level-5 expert reward** | 34.48 | 29.35 | Lower in the fixed demonstrations |
+| **Level-5 sleepers caught** | 3.14 | 3.20 | Slightly higher advanced-tier capture coverage |
+| **Best final logged loss** | 0.0212 | 0.0107 | Better optimization endpoint, not a policy benchmark |
+
+The new run is better instrumented and includes the corrected action/observation pipeline, but its training-time metrics are mixed relative to the previous run. A held-out merged-model evaluation is still required for a model-quality verdict.
 
 ### Research Plot Gallery
 
@@ -336,12 +355,33 @@ We trained **Qwen/Qwen2.5-1.5B-Instruct** with **TRL SFT + LoRA** across the ful
 - **Figure 7 - Dataset Scaling:** this plot explains curriculum pressure. As examples and sequence lengths rise with difficulty, the model is being asked to reason over richer and longer contexts.
 - **Figure 8 - Curriculum Heatmap:** this is the one-glance summary. It lets a reader compare data scale, expert quality, optimization efficiency, and terminal loss across all five stages without scanning every earlier figure.
 
+### Additional Fixed-Run Diagnostics
+
+<table>
+  <tr>
+    <td width="50%"><img src="plots/curriculum_progress_timeline.png" alt="Curriculum progress timeline"></td>
+    <td width="50%"><img src="plots/training_action_mix.png" alt="Training action mix"></td>
+  </tr>
+  <tr>
+    <td><sub>Canonical resume-aware curriculum progress and logged SFT loss.</sub></td>
+    <td><sub>Weighted action coverage, including Level-4/5 turning and double-agent mechanics.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="plots/expert_step_dynamics.png" alt="Expert step dynamics"></td>
+    <td width="50%"><img src="plots/runtime_breakdown.png" alt="Final successful training segment runtime"></td>
+  </tr>
+  <tr>
+    <td><sub>Turn-level reward, revenue, security, leak, canary, and double-agent dynamics.</sub></td>
+    <td><sub>Runtime of the final successful segment for each resumable curriculum stage.</sub></td>
+  </tr>
+</table>
+
 ### Reproducibility
 
-The plot pipeline lives in `generate_plots.py` and emits both figures and machine-readable summaries from the raw saved worker log:
+The plot pipeline lives in `generate_plots.py` and emits both figures and machine-readable summaries from the raw saved structured event log:
 
 ```bash
-python generate_plots.py
+TRAIN_EVENTS_PATH=training_events_fixed_ep20.jsonl python generate_plots.py
 ```
 
 Artifacts written to `plots/`:
@@ -356,14 +396,18 @@ Artifacts written to `plots/`:
 - `optimization_diagnostics.png`
 - `dataset_scaling.png`
 - `curriculum_heatmap.png`
+- `curriculum_progress_timeline.png`
+- `training_action_mix.png`
+- `expert_step_dynamics.png`
+- `runtime_breakdown.png`
 
-> 📊 **Everything above is derived from the committed raw training log rather than hand-entered numbers.**
+> 📊 **Everything above is derived from the committed raw fixed-run event log rather than hand-entered numbers.**
 
-### Final Structured Benchmark (50-Episode A10G Rerun)
+### New Fixed-Model Benchmark Status
 
-The figures below are regenerated from the final structured benchmark payload uploaded to the model repo as [`evaluationResults.json`](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/blob/main/evaluationResults.json), produced after the full 50-episode A10G curriculum run completed and the merged model was evaluated across all five levels.
+**Status: not yet measured.** The completed Drive folder contains the merged fixed model and training artifacts, but no `evaluationResults_fixed.json` or `showcaseResults_fixed.json`. Therefore, the new fixed model cannot yet be honestly declared better than the untrained base model or the previous trained model.
 
-This benchmark tells an important and honest story: **the curriculum training curves clearly improve, but the held-out deployment policy still fails in a reward-misaligned way.** That is not a README accident. It is one of the main research takeaways of Panopticon: the environment is rich enough to show when an agent appears to learn from dense expert traces, yet still collapses under a stricter operational evaluation that measures security retention and sleeper neutralization.
+The tables and evaluation gallery below are retained as the **previous pre-fix model benchmark** from [`evaluationResults.json`](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/blob/main/evaluationResults.json). They are the comparison target, not results from the new June 14 fixed run.
 
 | Agent | Easy Grade | Medium Grade | Hard Grade | Level 4 Grade | Level 5 Grade |
 |---|---:|---:|---:|---:|---:|
@@ -377,15 +421,15 @@ This benchmark tells an important and honest story: **the curriculum training cu
 | **Heuristic** | 0.703 | 12.14 | 591.7 | 89.4 | 2.67 | Best balanced baseline with strong security discipline and stable sleeper handling |
 | **Trained** | 0.431 | -10.22 | 423.2 | 27.9 | 0.00 | Learns dense imitation/loss structure, but still fails the held-out security-preserving mission objective |
 
-The key lesson is that **training improvement and deployment success are not the same thing**. The 50-episode rerun gives us better expert traces, cleaner reward logging, and much stronger research evidence, but the final benchmark still shows the learned policy prioritizing the wrong behavior. That is exactly the kind of failure mode a good OpenEnv environment should expose.
+The previous benchmark's key lesson remains that **training improvement and deployment success are not the same thing**. The old trained policy caught zero sleepers in held-out evaluation. The fixed run was designed to address that failure, but its success must be judged from a new structured benchmark rather than inferred from lower loss.
 
-The gallery below is rendered directly from the final structured `evaluationResults.json` export rather than a console screenshot. The plots and tables are regenerated from the same payload that was uploaded from the A10G worker.
+The historical gallery below is rendered directly from the previous structured `evaluationResults.json` export rather than a console screenshot.
 
 <p align="center">
   <img src="plots/benchmark_summary_table.png" alt="Benchmark summary table" width="100%">
 </p>
 
-<sub><b>Structured Benchmark Scoreboard.</b> Final 50-episode A10G benchmark summary rendered from the structured `evaluationResults.json` payload. Reading grade, reward, revenue, security, and sleepers caught side by side is what makes the reward-misalignment story visible.</sub>
+<sub><b>Previous Structured Benchmark Scoreboard.</b> Pre-fix model summary rendered from the structured `evaluationResults.json` payload. This is the target the new fixed model must beat.</sub>
 
 ### Evaluation & Reward Plot Gallery
 
@@ -424,13 +468,13 @@ The gallery below is rendered directly from the final structured `evaluationResu
 
 ### How to Read the Evaluation Plots
 
-- **Figure 9 - Comparison Grades:** this is the main headline metric for the final benchmark. It shows overall task quality by agent family and makes the post-training gap immediately visible: the fine-tuned model still trails both baselines once grading accounts for operational reality rather than token-level imitation success.
+- **Figure 9 - Comparison Grades:** this is the headline metric for the previous pre-fix benchmark. It shows that the old fine-tuned model trailed both baselines once grading accounted for operational reality rather than token-level imitation success.
 - **Figure 10 - Comparison Operations:** use this to separate *why* an agent scored the way it did. Reward, revenue, security, and sleepers caught are split apart so hidden tradeoffs become visible.
 - **Figure 11 - Comparison Radar:** this is the balanced-performance view. It makes it easy to see whether an agent is broadly competent or only strong on one or two axes.
 - **Figure 12 - Reward Distributions:** this exposes variance and brittleness. If an agent has a high average reward but a wide or unstable distribution, it is not reliably solving the task.
-- **Figure 13 - Reward Frontier:** this is the clearest reward-misalignment figure. It shows whether higher reward is being bought by sacrificing security, which is exactly the failure mode the final trained model still exhibits.
+- **Figure 13 - Reward Frontier:** this is the clearest reward-misalignment figure from the previous benchmark. It shows whether higher reward was bought by sacrificing security.
 - **Figure 14 - Reward Turn Dynamics:** this figure is about escalation behavior. It shows how reward and security move as scenario difficulty intensifies, rather than only reporting final means.
-- **Figure 15 - Scenario Timeline:** this is the episode-level panorama. It helps readers see that the trained model can still accumulate revenue or local reward while failing the actual sleeper-detection mission, which is exactly why the environment needs multi-dimensional grading.
+- **Figure 15 - Scenario Timeline:** this historical episode-level panorama shows that the previous trained model could accumulate revenue or local reward while failing the actual sleeper-detection mission.
 
 ### Evaluation Reproducibility
 
@@ -438,19 +482,19 @@ To rerun the full benchmark and generate the reward-analysis figures:
 
 ```bash
 python full_evaluation.py \
-  --model trained_model \
+  --model /content/drive/MyDrive/panopticon-fixed-v3-ep20/merged_model \
   --episodes 3 \
-  --output evaluationResults.json \
-  --plot-dir plots \
-  --showcase-output showcaseResults.json
+  --output evaluationResults_fixed.json \
+  --plot-dir plots/evaluation_fixed_ep20 \
+  --showcase-output showcaseResults_fixed.json
 ```
 
-To regenerate the figure suite from a saved evaluation JSON without rerunning inference:
+To regenerate the fixed-model figure suite from a saved evaluation JSON without rerunning inference:
 
 ```bash
 python generate_evaluation_plots.py \
-  --input evaluationResults.json \
-  --plot-dir plots \
+  --input evaluationResults_fixed.json \
+  --plot-dir plots/evaluation_fixed_ep20 \
   --timeline-level level_5
 ```
 

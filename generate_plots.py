@@ -49,8 +49,8 @@ class LevelData:
     token_avg: int
     expert_steps: list[int]
     expert_reward: list[float]
-    expert_revenue: list[int]
-    expert_security: list[int]
+    expert_revenue: list[float]
+    expert_security: list[float]
     expert_caught: list[int]
     expert_grade: list[float]
     loss: list[float]
@@ -251,6 +251,116 @@ def parse_train_events(log_text: str, event_file: Path | None = None) -> list[di
     return events
 
 
+def canonicalize_train_events(events: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Select the finished data/training trajectory from an append-only resume log."""
+    selected: list[dict[str, object]] = []
+    data_event_names = {
+        "dataset_written",
+        "expert_episode",
+        "expert_generation_complete",
+        "expert_step",
+    }
+    latest_training_event_names = {
+        "dataset_reused",
+        "gpu_snapshot",
+        "level_complete",
+        "model_load_complete",
+        "model_load_start",
+        "token_stats",
+        "train_complete",
+        "train_sanity",
+        "train_start",
+    }
+
+    for level in LEVEL_ORDER:
+        level_events = [event for event in events if event.get("level") == level]
+        if not level_events:
+            continue
+
+        generation_completions = [
+            event for event in level_events if event.get("event") == "expert_generation_complete"
+        ]
+        if generation_completions:
+            generation_complete = max(generation_completions, key=lambda event: _as_float(event.get("time_unix")))
+            generation_end = _as_float(generation_complete.get("time_unix"))
+            generation_starts = [
+                event
+                for event in level_events
+                if event.get("event") == "level_start"
+                and _as_float(event.get("time_unix")) <= generation_end
+            ]
+            generation_start = (
+                _as_float(max(generation_starts, key=lambda event: _as_float(event.get("time_unix"))).get("time_unix"))
+                if generation_starts
+                else float("-inf")
+            )
+            selected.extend(
+                event
+                for event in level_events
+                if event.get("event") in data_event_names
+                and generation_start <= _as_float(event.get("time_unix")) <= generation_end
+            )
+
+        train_completions = [event for event in level_events if event.get("event") == "train_complete"]
+        if not train_completions:
+            continue
+
+        train_complete = max(train_completions, key=lambda event: _as_float(event.get("time_unix")))
+        train_end = _as_float(train_complete.get("time_unix"))
+        progress = [
+            event
+            for event in level_events
+            if event.get("event") == "train_progress"
+            and event.get("loss") is not None
+            and _as_float(event.get("time_unix")) <= train_end
+        ]
+        if progress:
+            final_max_steps = max(_as_int(event.get("max_steps")) for event in progress)
+            latest_by_step: dict[int, dict[str, object]] = {}
+            for event in progress:
+                if _as_int(event.get("max_steps")) != final_max_steps:
+                    continue
+                latest_by_step[_as_int(event.get("step"))] = event
+            selected.extend(latest_by_step[step] for step in sorted(latest_by_step))
+
+        for event_name in latest_training_event_names:
+            candidates = [
+                event
+                for event in level_events
+                if event.get("event") == event_name
+                and _as_float(event.get("time_unix")) <= train_end + 5.0
+            ]
+            if candidates:
+                selected.append(max(candidates, key=lambda event: _as_float(event.get("time_unix"))))
+
+    for completed_count in range(1, len(LEVEL_ORDER) + 1):
+        candidates = [
+            event
+            for event in events
+            if event.get("event") == "curriculum_progress"
+            and _as_int(event.get("completed_count")) == completed_count
+        ]
+        if candidates:
+            selected.append(max(candidates, key=lambda event: _as_float(event.get("time_unix"))))
+
+    for event_name in ("merge_start", "merge_complete", "run_complete"):
+        candidates = [event for event in events if event.get("event") == event_name]
+        if candidates:
+            selected.append(max(candidates, key=lambda event: _as_float(event.get("time_unix"))))
+
+    unique: dict[tuple[object, ...], dict[str, object]] = {}
+    for event in selected:
+        key = (
+            event.get("event"),
+            event.get("level"),
+            event.get("step"),
+            event.get("episode"),
+            event.get("time_unix"),
+        )
+        unique[key] = event
+    return sorted(unique.values(), key=lambda event: _as_float(event.get("time_unix")))
+
+
 def _as_float(value, default: float = 0.0) -> float:
     if value is None:
         return default
@@ -300,8 +410,8 @@ def levels_from_events(events: list[dict[str, object]]) -> dict[str, LevelData]:
             level_parts["episodes"] = max(_as_int(level_parts.get("episodes")), _as_int(event.get("episodes")))
             level_parts["expert_steps"].append(_as_int(event.get("steps")))
             level_parts["expert_reward"].append(_as_float(event.get("reward")))
-            level_parts["expert_revenue"].append(_as_int(event.get("revenue")))
-            level_parts["expert_security"].append(_as_int(event.get("security")))
+            level_parts["expert_revenue"].append(_as_float(event.get("revenue")))
+            level_parts["expert_security"].append(_as_float(event.get("security")))
             level_parts["expert_caught"].append(_as_int(event.get("sleepers_caught")))
             level_parts["expert_grade"].append(_as_float(event.get("grade")))
         elif event_name == "dataset_written":
@@ -557,7 +667,7 @@ def plot_curriculum_loss_overview(levels: dict[str, LevelData], summary: dict[st
         0.01,
         0.97,
         (
-            f"29k examples total | "
+            f"{global_stats['total_examples']:,} examples total | "
             f"~{global_stats['approx_total_tokens'] / 1_000_000:.1f}M tokens | "
             f"{global_stats['total_train_steps']} logged updates"
         ),
@@ -1165,7 +1275,7 @@ def plot_runtime_breakdown(events: list[dict[str, object]]) -> list[str]:
     ax.bar(labels, minutes, color=colors, alpha=0.84)
     for idx, value in enumerate(minutes):
         ax.text(idx, value + max(minutes) * 0.025, f"{value:.1f}m", ha="center", fontsize=9)
-    ax.set_title("Training Runtime Breakdown by Curriculum Level")
+    ax.set_title("Final Successful Training Segment Runtime by Curriculum Level")
     ax.set_ylabel("Minutes")
     ax.grid(True, axis="y")
 
@@ -1254,7 +1364,7 @@ def write_statistics_files(summary: dict[str, object]) -> None:
             f"Approximate token budget: {summary['global']['approx_total_tokens'] / 1_000_000:.2f}M tokens",
             f"Total logged training updates: {summary['global']['total_train_steps']}",
             "",
-            f"Source log: `{summary['source_log']}`",
+            f"Source events: `{summary.get('source_events', summary['source_log'])}`",
         ]
     )
 
@@ -1265,23 +1375,33 @@ def main() -> None:
     log_file = resolve_log_file()
     log_text = log_file.read_text(encoding="utf-8", errors="replace")
     event_file = resolve_event_file()
-    events = parse_train_events(log_text, event_file)
+    raw_events = parse_train_events(log_text, event_file)
+    events = canonicalize_train_events(raw_events)
 
     event_levels = levels_from_events(events) if events else {}
     if event_levels:
         levels = event_levels
-        print(f"Parsed {len(events)} structured training events.")
+        print(f"Parsed {len(raw_events)} raw structured training events.")
+        if len(events) != len(raw_events):
+            print(f"Selected {len(events)} canonical events after removing resume/retry duplicates.")
         if event_file is not None:
             print(f"Structured event source: {event_file}")
     else:
         levels = parse_levels(log_text)
 
     summary = build_summary(levels)
-    summary["source_log"] = str(log_file)
+    summary["source_log"] = str(event_file or log_file)
     if event_file is not None:
         summary["source_events"] = str(event_file)
+        summary["fallback_log"] = str(log_file)
     if events:
         summary["events"] = build_event_summary(events)
+        summary["event_processing"] = {
+            "raw_event_count": len(raw_events),
+            "canonical_event_count": len(events),
+            "excluded_resume_retry_events": len(raw_events) - len(events),
+            "policy": "latest finished dataset generation and completed optimizer trajectory per level",
+        }
 
     plot_curriculum_loss_overview(levels, summary)
     plot_per_level_convergence(levels, summary)
