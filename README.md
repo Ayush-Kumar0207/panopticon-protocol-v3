@@ -439,6 +439,9 @@ Exact comparison values and provenance are stored in [`evaluation_comparison_lat
 
 The next model is accepted only when `benchmark_acceptance.py` passes every check:
 
+For the complete Drive-persistent, checkpoint-resumable Colab workflow, use
+[`COLAB_SECURITY_V5_TRAINING.md`](COLAB_SECURITY_V5_TRAINING.md).
+
 - candidate macro grade is higher than the matched base model;
 - no level's mean grade regresses;
 - every level has a `100%` pass rate;
