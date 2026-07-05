@@ -170,18 +170,45 @@ run_config = {
     "gpu_profile": "low-vram-t4",
 }
 config_path = TRAIN_ROOT / "colab_run_config.json"
+eval_config_path = TRAIN_ROOT / "colab_eval_code_config.json"
+locked_keys = ["schema", "base_model", "episodes", "seed", "train_root", "gpu_profile"]
 
 if config_path.exists():
     existing = json.loads(config_path.read_text(encoding="utf-8"))
-    if existing != run_config:
+    mismatches = {
+        key: {"existing": existing.get(key), "requested": run_config.get(key)}
+        for key in locked_keys
+        if existing.get(key) != run_config.get(key)
+    }
+    if mismatches:
         raise RuntimeError(
-            "Run configuration changed. Use the original values or choose a new TRAIN_ROOT.\n"
-            f"Existing: {existing}\nRequested: {run_config}"
+            "Training-critical run configuration changed. Use the original values "
+            "or choose a new TRAIN_ROOT.\n"
+            f"Mismatches: {mismatches}\nExisting: {existing}\nRequested: {run_config}"
         )
+    if existing.get("source_commit") != commit:
+        print(
+            "Training run was created at source commit "
+            f"{existing.get('source_commit')}; current source is {commit}."
+        )
+        print("Keeping the original training lock and recording the current evaluation code separately.")
 else:
     config_path.write_text(json.dumps(run_config, indent=2), encoding="utf-8")
 
 print(config_path.read_text(encoding="utf-8"))
+eval_config_path.write_text(
+    json.dumps(
+        {
+            "schema": "security-first-v5-evaluation-code-v1",
+            "source_commit": commit,
+            "train_root": str(TRAIN_ROOT),
+        },
+        indent=2,
+    ),
+    encoding="utf-8",
+)
+print("Evaluation source config:")
+print(eval_config_path.read_text(encoding="utf-8"))
 ```
 
 ## Cell 7 - Validate the Security-First Environment
