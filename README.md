@@ -469,20 +469,24 @@ python -u train_trl_v2.py \
   --merge
 ```
 
-After training, rerun both sides under the same code and release seed plan, then enforce the gate:
+After training, rerun both sides under the same code and release seed plan, then enforce the gate. Evaluation writes episode checkpoints and a lightweight progress JSON so interrupted Colab runs can resume instead of starting over:
 
 ```bash
 python full_evaluation.py \
   --model Qwen/Qwen2.5-1.5B-Instruct \
   --episodes 20 --seed 42 \
   --output evaluationResults_base_security_v2.json \
-  --plot-dir plots_base_security_v2
+  --plot-dir plots_base_security_v2 \
+  --checkpoint-file evaluationResults_base_security_v2.json.episodes.jsonl \
+  --progress-file evaluationResults_base_security_v2.json.progress.json
 
 python full_evaluation.py \
   --model /content/drive/MyDrive/panopticon-security-v5-ep50/merged_model \
   --episodes 20 --seed 42 \
   --output evaluationResults_fixed_security_v2.json \
-  --plot-dir plots
+  --plot-dir plots_fixed_security_v2 \
+  --checkpoint-file evaluationResults_fixed_security_v2.json.episodes.jsonl \
+  --progress-file evaluationResults_fixed_security_v2.json.progress.json
 
 python benchmark_acceptance.py \
   --base evaluationResults_base_security_v2.json \
@@ -559,6 +563,8 @@ python full_evaluation.py \
   --episodes 5 \
   --output evaluationResults_fixed.json \
   --plot-dir plots \
+  --checkpoint-file evaluationResults_fixed.json.episodes.jsonl \
+  --progress-file evaluationResults_fixed.json.progress.json \
   --showcase-output showcaseResults_fixed.json
 ```
 

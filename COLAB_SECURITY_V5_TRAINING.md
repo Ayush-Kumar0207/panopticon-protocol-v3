@@ -11,6 +11,7 @@ GitHub:
 - `security_regression_test.py`
 - `benchmark_acceptance.py`
 - `train_trl_v2.py` with `curriculum-expert-v5-security-first`
+- `full_evaluation.py` with episode-level evaluation checkpoints
 
 The source-verification cell below deliberately stops if Colab cloned an older
 version. This prevents accidentally repeating the previous unsafe training run.
@@ -29,6 +30,10 @@ version. This prevents accidentally repeating the previous unsafe training run.
 - If the runtime is killed during the short expert-generation phase before its
   level dataset is written, that level's expert generation restarts. Optimizer
   training progress resumes from its latest Drive checkpoint.
+- Evaluation is now resume-safe too: every completed benchmark episode is
+  appended to `<output>.episodes.jsonl`, while `<output>.progress.json` shows
+  the current completed/total count. Rerun the same evaluation cell after a
+  disconnect; completed episodes are skipped automatically.
 
 ## Cell 1 - Mount Google Drive
 
@@ -79,6 +84,7 @@ required_files = [
     "security_regression_test.py",
     "benchmark_acceptance.py",
     "train_trl_v2.py",
+    "full_evaluation.py",
 ]
 missing = [name for name in required_files if not (SOURCE_ROOT / name).exists()]
 if missing:
@@ -90,6 +96,10 @@ if missing:
 training_source = (SOURCE_ROOT / "train_trl_v2.py").read_text(encoding="utf-8")
 if "curriculum-expert-v5-security-first" not in training_source:
     raise RuntimeError("Refusing to train: Colab cloned an older trajectory schema.")
+
+evaluation_source = (SOURCE_ROOT / "full_evaluation.py").read_text(encoding="utf-8")
+if "--checkpoint-file" not in evaluation_source or "evaluation-progress-v1" not in evaluation_source:
+    raise RuntimeError("Refusing to evaluate: Colab cloned an older non-resumable evaluator. Rerun Cell 3 after pulling the latest repo.")
 
 commit = subprocess.check_output(
     ["git", "-C", str(SOURCE_ROOT), "rev-parse", "HEAD"],
@@ -319,18 +329,72 @@ if not any(name.endswith(".safetensors") for name in files):
 print("Merged model verification passed.")
 ```
 
-## Cell 12 - Run the Matched Base Evaluation
+## Cell 12 - Run or Resume the Matched Base Evaluation
 
-Evaluation outputs are also saved directly to Drive. Evaluation itself does not
-currently resume from episode checkpoints, so run the base and candidate in
-separate cells.
+Evaluation now checkpoints after every completed episode. If Colab disconnects,
+reconnect, rerun Cells 1-7 and 10-11, then rerun this exact Cell 12. It will
+skip completed base episodes and continue from the next missing one.
+
+The final `evaluationResults_base_security_v2.json` is written only when all
+base episodes finish, but progress is visible immediately in:
+
+- `evaluationResults_base_security_v2.json.episodes.jsonl`
+- `evaluationResults_base_security_v2.json.progress.json`
+- `console_eval_base_security_v2.log`
 
 ```python
+import json
 import subprocess
 import sys
+from datetime import datetime, timezone
+
+
+def run_checkpointed_evaluation(cmd, log_path, progress_path):
+    print("Command:", " ".join(str(part) for part in cmd), flush=True)
+    print("Progress JSON:", progress_path, flush=True)
+    print("Console log:", log_path, flush=True)
+
+    if progress_path.exists():
+        print("Existing progress before resume:")
+        print(json.dumps(json.loads(progress_path.read_text(encoding="utf-8")), indent=2))
+
+    with log_path.open("a", encoding="utf-8", buffering=1) as log:
+        header = f"\n\n===== EVAL/RERUN {datetime.now(timezone.utc).isoformat()} =====\n"
+        print(header, end="", flush=True)
+        log.write(header)
+        log.write("Command: " + " ".join(str(part) for part in cmd) + "\n")
+
+        process = subprocess.Popen(
+            cmd,
+            cwd=SOURCE_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            log.write(line)
+
+        return_code = process.wait()
+
+    if progress_path.exists():
+        print("\nLatest progress after this run:")
+        print(json.dumps(json.loads(progress_path.read_text(encoding="utf-8")), indent=2))
+
+    if return_code != 0:
+        raise RuntimeError(
+            f"Evaluation stopped with code {return_code}. "
+            "Reconnect, rerun setup cells, then rerun this same cell to resume."
+        )
+
 
 base_results = TRAIN_ROOT / "evaluationResults_base_security_v2.json"
 base_plots = TRAIN_ROOT / "plots_base_security_v2"
+base_checkpoints = TRAIN_ROOT / "evaluationResults_base_security_v2.json.episodes.jsonl"
+base_progress = TRAIN_ROOT / "evaluationResults_base_security_v2.json.progress.json"
+base_log = TRAIN_ROOT / "console_eval_base_security_v2.log"
 
 cmd = [
     sys.executable, "-u", "full_evaluation.py",
@@ -339,19 +403,98 @@ cmd = [
     "--seed", str(SEED),
     "--output", str(base_results),
     "--plot-dir", str(base_plots),
+    "--checkpoint-file", str(base_checkpoints),
+    "--progress-file", str(base_progress),
 ]
-subprocess.run(cmd, cwd=SOURCE_ROOT, check=True)
-print("Saved:", base_results)
+run_checkpointed_evaluation(cmd, base_log, base_progress)
+print("Saved final base results:", base_results)
 ```
 
-## Cell 13 - Run the Matched Candidate Evaluation
+## Cell 12A - Inspect Evaluation Progress After a Disconnect
+
+Run this after reconnecting if you only want to see what survived in Drive.
 
 ```python
+import json
+
+for label, results_name in [
+    ("base", "evaluationResults_base_security_v2.json"),
+    ("candidate", "evaluationResults_fixed_security_v2.json"),
+]:
+    progress_path = TRAIN_ROOT / f"{results_name}.progress.json"
+    checkpoint_path = TRAIN_ROOT / f"{results_name}.episodes.jsonl"
+    print(f"\n[{label.upper()}]")
+    print("Progress file:", progress_path)
+    if progress_path.exists():
+        print(json.dumps(json.loads(progress_path.read_text(encoding="utf-8")), indent=2))
+    else:
+        print("No progress JSON yet.")
+
+    if checkpoint_path.exists():
+        completed = sum(1 for _ in checkpoint_path.open("r", encoding="utf-8", errors="replace"))
+        print("Episode checkpoints:", completed)
+    else:
+        print("Episode checkpoints: 0")
+```
+
+## Cell 13 - Run or Resume the Matched Candidate Evaluation
+
+This uses the same episode checkpoint mechanism as Cell 12. Rerun this exact
+cell after any disconnect during candidate evaluation.
+
+```python
+import json
 import subprocess
 import sys
+from datetime import datetime, timezone
+
+
+def run_checkpointed_evaluation(cmd, log_path, progress_path):
+    print("Command:", " ".join(str(part) for part in cmd), flush=True)
+    print("Progress JSON:", progress_path, flush=True)
+    print("Console log:", log_path, flush=True)
+
+    if progress_path.exists():
+        print("Existing progress before resume:")
+        print(json.dumps(json.loads(progress_path.read_text(encoding="utf-8")), indent=2))
+
+    with log_path.open("a", encoding="utf-8", buffering=1) as log:
+        header = f"\n\n===== EVAL/RERUN {datetime.now(timezone.utc).isoformat()} =====\n"
+        print(header, end="", flush=True)
+        log.write(header)
+        log.write("Command: " + " ".join(str(part) for part in cmd) + "\n")
+
+        process = subprocess.Popen(
+            cmd,
+            cwd=SOURCE_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            log.write(line)
+
+        return_code = process.wait()
+
+    if progress_path.exists():
+        print("\nLatest progress after this run:")
+        print(json.dumps(json.loads(progress_path.read_text(encoding="utf-8")), indent=2))
+
+    if return_code != 0:
+        raise RuntimeError(
+            f"Evaluation stopped with code {return_code}. "
+            "Reconnect, rerun setup cells, then rerun this same cell to resume."
+        )
+
 
 candidate_results = TRAIN_ROOT / "evaluationResults_fixed_security_v2.json"
 candidate_plots = TRAIN_ROOT / "plots_fixed_security_v2"
+candidate_checkpoints = TRAIN_ROOT / "evaluationResults_fixed_security_v2.json.episodes.jsonl"
+candidate_progress = TRAIN_ROOT / "evaluationResults_fixed_security_v2.json.progress.json"
+candidate_log = TRAIN_ROOT / "console_eval_fixed_security_v2.log"
 
 cmd = [
     sys.executable, "-u", "full_evaluation.py",
@@ -360,9 +503,11 @@ cmd = [
     "--seed", str(SEED),
     "--output", str(candidate_results),
     "--plot-dir", str(candidate_plots),
+    "--checkpoint-file", str(candidate_checkpoints),
+    "--progress-file", str(candidate_progress),
 ]
-subprocess.run(cmd, cwd=SOURCE_ROOT, check=True)
-print("Saved:", candidate_results)
+run_checkpointed_evaluation(cmd, candidate_log, candidate_progress)
+print("Saved final candidate results:", candidate_results)
 ```
 
 ## Cell 14 - Enforce the Release Gate
@@ -390,10 +535,21 @@ print("Acceptance report:", acceptance_report)
 
 After a runtime disconnect or Colab GPU usage-limit interruption:
 
+For training disconnects:
+
 1. Reconnect using a T4 GPU.
 2. Rerun Cells 1-8.
 3. Confirm Cell 8 shows the expected completed levels/checkpoint.
 4. Rerun Cell 9 without changing any configuration value.
 
-The training script will skip completed curriculum levels and resume the
-currently interrupted level from its latest Drive checkpoint.
+For evaluation disconnects:
+
+1. Reconnect using a T4 GPU.
+2. Rerun Cells 1-7 and 10-11.
+3. Run Cell 12A if you want to inspect saved progress.
+4. Rerun the same Cell 12 or Cell 13 unchanged.
+
+The training script skips completed curriculum levels and resumes the
+interrupted level from its latest Drive checkpoint. The evaluation script skips
+episode checkpoints already present in Drive and continues from the next missing
+episode.
