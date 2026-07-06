@@ -19,6 +19,7 @@ from inference_local import (
     HeuristicPolicy,
     LocalModelPolicy,
     RandomPolicy,
+    SecurityFirstPolicy,
     run_episode,
     select_representative_episode,
     summarize_level_results,
@@ -85,6 +86,7 @@ def build_payload_config(args: argparse.Namespace) -> dict[str, Any]:
         "timeline_level": args.timeline_level,
         "deterministic_trained_eval": not args.sampled,
         "max_steps": args.max_steps,
+        "trained_policy": args.trained_policy,
         "reward_schema_version": REWARD_SCHEMA_VERSION,
         "grader_schema_version": GRADER_SCHEMA_VERSION,
     }
@@ -396,6 +398,7 @@ def build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps", type=int, default=300, help="Maximum steps per episode")
     parser.add_argument("--verbose", action="store_true", help="Print per-turn logs during evaluation")
     parser.add_argument("--sampled", action="store_true", help="Use sampled decoding instead of deterministic decoding for the trained model")
+    parser.add_argument("--trained-policy", choices=["model", "security_first"], default="model", help="Policy used in the trained slot: raw/local model or deterministic security-first supervisor")
     parser.add_argument("--checkpoint-file", default="", help="Optional episode JSONL checkpoint path")
     parser.add_argument("--progress-file", default="", help="Optional lightweight progress JSON path")
     parser.add_argument("--restart", action="store_true", help="Delete existing evaluation sidecars and start this output from scratch")
@@ -412,7 +415,7 @@ def main() -> None:
     expected_config = build_payload_config(args)
 
     heuristic_policy = HeuristicPolicy()
-    trained_policy: LocalModelPolicy | None = None
+    trained_policy: LocalModelPolicy | SecurityFirstPolicy | None = None
 
     try:
         if args.restart:
@@ -470,8 +473,12 @@ def main() -> None:
             if agent_key == "heuristic":
                 return heuristic_policy
             if trained_policy is None:
-                print(f"[*] Loading trained/model policy only when needed: {args.model}", flush=True)
-                trained_policy = LocalModelPolicy(args.model, deterministic=not args.sampled)
+                if args.trained_policy == "security_first":
+                    print("[*] Using deterministic security-first supervisor in the trained slot", flush=True)
+                    trained_policy = SecurityFirstPolicy(policy_name="trained")
+                else:
+                    print(f"[*] Loading trained/model policy only when needed: {args.model}", flush=True)
+                    trained_policy = LocalModelPolicy(args.model, deterministic=not args.sampled)
             return trained_policy
 
         for agent_key in AGENT_ORDER:

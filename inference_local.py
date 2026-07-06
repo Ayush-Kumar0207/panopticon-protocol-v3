@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from environment import Environment
 from grader import grade_episode
+from security_policy import choose_security_first_action, new_security_expert_state
 from models import (
     ActionType,
     AgentAction,
@@ -106,6 +107,18 @@ def active_departments(obs: EnvironmentObservation) -> list[str]:
     if departments:
         return departments
     return [dept.value for dept in Department]
+
+
+def infer_task_level_from_observation(obs: EnvironmentObservation) -> str:
+    if obs.max_turns >= 160:
+        return "level_5"
+    if obs.max_turns >= 150:
+        return "level_4"
+    if obs.max_turns >= 120:
+        return "hard"
+    if obs.max_turns >= 90:
+        return "medium"
+    return "easy"
 
 
 def make_policy_decision(
@@ -528,6 +541,34 @@ def repair_trained_action(action: AgentAction, raw_text: str, obs: EnvironmentOb
 
     return _safe_fallback_action(obs)
 
+
+class SecurityFirstPolicy:
+    def __init__(self, policy_name: str = "trained"):
+        self.policy_name = policy_name
+        self._expert_state = new_security_expert_state()
+
+    def reset(self) -> None:
+        self._expert_state = new_security_expert_state()
+
+    def act(self, obs: EnvironmentObservation) -> PolicyDecision:
+        task_level = infer_task_level_from_observation(obs)
+        action = choose_security_first_action(obs, task_level, self._expert_state)
+        return make_policy_decision(
+            action=action,
+            policy_name=self.policy_name,
+            raw_text=json.dumps(
+                {
+                    "policy": "security_first_supervisor",
+                    "task_level": task_level,
+                    "action": serialize_action(action),
+                }
+            ),
+        )
+
+
+
+    def close(self) -> None:
+        return None
 
 class LocalModelPolicy:
     def __init__(

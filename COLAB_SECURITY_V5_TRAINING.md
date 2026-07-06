@@ -584,6 +584,99 @@ if failed:
 print("Acceptance gate passed.")
 ```
 
+## Cell 15 - Optional Security-First Supervisor Diagnostic
+
+Use this only after the raw trained model fails Cell 14. It does **not** prove the
+raw fine-tuned model passed. It evaluates a deterministic security-first
+supervisor in the `trained` slot, using the same benchmark/checkpoint machinery,
+to separate model failure from environment or gate failure.
+
+```python
+import json
+import subprocess
+import sys
+from datetime import datetime, timezone
+
+
+def run_checkpointed_evaluation(cmd, log_path, progress_path):
+    print("Command:", " ".join(str(part) for part in cmd), flush=True)
+    print("Progress JSON:", progress_path, flush=True)
+    print("Console log:", log_path, flush=True)
+
+    if progress_path.exists():
+        print("Existing progress before resume:")
+        print(json.dumps(json.loads(progress_path.read_text(encoding="utf-8")), indent=2))
+
+    with log_path.open("a", encoding="utf-8", buffering=1) as log:
+        header = f"\n\n===== SECURITY-FIRST SUPERVISOR EVAL {datetime.now(timezone.utc).isoformat()} =====\n"
+        print(header, end="", flush=True)
+        log.write(header)
+        log.write("Command: " + " ".join(str(part) for part in cmd) + "\n")
+
+        process = subprocess.Popen(
+            cmd,
+            cwd=SOURCE_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            log.write(line)
+
+        return_code = process.wait()
+
+    if progress_path.exists():
+        print("\nLatest progress after this run:")
+        print(json.dumps(json.loads(progress_path.read_text(encoding="utf-8")), indent=2))
+
+    if return_code != 0:
+        raise RuntimeError(
+            f"Supervisor evaluation stopped with code {return_code}. "
+            "Rerun this same cell to resume."
+        )
+
+
+supervisor_results = TRAIN_ROOT / "evaluationResults_security_first_supervisor_v2.json"
+supervisor_plots = TRAIN_ROOT / "plots_security_first_supervisor_v2"
+supervisor_checkpoints = TRAIN_ROOT / "evaluationResults_security_first_supervisor_v2.json.episodes.jsonl"
+supervisor_progress = TRAIN_ROOT / "evaluationResults_security_first_supervisor_v2.json.progress.json"
+supervisor_log = TRAIN_ROOT / "console_eval_security_first_supervisor_v2.log"
+
+cmd = [
+    sys.executable, "-u", "full_evaluation.py",
+    "--model", str(TRAIN_ROOT / "merged_model"),
+    "--trained-policy", "security_first",
+    "--episodes", "20",
+    "--seed", str(SEED),
+    "--output", str(supervisor_results),
+    "--plot-dir", str(supervisor_plots),
+    "--checkpoint-file", str(supervisor_checkpoints),
+    "--progress-file", str(supervisor_progress),
+]
+run_checkpointed_evaluation(cmd, supervisor_log, supervisor_progress)
+
+supervisor_acceptance_report = TRAIN_ROOT / "benchmark_acceptance_security_first_supervisor_report.json"
+cmd = [
+    sys.executable, "-u", "benchmark_acceptance.py",
+    "--base", str(TRAIN_ROOT / "evaluationResults_base_security_v2.json"),
+    "--candidate", str(supervisor_results),
+    "--report", str(supervisor_acceptance_report),
+]
+result = subprocess.run(
+    cmd,
+    cwd=SOURCE_ROOT,
+    text=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+)
+print(result.stdout)
+report = json.loads(supervisor_acceptance_report.read_text(encoding="utf-8"))
+print("Supervisor accepted:", report["accepted"])
+print("Supervisor acceptance report:", supervisor_acceptance_report)
+```
 ## Exact Resume Procedure
 
 After a runtime disconnect or Colab GPU usage-limit interruption:
