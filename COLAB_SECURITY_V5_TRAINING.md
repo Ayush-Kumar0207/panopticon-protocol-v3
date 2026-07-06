@@ -540,9 +540,11 @@ print("Saved final candidate results:", candidate_results)
 ## Cell 14 - Enforce the Release Gate
 
 The model is not considered fully successful unless this cell prints
-`Accepted: True`.
+`Accepted: True`. A nonzero return code means the gate ran and at least one
+acceptance check failed; the report below tells you exactly which checks failed.
 
 ```python
+import json
 import subprocess
 import sys
 
@@ -554,8 +556,32 @@ cmd = [
     "--candidate", str(TRAIN_ROOT / "evaluationResults_fixed_security_v2.json"),
     "--report", str(acceptance_report),
 ]
-subprocess.run(cmd, cwd=SOURCE_ROOT, check=True)
+result = subprocess.run(
+    cmd,
+    cwd=SOURCE_ROOT,
+    text=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+)
+print(result.stdout)
 print("Acceptance report:", acceptance_report)
+
+if not acceptance_report.exists():
+    raise RuntimeError("Acceptance report was not written. Check the command output above.")
+
+report = json.loads(acceptance_report.read_text(encoding="utf-8"))
+failed = [check for check in report["checks"] if not check["passed"]]
+print("Accepted:", report["accepted"])
+print("Base macro grade:", report["base_macro_grade"])
+print("Candidate macro grade:", report["candidate_macro_grade"])
+
+if failed:
+    print("\nFailed checks:")
+    for check in failed:
+        print(f"- {check['name']}: actual={check['actual']} required={check['required']}")
+    raise RuntimeError("Acceptance gate failed. Use the failed checks above for the model-quality verdict.")
+
+print("Acceptance gate passed.")
 ```
 
 ## Exact Resume Procedure
