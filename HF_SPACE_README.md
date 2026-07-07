@@ -42,6 +42,18 @@ This environment trains the exact capabilities needed for **Scalable AI Oversigh
 - **Strategic Planning**: Multi-step reasoning under partial observability
 - **Adaptive Response**: Adjusting tactics as the adversary evolves
 
+## Latest Security-First V5 Result
+
+The latest checked-in evidence comes from the Drive run `panopticon-security-v5-ep50`:
+
+| Policy | Macro Grade | Security | Sleepers Caught | Gate |
+|---|---:|---:|---:|---|
+| Base untrained Qwen | 0.64111 | 95.96 | 2.87 | Reference |
+| Raw V5 trained model | 0.701627 | 89.26 | 2.68 | Failed |
+| Security-first supervisor | 0.790471 | 100.00 | 3.00 | Passed |
+| Heuristic | 0.6894 | 83.54 | 2.47 | Baseline |
+
+Raw V5 is better than the untrained model on macro grade, but not fully accepted because Level 4/5 security checks still fail. The security-first supervisor diagnostic is the accepted policy path.
 ## API Endpoints
 
 - `GET /health` — Health check

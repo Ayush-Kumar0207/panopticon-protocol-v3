@@ -9,115 +9,77 @@
 
 ## The environment
 
-The Panopticon Protocol v3 is an OpenEnv-compatible counter-espionage simulator where **ARGUS** defends a corporate network against **HYDRA** sleeper agents. The environment is built to stress:
+The Panopticon Protocol v3 is an OpenEnv-compatible counter-espionage simulator where **ARGUS** defends a corporate network against **HYDRA** sleeper agents. It stresses:
 
 - multi-agent deception and theory-of-mind
 - long-horizon planning across 60 to 160 turns
 - irreversible decisions under partial observability
 - adaptive adversaries that punish fixed strategies
 
-The five curriculum levels progressively introduce:
-
-1. canary traps  
-2. rotating leak channels  
-3. false flags  
-4. dead-man's switches  
-5. double-agent turning and disinformation
-
-This is why we believe the project fits the OpenEnv judging themes around **multi-agent interactions**, **long-horizon planning**, and **self-improving curricula**.
+The five curriculum levels progressively introduce canary traps, rotating leak channels, false flags, dead-man's switches, and finally double-agent turning plus disinformation.
 
 ---
 
-## The training run
+## The latest V5 run
 
-The final public artifacts come from a **50-episode-per-level A10G run** using:
+The latest selected Drive artifacts come from `panopticon-security-v5-ep50`, a **50-episode-per-level Security-First V5 run** using:
 
 - base model: `Qwen/Qwen2.5-1.5B-Instruct`
 - method: TRL SFT + LoRA
 - curriculum: `easy -> medium -> hard -> level_4 -> level_5`
-- total expert demonstrations: **29,000**
-- final merged model uploaded to the model repo
+- training data: **250 expert episodes** and **88,896 supervised examples**
+- max sequence length: `512`
+- seed: `42`
+- output: Drive-saved adapters, checkpoints, logs, evaluation JSONs, acceptance reports, and merged model
 
-### Important notebook clarification
+| Level | Episodes | Supervised Examples |
+|---|---:|---:|
+| Easy | 50 | 7,430 |
+| Medium | 50 | 13,166 |
+| Hard | 50 | 18,414 |
+| Level 4 | 50 | 23,889 |
+| Level 5 | 50 | 25,997 |
+| **Total** | **250** | **88,896** |
 
-The repo contains **two different notebooks**:
-
-- **Actual end-to-end training notebook:** [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)
-- **Compatibility copy for the submitted Colab link:** [Panopticon_Plots_Colab.ipynb](Panopticon_Plots_Colab.ipynb)
-
-The canonical training notebook runs the curriculum, saves `output_logs.txt`, merges the adapter, runs evaluation, and uploads artifacts.  
-Because the already-submitted Colab URL cannot be changed, `Panopticon_Plots_Colab.ipynb` now mirrors the same end-to-end flow while keeping the historical filename that the shared link expects.
-
----
-
-## Evidence that training really happened
-
-The strongest submission-side evidence is public and reproducible:
-
-- raw worker log: [`output_logs.txt`](output_logs.txt)
-- local plot source: [`plots/`](plots)
-- uploaded training metrics: [training_metrics/](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/tree/main/training_metrics)
-- uploaded benchmark JSON: [evaluationResults.json](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/blob/main/evaluationResults.json)
-- uploaded showcase JSON: [showcaseResults.json](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/blob/main/showcaseResults.json)
-
-From the finished 50-episode run:
-
-| Level | Examples | Avg Tokens | Final Loss | Loss Reduction |
-|---|---:|---:|---:|---:|
-| Easy | 3,000 | 573 | 0.0249 | 99.0% |
-| Medium | 4,500 | 589 | 0.0220 | 90.6% |
-| Hard | 6,000 | 608 | 0.0238 | 98.9% |
-| Level 4 | 7,500 | 629 | 0.0212 | 91.0% |
-| Level 5 | 8,000 | 647 | 0.0226 | 98.8% |
-
-The training plots in the README are regenerated directly from that saved run, not hand-entered.
+The full optimizer event log remains in Drive as `training_events.jsonl`; the repo keeps compact checked-in summaries and regenerated plots so reviewers can inspect the latest results without multi-GB downloads.
 
 ---
 
 ## What the benchmark taught us
 
-The final structured benchmark is useful for a very specific reason: it shows that **training curves can look healthy while deployment behavior is still reward-misaligned**.
+The final V5 benchmark gives a more precise answer than training loss alone:
 
-On the uploaded held-out evaluation:
+| Policy | Macro Grade | Security | Sleepers Caught | Gate |
+|---|---:|---:|---:|---|
+| Base untrained Qwen | 0.64111 | 95.96 | 2.87 | Reference |
+| Raw V5 trained model | 0.701627 | 89.26 | 2.68 | Failed |
+| Security-first supervisor | 0.790471 | 100.00 | 3.00 | Passed |
+| Heuristic | 0.6894 | 83.54 | 2.47 | Baseline |
 
-- the **heuristic baseline** remains the best balanced security-preserving policy
-- the **trained model** still accumulates too many invalid or operationally weak actions on harder levels
-- the environment therefore exposes a real and interesting failure mode: token-level imitation success does **not automatically** produce robust strategic oversight behavior
+The raw V5 trained model **did improve** over the untrained base and slightly beat the heuristic on macro grade. But it did **not** pass the strict security-first acceptance gate: Level 4 and Level 5 still had pass-rate, security, missed-sleeper, and false-accusation failures.
 
-That is not a bug in the README story. It is one of the most interesting research outcomes of the project.
+The security-first supervisor diagnostic passed every check. That is the strongest operational result, but it should be interpreted honestly: it validates the controller/policy path, not the raw neural model alone.
 
-In other words:
+So the project outcome is not a simple victory lap. It is better and more useful than that:
 
-- **the training pipeline works**
-- **the reward/loss evidence is real**
-- **the environment is difficult enough to reveal where the trained agent still breaks**
-
-For an OpenEnv submission, that is valuable. It means the environment is not a toy benchmark that every policy can fake its way through.
+- the environment exposes a real advanced-tier safety failure mode;
+- the raw V5 model learned meaningful behavior but is not fully aligned;
+- the security-first controller solves the measured gate;
+- the benchmark now tells us exactly what must improve next.
 
 ---
 
 ## Where judges should look
 
-If you want the fastest path through the submission:
-
 1. Try the environment Space: [panopticon-protocol-v3](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
-2. Open the README plots and training summary in the repo
-3. Open the actual training notebook: [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)
-4. Inspect uploaded artifacts in the model repo:
-   - [plots/](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/tree/main/plots)
-   - [training_metrics/](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/tree/main/training_metrics)
-   - [evaluationResults.json](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/blob/main/evaluationResults.json)
+2. Open the README's Security-First V5 benchmark and refreshed plot gallery
+3. Inspect [`evaluation_comparison_latest.json`](evaluation_comparison_latest.json)
+4. Use [`COLAB_SECURITY_V5_TRAINING.md`](COLAB_SECURITY_V5_TRAINING.md) for the checkpoint-resumable Colab workflow
 
 ---
 
-## Why we still think this submission matters
+## Why this still matters
 
-The Panopticon Protocol is not just a game skin. It is a deliberately structured environment for:
+The main claim is not "we solved deception forever." The main claim is: **we built an OpenEnv environment where deception-detection failure modes become trainable, measurable, and visible.**
 
-- hidden-state reasoning
-- adversarial social inference
-- long-horizon resource/security tradeoffs
-- adaptive curriculum learning
-
-The main claim of the project is not "we solved deception forever."  
-The main claim is: **we built an OpenEnv environment where those failure modes become trainable, measurable, and visible.**
+The latest V5 results make that claim stronger, because they distinguish raw model improvement from true security acceptance.

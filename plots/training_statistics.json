@@ -1,394 +1,133 @@
 {
-  "levels": {
+  "schema_version": "panopticon-security-v5-compact-training-summary-v1",
+  "created_at": "2026-07-07",
+  "source": "Google Drive folder panopticon-security-v5-ep50 metadata plus completed V5 evaluation summaries",
+  "training_datasets": {
     "easy": {
-      "label": "Easy",
-      "episodes": 20,
-      "examples": 1767,
-      "tokens": {
-        "min": 432,
-        "avg": 459,
-        "max": 486
-      },
-      "expert": {
-        "grade_mean": 0.7201231313724231,
-        "grade_std": 0.004034599012660678,
-        "grade_ci95_low": 0.7183548903921876,
-        "grade_ci95_high": 0.7218913723526587,
-        "grade_min": 0.7117866424109895,
-        "grade_max": 0.7249578021687564,
-        "reward_mean": 5.53065,
-        "reward_std": 0.18380301598235668,
-        "reward_min": 5.25375,
-        "reward_max": 5.84925,
-        "revenue_mean": 324.35499999999934,
-        "revenue_std": 6.126767199411873,
-        "security_mean": 100.0,
-        "caught_mean": 1.0,
-        "caught_max": 1,
-        "episode_steps_mean": 60.0
-      },
-      "optimization": {
-        "train_steps": 88,
-        "epochs": 1.9960384833050369,
-        "loss_start": 1.4258,
-        "loss_final": 0.0292,
-        "loss_reduction_pct": 97.95202693224856,
-        "half_loss_step": 7,
-        "near_final_step": 14,
-        "grad_mean": 1.4769596535373817,
-        "grad_p95": 2.5779716372489903,
-        "grad_max": 3.8703298568725586,
-        "learning_rate_peak": 1.995305164319249e-05
-      }
+      "episodes": 50,
+      "examples": 7430,
+      "max_seq_length": 512
     },
     "medium": {
-      "label": "Medium",
-      "episodes": 20,
-      "examples": 2740,
-      "tokens": {
-        "min": 434,
-        "avg": 462,
-        "max": 501
-      },
-      "expert": {
-        "grade_mean": 0.7241303445050865,
-        "grade_std": 0.0036883435585318885,
-        "grade_ci95_low": 0.7225138566685213,
-        "grade_ci95_high": 0.7257468323416517,
-        "grade_min": 0.7166340234657478,
-        "grade_max": 0.7291055651844549,
-        "reward_mean": 8.31795,
-        "reward_std": 0.2964469931317268,
-        "reward_min": 7.76325,
-        "reward_max": 8.9265,
-        "revenue_mean": 437.2649999999992,
-        "revenue_std": 9.881566437724198,
-        "security_mean": 100.0,
-        "caught_mean": 2.0,
-        "caught_max": 2,
-        "episode_steps_mean": 90.0
-      },
-      "optimization": {
-        "train_steps": 136,
-        "epochs": 1.986861313868613,
-        "loss_start": 0.1169,
-        "loss_final": 0.0282,
-        "loss_reduction_pct": 75.87681779298546,
-        "half_loss_step": 5,
-        "near_final_step": 20,
-        "grad_mean": 0.8455873584265218,
-        "grad_p95": 1.7855847775936127,
-        "grad_max": 2.15338134765625,
-        "learning_rate_peak": 1.9879336349924587e-05
-      }
+      "episodes": 50,
+      "examples": 13166,
+      "max_seq_length": 512
     },
     "hard": {
-      "label": "Hard",
-      "episodes": 20,
-      "examples": 3804,
-      "tokens": {
-        "min": 437,
-        "avg": 464,
-        "max": 491
-      },
-      "expert": {
-        "grade_mean": 0.6768512682269308,
-        "grade_std": 0.006154824047636525,
-        "grade_ci95_low": 0.6741537976547579,
-        "grade_ci95_high": 0.6795487387991036,
-        "grade_min": 0.6668851013198609,
-        "grade_max": 0.6862302309722772,
-        "reward_mean": 12.74685,
-        "reward_std": 0.20932116786361923,
-        "reward_min": 12.36375,
-        "reward_max": 13.125,
-        "revenue_mean": 604.8950000000004,
-        "revenue_std": 6.977372262120715,
-        "security_mean": 100.0,
-        "caught_mean": 3.0,
-        "caught_max": 3,
-        "episode_steps_mean": 120.0
-      },
-      "optimization": {
-        "train_steps": 190,
-        "epochs": 1.9978969505783386,
-        "loss_start": 1.1717,
-        "loss_final": 0.0244,
-        "loss_reduction_pct": 97.91755568831613,
-        "half_loss_step": 7,
-        "near_final_step": 14,
-        "grad_mean": 1.1684107684775402,
-        "grad_p95": 2.2068250298500054,
-        "grad_max": 4.475714206695557,
-        "learning_rate_peak": 1.9978284473398482e-05
-      }
+      "episodes": 50,
+      "examples": 18414,
+      "max_seq_length": 512
     },
     "level_4": {
-      "label": "Level 4",
-      "episodes": 20,
-      "examples": 4866,
-      "tokens": {
-        "min": 439,
-        "avg": 466,
-        "max": 493
-      },
-      "expert": {
-        "grade_mean": 0.7149936038637599,
-        "grade_std": 0.07768330536179917,
-        "grade_ci95_low": 0.6809473941686119,
-        "grade_ci95_high": 0.7490398135589078,
-        "grade_min": 0.678272483750197,
-        "grade_max": 0.8960285512685511,
-        "reward_mean": 16.4724,
-        "reward_std": 0.6678578402151482,
-        "reward_min": 15.55275,
-        "reward_max": 17.94825,
-        "revenue_mean": 770.7362500000031,
-        "revenue_std": 14.967476747847916,
-        "security_mean": 76.375,
-        "caught_mean": 3.15,
-        "caught_max": 4,
-        "episode_steps_mean": 150.0
-      },
-      "optimization": {
-        "train_steps": 243,
-        "epochs": 1.9979449239621867,
-        "loss_start": 0.1061,
-        "loss_final": 0.0266,
-        "loss_reduction_pct": 74.92931196983977,
-        "half_loss_step": 4,
-        "near_final_step": 17,
-        "grad_mean": 0.6081048351992305,
-        "grad_p95": 1.304374611377716,
-        "grad_max": 1.729535698890686,
-        "learning_rate_peak": 1.994910941475827e-05
-      }
+      "episodes": 50,
+      "examples": 23889,
+      "max_seq_length": 512
     },
     "level_5": {
-      "label": "Level 5",
-      "episodes": 20,
-      "examples": 5763,
-      "tokens": {
-        "min": 441,
-        "avg": 468,
-        "max": 495
-      },
-      "expert": {
-        "grade_mean": 0.8188903071599952,
-        "grade_std": 0.013648177294892701,
-        "grade_ci95_low": 0.8129087297287267,
-        "grade_ci95_high": 0.8248718845912637,
-        "grade_min": 0.8035762433355289,
-        "grade_max": 0.852724382037326,
-        "reward_mean": 29.35374125,
-        "reward_std": 0.3911741254220054,
-        "reward_min": 28.688575,
-        "reward_max": 30.1954,
-        "revenue_mean": 895.3025000000054,
-        "revenue_std": 9.085992327695841,
-        "security_mean": 59.92500000000004,
-        "caught_mean": 3.2,
-        "caught_max": 4,
-        "episode_steps_mean": 160.0
-      },
-      "optimization": {
-        "train_steps": 288,
-        "epochs": 1.9994794377928162,
-        "loss_start": 1.1975,
-        "loss_final": 0.0107,
-        "loss_reduction_pct": 99.10647181628393,
-        "half_loss_step": 7,
-        "near_final_step": 15,
-        "grad_mean": 0.9171444009472098,
-        "grad_p95": 2.189018714427947,
-        "grad_max": 4.197549343109131,
-        "learning_rate_peak": 1.9985673352435532e-05
-      }
+      "episodes": 50,
+      "examples": 25997,
+      "max_seq_length": 512
     }
   },
-  "global": {
-    "level_count": 5,
-    "total_examples": 18940,
-    "approx_total_tokens": 8806629,
-    "total_train_steps": 945,
-    "best_final_loss": 0.0107,
-    "worst_final_loss": 0.0292
+  "totals": {
+    "episodes": 250,
+    "examples": 88896,
+    "max_seq_length": 512
   },
-  "source_log": "training_events_fixed_ep20.jsonl",
-  "source_events": "training_events_fixed_ep20.jsonl",
-  "fallback_log": "output_logs.txt",
-  "events": {
-    "event_count": 12708,
-    "event_type_counts": {
-      "expert_step": 11600,
-      "expert_episode": 100,
-      "dataset_written": 5,
-      "expert_generation_complete": 5,
-      "train_progress": 945,
-      "dataset_reused": 5,
-      "model_load_start": 5,
-      "model_load_complete": 5,
-      "token_stats": 5,
-      "gpu_snapshot": 5,
-      "train_start": 5,
-      "train_sanity": 5,
-      "train_complete": 5,
-      "level_complete": 5,
-      "curriculum_progress": 5,
-      "merge_start": 1,
-      "merge_complete": 1,
-      "run_complete": 1
+  "raw_v5_acceptance": {
+    "accepted": false,
+    "base_macro_grade": 0.64111,
+    "candidate_macro_grade": 0.701627,
+    "failed_checks": [
+      {
+        "name": "level_4.pass_rate_100pct",
+        "actual": 0.5,
+        "required": 1.0
+      },
+      {
+        "name": "level_4.security_not_worse",
+        "actual": 85.85,
+        "required": ">= 95.05"
+      },
+      {
+        "name": "level_4.caught_not_worse",
+        "actual": 3.5,
+        "required": ">= 3.85"
+      },
+      {
+        "name": "level_4.zero_missed",
+        "actual": 0.5,
+        "required": 0.0
+      },
+      {
+        "name": "level_5.pass_rate_100pct",
+        "actual": 0.05,
+        "required": 1.0
+      },
+      {
+        "name": "level_5.security_not_worse",
+        "actual": 60.47,
+        "required": ">= 84.81"
+      },
+      {
+        "name": "level_5.caught_not_worse",
+        "actual": 3.9,
+        "required": ">= 4.5"
+      },
+      {
+        "name": "level_5.zero_missed",
+        "actual": 1.1,
+        "required": 0.0
+      },
+      {
+        "name": "level_5.zero_false_accusations",
+        "actual": 0.1,
+        "required": 0.0
+      }
+    ]
+  },
+  "supervisor_acceptance": {
+    "accepted": true,
+    "base_macro_grade": 0.64111,
+    "candidate_macro_grade": 0.7904709999999999,
+    "failed_checks": [],
+    "note": "This validates a deterministic security-first supervisor, not the raw fine-tuned model by itself."
+  },
+  "level_macro_averages": {
+    "base_untrained": {
+      "grade": 0.64111,
+      "reward": 7.644,
+      "revenue": 448.15999999999997,
+      "security": 95.96,
+      "sleepers_caught": 2.87
     },
-    "per_level": {
-      "easy": {
-        "events": 1319,
-        "latest_curriculum_pct": 20.0,
-        "raw_examples": 1200,
-        "weighted_examples": 1767,
-        "action_counts": {
-          "canary": 92,
-          "investigate/audit": 195,
-          "investigate/correlate": 70,
-          "investigate/verify": 35,
-          "monitor": 267,
-          "neutralize/interrogate": 20,
-          "neutralize/terminate": 20,
-          "work": 501
-        },
-        "weighted_action_counts": {
-          "canary": 184,
-          "investigate/audit": 390,
-          "investigate/correlate": 140,
-          "investigate/verify": 105,
-          "monitor": 267,
-          "neutralize/interrogate": 80,
-          "neutralize/terminate": 100,
-          "work": 501
-        },
-        "runtime_sec": 872.343
-      },
-      "medium": {
-        "events": 1967,
-        "latest_curriculum_pct": 39.883,
-        "raw_examples": 1800,
-        "weighted_examples": 2740,
-        "action_counts": {
-          "canary": 144,
-          "investigate/audit": 190,
-          "investigate/correlate": 256,
-          "investigate/verify": 35,
-          "monitor": 418,
-          "neutralize/interrogate": 40,
-          "neutralize/terminate": 40,
-          "work": 677
-        },
-        "weighted_action_counts": {
-          "canary": 288,
-          "investigate/audit": 380,
-          "investigate/correlate": 512,
-          "investigate/verify": 105,
-          "monitor": 418,
-          "neutralize/interrogate": 160,
-          "neutralize/terminate": 200,
-          "work": 677
-        },
-        "runtime_sec": 7151.431
-      },
-      "hard": {
-        "events": 2621,
-        "latest_curriculum_pct": 60.0,
-        "raw_examples": 2400,
-        "weighted_examples": 3804,
-        "action_counts": {
-          "canary": 157,
-          "investigate/audit": 328,
-          "investigate/correlate": 411,
-          "investigate/verify": 44,
-          "monitor": 535,
-          "neutralize/interrogate": 60,
-          "neutralize/terminate": 60,
-          "work": 805
-        },
-        "weighted_action_counts": {
-          "canary": 314,
-          "investigate/audit": 656,
-          "investigate/correlate": 822,
-          "investigate/verify": 132,
-          "monitor": 535,
-          "neutralize/interrogate": 240,
-          "neutralize/terminate": 300,
-          "work": 805
-        },
-        "runtime_sec": 18922.962
-      },
-      "level_4": {
-        "events": 3274,
-        "latest_curriculum_pct": 79.984,
-        "raw_examples": 3000,
-        "weighted_examples": 4866,
-        "action_counts": {
-          "canary": 160,
-          "deploy_double": 27,
-          "investigate/audit": 474,
-          "investigate/correlate": 589,
-          "investigate/verify": 47,
-          "monitor": 683,
-          "neutralize/interrogate": 63,
-          "neutralize/terminate": 60,
-          "neutralize/turn": 3,
-          "work": 894
-        },
-        "weighted_action_counts": {
-          "canary": 320,
-          "deploy_double": 135,
-          "investigate/audit": 948,
-          "investigate/correlate": 1178,
-          "investigate/verify": 141,
-          "monitor": 683,
-          "neutralize/interrogate": 252,
-          "neutralize/terminate": 300,
-          "neutralize/turn": 15,
-          "work": 894
-        },
-        "runtime_sec": 2848.249
-      },
-      "level_5": {
-        "events": 3519,
-        "latest_curriculum_pct": 100.0,
-        "raw_examples": 3200,
-        "weighted_examples": 5763,
-        "action_counts": {
-          "canary": 154,
-          "deploy_double": 180,
-          "investigate/audit": 525,
-          "investigate/correlate": 615,
-          "investigate/verify": 49,
-          "monitor": 669,
-          "neutralize/interrogate": 65,
-          "neutralize/terminate": 44,
-          "neutralize/turn": 20,
-          "work": 879
-        },
-        "weighted_action_counts": {
-          "canary": 308,
-          "deploy_double": 900,
-          "investigate/audit": 1050,
-          "investigate/correlate": 1230,
-          "investigate/verify": 147,
-          "monitor": 669,
-          "neutralize/interrogate": 260,
-          "neutralize/terminate": 220,
-          "neutralize/turn": 100,
-          "work": 879
-        },
-        "runtime_sec": 366.285
-      }
+    "raw_v5_trained": {
+      "grade": 0.701627,
+      "reward": 8.204,
+      "revenue": 483.9,
+      "security": 89.264,
+      "sleepers_caught": 2.68
+    },
+    "security_first_supervisor": {
+      "grade": 0.7904709999999999,
+      "reward": 23.328,
+      "revenue": 571.5799999999999,
+      "security": 100.0,
+      "sleepers_caught": 3.0
+    },
+    "heuristic": {
+      "grade": 0.6894,
+      "reward": 10.526,
+      "revenue": 612.36,
+      "security": 83.54,
+      "sleepers_caught": 2.4699999999999998
+    },
+    "random": {
+      "grade": 0.6474,
+      "reward": -25.242,
+      "revenue": 216.5,
+      "security": 69.26,
+      "sleepers_caught": 2.75
     }
-  },
-  "event_processing": {
-    "raw_event_count": 16653,
-    "canonical_event_count": 12708,
-    "excluded_resume_retry_events": 3945,
-    "policy": "latest finished dataset generation and completed optimizer trajectory per level"
   }
 }

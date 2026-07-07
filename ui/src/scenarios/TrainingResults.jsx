@@ -46,7 +46,7 @@ export default function TrainingResults() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        📈 PPO Curriculum Training — Reward Curves Across 5 Levels
+        📈 Security-First V5 Curriculum — Reward Curves Across 5 Levels
       </motion.div>
 
       <div className={styles.legend}>
@@ -105,19 +105,19 @@ export default function TrainingResults() {
 
       <div className={styles.statsRow}>
         <motion.div className={styles.statCard} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5 }}>
-          <div className={styles.statLabel}>Security After Training</div>
-          <div className={styles.statValue} style={{ color: 'var(--success)' }}>0% → 100%</div>
-          <div className={styles.statSub}>Easy/Medium/Hard</div>
+          <div className={styles.statLabel}>Raw V5 Macro Grade</div>
+          <div className={styles.statValue} style={{ color: 'var(--success)' }}>0.7016</div>
+          <div className={styles.statSub}>Improved, gate failed</div>
         </motion.div>
         <motion.div className={styles.statCard} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.7 }}>
-          <div className={styles.statLabel}>Sleepers Caught (L5)</div>
-          <div className={styles.statValue} style={{ color: 'var(--double-primary)' }}>{caughtL5}/5</div>
-          <div className={styles.statSub}>Manchurian difficulty</div>
+          <div className={styles.statLabel}>Supervisor Macro Grade</div>
+          <div className={styles.statValue} style={{ color: 'var(--double-primary)' }}>0.7905</div>
+          <div className={styles.statSub}>Accepted diagnostic</div>
         </motion.div>
         <motion.div className={styles.statCard} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.9 }}>
-          <div className={styles.statLabel}>Peak Reward (L5)</div>
-          <div className={styles.statValue} style={{ color: 'var(--argus-primary)' }}>{finalL5}</div>
-          <div className={styles.statSub}>With Counterstrike surge</div>
+          <div className={styles.statLabel}>V5 Training Examples</div>
+          <div className={styles.statValue} style={{ color: 'var(--argus-primary)' }}>88,896</div>
+          <div className={styles.statSub}>250 expert episodes</div>
         </motion.div>
       </div>
     </div>

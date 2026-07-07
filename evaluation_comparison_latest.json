@@ -1,6 +1,11 @@
 {
-  "schema_version": "panopticon-evaluation-comparison-v1",
-  "created_at": "2026-06-14",
+  "schema_version": "panopticon-security-v5-evaluation-comparison-v1",
+  "created_at": "2026-07-07",
+  "drive_folder": {
+    "name": "panopticon-security-v5-ep50",
+    "id": "1OXQgw1OA-cAAXxLp9t8YbOsjv9dIBB_-",
+    "url": "https://drive.google.com/drive/folders/1OXQgw1OA-cAAXxLp9t8YbOsjv9dIBB_-"
+  },
   "benchmark": {
     "levels": [
       "easy",
@@ -9,113 +14,426 @@
       "level_4",
       "level_5"
     ],
-    "episodes_per_agent_level": 5,
-    "completed_episode_checkpoints_per_run": 75,
+    "episodes_per_agent_level": 20,
+    "completed_episode_checkpoints_per_run": 300,
     "seed": 42,
-    "reward_schema_version": "legacy-dual-objective-v1",
-    "grader_schema_version": "legacy-composite-v1",
+    "reward_schema_version": "security-first-v2",
+    "grader_schema_version": "security-gated-v2",
     "base_model": "Qwen/Qwen2.5-1.5B-Instruct",
-    "fixed_model": "/content/drive/MyDrive/panopticon-fixed-v3-ep20/merged_model",
-    "note": "The base and fixed LLM are stored under the trained agent key in their respective evaluation payloads. Values below are transcribed from the completed runs' generated benchmark summary tables; overall values are level-macro averages."
+    "trained_model": "/content/drive/MyDrive/panopticon-security-v5-ep50/merged_model",
+    "training_episodes_per_level": 50,
+    "training_total_episodes": 250,
+    "training_total_examples": 88896,
+    "training_source_commit": "4c1f2db6a7a3d3c88136d5b51fbcdfe4058ad818",
+    "evaluation_source_commit": "58572637f2ee8bf78406380e286dd86f50455027",
+    "note": "Values are transcribed from completed Drive console logs, progress JSONs, and acceptance reports. The raw evaluation JSON artifacts are multi-GB."
+  },
+  "training_datasets": {
+    "easy": {
+      "episodes": 50,
+      "examples": 7430,
+      "max_seq_length": 512
+    },
+    "medium": {
+      "episodes": 50,
+      "examples": 13166,
+      "max_seq_length": 512
+    },
+    "hard": {
+      "episodes": 50,
+      "examples": 18414,
+      "max_seq_length": 512
+    },
+    "level_4": {
+      "episodes": 50,
+      "examples": 23889,
+      "max_seq_length": 512
+    },
+    "level_5": {
+      "episodes": 50,
+      "examples": 25997,
+      "max_seq_length": 512
+    }
   },
   "agents": {
     "base_untrained": {
       "label": "Base untrained",
-      "grade": [0.731, 0.731, 0.671, 0.628, 0.618],
-      "reward": [2.68, 5.47, 8.89, 13.32, 16.95],
-      "revenue": [229.2, 342.4, 476.4, 647.3, 778.5],
-      "security": [100.0, 100.0, 100.0, 96.5, 92.6],
-      "sleepers_caught": [1.0, 2.0, 3.0, 4.0, 5.0]
+      "role": "Untrained Qwen/Qwen2.5-1.5B-Instruct evaluated in the trained slot.",
+      "grade": [
+        0.63,
+        0.671,
+        0.616,
+        0.657,
+        0.631
+      ],
+      "grade_std": [
+        0.042,
+        0.018,
+        0.0,
+        0.051,
+        0.053
+      ],
+      "reward": [
+        1.87,
+        4.21,
+        8.57,
+        11.36,
+        12.21
+      ],
+      "revenue": [
+        236.1,
+        313.9,
+        433.9,
+        574.3,
+        682.6
+      ],
+      "security": [
+        100.0,
+        100.0,
+        100.0,
+        95.0,
+        84.8
+      ],
+      "sleepers_caught": [
+        1.0,
+        2.0,
+        3.0,
+        3.85,
+        4.5
+      ]
     },
-    "fixed_trained": {
-      "label": "Fixed trained",
-      "grade": [0.731, 0.731, 0.671, 0.699, 0.669],
-      "reward": [4.46, 7.02, 10.04, 13.31, 16.47],
-      "revenue": [288.6, 393.8, 514.8, 663.8, 781.9],
-      "security": [100.0, 100.0, 100.0, 78.2, 71.4],
-      "sleepers_caught": [1.0, 2.0, 3.0, 3.2, 4.2]
+    "raw_v5_trained": {
+      "label": "Raw V5 trained",
+      "role": "Merged V5 LoRA model, no deterministic security supervisor.",
+      "grade": [
+        0.728,
+        0.731,
+        0.671,
+        0.722,
+        0.656
+      ],
+      "grade_std": [
+        0.011,
+        0.0,
+        0.0,
+        0.04,
+        0.044
+      ],
+      "reward": [
+        3.3,
+        6.47,
+        10.66,
+        12.32,
+        8.27
+      ],
+      "revenue": [
+        230.7,
+        337.3,
+        476.7,
+        640.8,
+        734.0
+      ],
+      "security": [
+        100.0,
+        100.0,
+        100.0,
+        85.85,
+        60.47
+      ],
+      "sleepers_caught": [
+        1.0,
+        2.0,
+        3.0,
+        3.5,
+        3.9
+      ],
+      "pass_rate": [
+        1.0,
+        1.0,
+        1.0,
+        0.5,
+        0.05
+      ]
+    },
+    "security_first_supervisor": {
+      "label": "Security-first supervisor",
+      "role": "Deterministic security-first policy evaluated in the trained slot.",
+      "grade": [
+        0.720045,
+        0.735125,
+        0.679445,
+        0.900675,
+        0.917065
+      ],
+      "grade_std": [
+        0.004,
+        0.005,
+        0.006,
+        0.003,
+        0.005
+      ],
+      "reward": [
+        5.67,
+        8.57,
+        12.95,
+        18.43,
+        71.02
+      ],
+      "revenue": [
+        308.2,
+        405.2,
+        550.8,
+        736.4,
+        857.3
+      ],
+      "security": [
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "sleepers_caught": [
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0
+      ],
+      "pass_rate": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
     },
     "heuristic": {
       "label": "Heuristic",
-      "grade": [0.728, 0.731, 0.691, 0.698, 0.605],
-      "reward": [5.53, 8.71, 13.03, 16.61, 18.82],
-      "revenue": [324.4, 450.5, 614.5, 774.4, 809.4],
-      "security": [100.0, 100.0, 100.0, 77.6, 29.7],
-      "sleepers_caught": [1.0, 2.0, 3.0, 3.2, 3.0]
+      "role": "Legacy deterministic heuristic baseline.",
+      "grade": [
+        0.725,
+        0.727,
+        0.68,
+        0.689,
+        0.626
+      ],
+      "grade_std": [
+        0.006,
+        0.007,
+        0.012,
+        0.018,
+        0.046
+      ],
+      "reward": [
+        6.1,
+        9.99,
+        14.43,
+        13.3,
+        8.81
+      ],
+      "revenue": [
+        324.8,
+        456.2,
+        612.9,
+        771.0,
+        896.9
+      ],
+      "security": [
+        100.0,
+        100.0,
+        100.0,
+        73.4,
+        44.3
+      ],
+      "sleepers_caught": [
+        1.0,
+        2.0,
+        3.0,
+        3.05,
+        3.3
+      ]
     },
     "random": {
       "label": "Random",
-      "grade": [0.630, 0.654, 0.604, 0.647, 0.669],
-      "reward": [-0.64, 2.44, -0.90, -0.78, 36.25],
-      "revenue": [135.1, 260.4, 174.5, 230.9, 327.4],
-      "security": [81.9, 79.3, 73.4, 37.8, 31.4],
-      "sleepers_caught": [0.8, 1.6, 2.8, 3.6, 4.4]
-    },
-    "previous_pre_fix_trained": {
-      "label": "Previous pre-fix trained",
-      "grade": [0.5021666667, 0.4404666667, 0.3698333333, 0.4108, 0.4334],
-      "reward": [2.9781666667, -14.97925, -6.2160833333, 2.48225, -35.3841666667],
-      "revenue": [260.9666666667, 300.4833333333, 451.4833333333, 570.1333333333, 532.7166666667],
-      "security": [76.3333333333, 43.5, 5.4333333333, 0.3, 13.7333333333],
-      "sleepers_caught": [0.0, 0.0, 0.0, 0.0, 0.0]
+      "role": "Random action baseline.",
+      "grade": [
+        0.631,
+        0.666,
+        0.65,
+        0.636,
+        0.654
+      ],
+      "grade_std": [
+        0.08,
+        0.074,
+        0.089,
+        0.105,
+        0.076
+      ],
+      "reward": [
+        -14.95,
+        -24.19,
+        -32.55,
+        -47.7,
+        -6.82
+      ],
+      "revenue": [
+        122.0,
+        173.8,
+        208.7,
+        234.6,
+        343.4
+      ],
+      "security": [
+        92.4,
+        83.5,
+        66.1,
+        59.3,
+        45.0
+      ],
+      "sleepers_caught": [
+        0.9,
+        1.85,
+        2.75,
+        3.7,
+        4.55
+      ]
     }
   },
   "level_macro_averages": {
     "base_untrained": {
-      "grade": 0.6758,
-      "reward": 9.462,
-      "revenue": 494.76,
-      "security": 97.82,
-      "sleepers_caught": 3.0
+      "grade": 0.64111,
+      "reward": 7.644,
+      "revenue": 448.15999999999997,
+      "security": 95.96,
+      "sleepers_caught": 2.87
     },
-    "fixed_trained": {
-      "grade": 0.7002,
-      "reward": 10.26,
-      "revenue": 528.58,
-      "security": 89.92,
+    "raw_v5_trained": {
+      "grade": 0.701627,
+      "reward": 8.204,
+      "revenue": 483.9,
+      "security": 89.264,
       "sleepers_caught": 2.68
     },
+    "security_first_supervisor": {
+      "grade": 0.7904709999999999,
+      "reward": 23.328,
+      "revenue": 571.5799999999999,
+      "security": 100.0,
+      "sleepers_caught": 3.0
+    },
     "heuristic": {
-      "grade": 0.6906,
-      "reward": 12.54,
-      "revenue": 594.64,
-      "security": 81.46,
-      "sleepers_caught": 2.44
+      "grade": 0.6894,
+      "reward": 10.526,
+      "revenue": 612.36,
+      "security": 83.54,
+      "sleepers_caught": 2.4699999999999998
     },
     "random": {
-      "grade": 0.6408,
-      "reward": 7.274,
-      "revenue": 225.66,
-      "security": 60.76,
-      "sleepers_caught": 2.64
-    },
-    "previous_pre_fix_trained": {
-      "grade": 0.4313333333,
-      "reward": -10.2238166667,
-      "revenue": 423.1566666667,
-      "security": 27.86,
-      "sleepers_caught": 0.0
+      "grade": 0.6474,
+      "reward": -25.242,
+      "revenue": 216.5,
+      "security": 69.26,
+      "sleepers_caught": 2.75
     }
   },
-  "fixed_minus_base": {
-    "grade": 0.0244,
-    "reward": 0.798,
-    "revenue": 33.82,
-    "security": -7.9,
-    "sleepers_caught": -0.32
+  "comparisons": {
+    "raw_v5_minus_base": {
+      "grade": 0.060517,
+      "reward": 0.56,
+      "revenue": 35.74,
+      "security": -6.696,
+      "sleepers_caught": -0.19
+    },
+    "raw_v5_minus_heuristic": {
+      "grade": 0.012227,
+      "reward": -2.322,
+      "revenue": -128.46,
+      "security": 5.724,
+      "sleepers_caught": 0.21
+    },
+    "supervisor_minus_base": {
+      "grade": 0.149361,
+      "reward": 15.684,
+      "revenue": 123.42,
+      "security": 4.04,
+      "sleepers_caught": 0.13
+    },
+    "supervisor_minus_raw_v5": {
+      "grade": 0.088844,
+      "reward": 15.124,
+      "revenue": 87.68,
+      "security": 10.736,
+      "sleepers_caught": 0.32
+    },
+    "supervisor_minus_heuristic": {
+      "grade": 0.101071,
+      "reward": 12.802,
+      "revenue": -40.78,
+      "security": 16.46,
+      "sleepers_caught": 0.53
+    }
   },
-  "fixed_minus_heuristic": {
-    "grade": 0.0096,
-    "reward": -2.28,
-    "revenue": -66.06,
-    "security": 8.46,
-    "sleepers_caught": 0.24
-  },
-  "fixed_minus_previous_pre_fix_trained": {
-    "grade": 0.2688666667,
-    "reward": 20.4838166667,
-    "revenue": 105.4233333333,
-    "security": 62.06,
-    "sleepers_caught": 2.68
+  "acceptance": {
+    "raw_v5_trained": {
+      "accepted": false,
+      "base_macro_grade": 0.64111,
+      "candidate_macro_grade": 0.701627,
+      "failed_checks": [
+        {
+          "name": "level_4.pass_rate_100pct",
+          "actual": 0.5,
+          "required": 1.0
+        },
+        {
+          "name": "level_4.security_not_worse",
+          "actual": 85.85,
+          "required": ">= 95.05"
+        },
+        {
+          "name": "level_4.caught_not_worse",
+          "actual": 3.5,
+          "required": ">= 3.85"
+        },
+        {
+          "name": "level_4.zero_missed",
+          "actual": 0.5,
+          "required": 0.0
+        },
+        {
+          "name": "level_5.pass_rate_100pct",
+          "actual": 0.05,
+          "required": 1.0
+        },
+        {
+          "name": "level_5.security_not_worse",
+          "actual": 60.47,
+          "required": ">= 84.81"
+        },
+        {
+          "name": "level_5.caught_not_worse",
+          "actual": 3.9,
+          "required": ">= 4.5"
+        },
+        {
+          "name": "level_5.zero_missed",
+          "actual": 1.1,
+          "required": 0.0
+        },
+        {
+          "name": "level_5.zero_false_accusations",
+          "actual": 0.1,
+          "required": 0.0
+        }
+      ]
+    },
+    "security_first_supervisor": {
+      "accepted": true,
+      "base_macro_grade": 0.64111,
+      "candidate_macro_grade": 0.7904709999999999,
+      "failed_checks": [],
+      "note": "This validates a deterministic security-first supervisor, not the raw fine-tuned model by itself."
+    }
   }
 }

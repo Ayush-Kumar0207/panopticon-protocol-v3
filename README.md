@@ -35,8 +35,8 @@
 - **OpenEnv environment hosted on Hugging Face Spaces:** [Demo Space](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
 - **Minimal TRL training script / Colab path:** [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)
 - **Submitted Colab link used in the form:** [Google Colab URL](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
-- **Newest fixed-run training evidence:** [`training_events_fixed_ep20.jsonl`](training_events_fixed_ep20.jsonl), [`plots/training_statistics.json`](plots/training_statistics.json), and [`plots/`](plots)
-- **Newest matched evaluation evidence:** [`evaluation_comparison_latest.json`](evaluation_comparison_latest.json) and the latest fixed-model evaluation gallery in [`plots/`](plots)
+- **Newest Security-First V5 evidence:** [`evaluation_comparison_latest.json`](evaluation_comparison_latest.json), [`COLAB_SECURITY_V5_TRAINING.md`](COLAB_SECURITY_V5_TRAINING.md), and the refreshed V5 evaluation gallery in [`plots/`](plots)
+- **Historical fixed-run raw log:** [`training_events_fixed_ep20.jsonl`](training_events_fixed_ep20.jsonl)
 - **Historical training evidence:** [`output_logs.txt`](output_logs.txt) and the uploaded [`training_metrics/`](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/tree/main/training_metrics) folder in the previous model repo
 - **Trainer Space link preserved for judges:** [panopticon-trainer](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer)
 - **Merged model destination:** [panopticon-argus-qwen-1.5B](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B)
@@ -252,142 +252,132 @@ The full gauntlet. Gen-5 Manchurian candidates with active counter-intelligence.
 
 ## 📈 Training Results & Improvement Evidence
 
-The fixed curriculum run completed on **June 14, 2026** using **Qwen/Qwen2.5-1.5B-Instruct**, **TRL SFT + LoRA**, and the corrected compact trajectory schema. Its raw append-only Drive log is committed as [`training_events_fixed_ep20.jsonl`](training_events_fixed_ep20.jsonl). The plot pipeline removes interrupted-session and resume duplicates before calculating the figures below, selecting the final dataset-generation block and completed optimizer trajectory for each level.
+The latest selected Drive run is **Security-First V5**, stored at `panopticon-security-v5-ep50`. It trained from `Qwen/Qwen2.5-1.5B-Instruct` with TRL SFT + LoRA, saved checkpoints and curriculum state directly to Google Drive, merged the final adapter, and completed matched base/raw/supervisor evaluations.
 
-The run completed all five chained stages and merged the final adapter into a standalone model. This section reports verified **training-time evidence**. It does not substitute for a held-out benchmark of the merged model.
+The full V5 optimizer event log is still in Drive as `training_events.jsonl`; the checked-in training plots below are compact diagnostics generated from Drive metadata and completed benchmark reports. This keeps the repository lightweight while avoiding stale EP20 plots.
 
-### Training Configuration
+### V5 Training Configuration
 
 | Parameter | Value |
 |-----------|-------|
 | **Base Model** | `Qwen/Qwen2.5-1.5B-Instruct` |
 | **Method** | Supervised Fine-Tuning (SFT) with LoRA |
 | **Curriculum** | 5 chained levels (`easy` -> `level_5`) |
-| **Episodes per Level** | `20` |
-| **Expert Data** | 100 expert episodes, 11,600 raw trajectory steps, 18,940 weighted supervised examples |
-| **Approx. Token Budget** | 8.81M tokens |
-| **Logged Optimization Steps** | 945 canonical updates after resume/retry deduplication |
-| **Epochs / Max Sequence** | 2 epochs per level / 512 tokens |
-| **Hardware** | NVIDIA Tesla T4, `bfloat16` |
-| **Framework** | Hugging Face TRL + PEFT |
+| **Episodes per Level** | `50` |
+| **Expert Episodes** | `250` total |
+| **Supervised Examples** | `88,896` total |
+| **Max Sequence Length** | `512` |
+| **Seed** | `42` |
+| **Training Profile** | `low-vram-t4` |
+| **Training Source Commit** | `4c1f2db6a7a3d3c88136d5b51fbcdfe4058ad818` |
+| **Evaluation Source Commit** | `58572637f2ee8bf78406380e286dd86f50455027` |
 
-### Quantitative Snapshot
+### V5 Dataset Snapshot
+
+| Level | Episodes | Supervised Examples | Max Sequence |
+|-------|---------:|--------------------:|-------------:|
+| **Easy** | 50 | 7,430 | 512 |
+| **Medium** | 50 | 13,166 | 512 |
+| **Hard** | 50 | 18,414 | 512 |
+| **Level 4** | 50 | 23,889 | 512 |
+| **Level 5** | 50 | 25,997 | 512 |
+| **Total** | **250** | **88,896** | **512** |
+
+### V5 Quality Snapshot
 
 | Signal | Value |
-|--------|-------|
-| **Best final logged loss** | `0.0107` on `level_5` |
-| **Fastest half-loss convergence** | `4` logged updates on `level_4` |
-| **Hardest-tier expert reward mean** | `29.35 +/- 0.39` on `level_5` |
-| **Easy-level expert grade** | `0.720 +/- 0.004` |
-| **Level-5 expert grade** | `0.819 +/- 0.014` |
-| **Largest single-level dataset** | `5,763` weighted examples (`level_5`) |
-| **Advanced Level-5 coverage** | 900 weighted `deploy_double` and 100 weighted `neutralize/turn` examples |
-| **Strongest loss reduction** | `99.1%` (`level_5`) |
-| **Resume-log processing** | 16,653 raw events -> 12,708 canonical events |
+|--------|------:|
+| **Base untrained macro grade** | `0.64111` |
+| **Raw V5 trained macro grade** | `0.701627` |
+| **Security-first supervisor macro grade** | `0.790471` |
+| **Raw V5 acceptance gate** | `Failed` |
+| **Supervisor diagnostic gate** | `Passed` |
+| **Raw V5 failed checks** | `9` |
+| **Completed base evaluation checkpoints** | `300/300` |
+| **Completed raw trained evaluation checkpoints** | `300/300` |
+| **Completed supervisor evaluation checkpoints** | `300/300` |
 
-### Per-Level Summary
-
-| Level | Examples | Avg Tokens | Expert Grade | Reward Mean | Revenue Mean | Security Mean | Caught Mean | Final Loss | Loss Reduction |
-|-------|---------:|-----------:|-------------:|-------------:|--------------:|------------:|-----------:|---------------:|
-| **Easy** | 1,767 | 459 | 0.720 +/- 0.004 | 5.53 | 324.4 | 100.0 | 1.00 | 0.0292 | 98.0% |
-| **Medium** | 2,740 | 462 | 0.724 +/- 0.004 | 8.32 | 437.3 | 100.0 | 2.00 | 0.0282 | 75.9% |
-| **Hard** | 3,804 | 464 | 0.677 +/- 0.006 | 12.75 | 604.9 | 100.0 | 3.00 | 0.0244 | 97.9% |
-| **Level 4** | 4,866 | 466 | 0.715 +/- 0.078 | 16.47 | 770.7 | 76.4 | 3.15 | 0.0266 | 74.9% |
-| **Level 5** | 5,763 | 468 | 0.819 +/- 0.014 | 29.35 | 895.3 | 59.9 | 3.20 | 0.0107 | 99.1% |
-
-> **Interpretation:** the corrected expert data remains security-perfect from `easy` through `hard`, while the later tiers exercise turning and double-agent deployment. The fixed Level-5 dataset slightly improves caught-sleeper coverage over the previous run (`3.20` vs. `3.14`) and reaches a much lower final logged loss, but those are training-time signals rather than proof of merged-model deployment quality.
-
-### Fixed Run vs. Previous Training Evidence
-
-| Signal | Previous 50-Episode Run | Fixed 20-Episode Run | Read |
-|---|---:|---:|---|
-| **Weighted examples** | 29,000 | 18,940 | Smaller practical T4 run |
-| **Approx. tokens** | 17.91M | 8.81M | Roughly half the token budget |
-| **Level-5 expert grade** | 0.820 | 0.819 | Effectively unchanged |
-| **Level-5 expert reward** | 34.48 | 29.35 | Lower in the fixed demonstrations |
-| **Level-5 sleepers caught** | 3.14 | 3.20 | Slightly higher advanced-tier capture coverage |
-| **Best final logged loss** | 0.0212 | 0.0107 | Better optimization endpoint, not a policy benchmark |
-
-The new run is better instrumented and includes the corrected action/observation pipeline. The matched held-out evaluation below now supplies the model-quality verdict that training-time loss alone could not.
+> **Interpretation:** the raw V5 model learned useful behavior and clearly improves over the untrained base, but it still fails the strict Level-4/5 security gate. The security-first supervisor diagnostic passes all checks, which proves the environment and gate can be solved by the security-first controller path; it does **not** prove the raw neural model alone is fully solved.
 
 ### Research Plot Gallery
 
 <table>
   <tr>
-    <td width="50%"><img src="plots/curriculum_loss_overview.png" alt="Curriculum loss overview"></td>
-    <td width="50%"><img src="plots/per_level_convergence.png" alt="Per-level convergence panels"></td>
+    <td width="50%"><img src="plots/curriculum_loss_overview.png" alt="Security-First V5 curriculum overview"></td>
+    <td width="50%"><img src="plots/per_level_convergence.png" alt="Security-First V5 per-level gate behavior"></td>
   </tr>
   <tr>
-    <td><sub><b>Figure 1.</b> Global curriculum loss curve with level spans, showing consistent convergence as the adapter chain moves from easy to level_5.</sub></td>
-    <td><sub><b>Figure 2.</b> Per-level convergence panels with start loss, final loss, loss drop, and half-loss step for each curriculum stage.</sub></td>
+    <td><sub><b>Figure 1.</b> V5 curriculum scale with raw trained and supervisor grade outcomes.</sub></td>
+    <td><sub><b>Figure 2.</b> V5 examples per level and acceptance pass-rate behavior.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="plots/expert_reward_progression.png" alt="Expert reward progression"></td>
-    <td width="50%"><img src="plots/expert_grade_distribution.png" alt="Expert grade distribution"></td>
+    <td width="50%"><img src="plots/expert_reward_progression.png" alt="V5 reward progression"></td>
+    <td width="50%"><img src="plots/expert_grade_distribution.png" alt="V5 grade distribution"></td>
   </tr>
   <tr>
-    <td><sub><b>Figure 3.</b> Per-episode reward traces from the expert curriculum. This is the fast reward evidence used during training-time monitoring.</sub></td>
-    <td><sub><b>Figure 4.</b> Violin, box, and confidence-interval summary of expert demonstration quality across all five levels.</sub></td>
+    <td><sub><b>Figure 3.</b> Reward progression across levels for base, raw V5, heuristic, and supervisor policies.</sub></td>
+    <td><sub><b>Figure 4.</b> V5 grade distribution by level and policy.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="plots/expert_operational_metrics.png" alt="Expert operational metrics"></td>
-    <td width="50%"><img src="plots/optimization_diagnostics.png" alt="Optimization diagnostics"></td>
+    <td width="50%"><img src="plots/expert_operational_metrics.png" alt="V5 operational metrics"></td>
+    <td width="50%"><img src="plots/optimization_diagnostics.png" alt="V5 run diagnostics"></td>
   </tr>
   <tr>
-    <td><sub><b>Figure 5.</b> Revenue distribution, security retention, caught-sleeper averages, and revenue-grade tradeoff from expert episodes.</sub></td>
-    <td><sub><b>Figure 6.</b> Gradient norm stability, learning-rate schedule, per-level gradient statistics, and aggregate optimizer distribution.</sub></td>
+    <td><sub><b>Figure 5.</b> Security, sleepers caught, reward, and revenue outcomes for the latest V5 benchmark.</sub></td>
+    <td><sub><b>Figure 6.</b> Drive run diagnostics: commits, checkpoint completion, gate status, and raw-model failure mode.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="plots/dataset_scaling.png" alt="Dataset scaling"></td>
-    <td width="50%"><img src="plots/curriculum_heatmap.png" alt="Curriculum heatmap"></td>
+    <td width="50%"><img src="plots/dataset_scaling.png" alt="V5 dataset scaling"></td>
+    <td width="50%"><img src="plots/curriculum_heatmap.png" alt="V5 curriculum heatmap"></td>
   </tr>
   <tr>
-    <td><sub><b>Figure 7.</b> Curriculum dataset growth and sequence-length scaling as task difficulty increases.</sub></td>
-    <td><sub><b>Figure 8.</b> Normalized curriculum heatmap summarizing examples, token lengths, expert performance, optimization efficiency, and terminal loss by level.</sub></td>
+    <td><sub><b>Figure 7.</b> Dataset scaling across the 50-episode V5 curriculum.</sub></td>
+    <td><sub><b>Figure 8.</b> Normalized heatmap of V5 scale, raw-model outcomes, and supervisor outcomes.</sub></td>
   </tr>
 </table>
 
 ### How to Read the Training Plots
 
-- **Figure 1 - Curriculum Loss Overview:** read this as the high-level stability plot. A smooth downward trajectory across level spans means the adapter chain is learning without blowing up when difficulty increases.
-- **Figure 2 - Per-Level Convergence:** this is the best place to compare learning efficiency per tier. Start loss, final loss, and half-loss step together show which levels were easy to absorb and which ones demanded longer adaptation.
-- **Figure 3 - Expert Reward Progression:** this is the quickest judging-facing reward plot. It shows the curriculum's reward signal directly during data generation, without waiting for the post-training benchmark.
-- **Figure 4 - Expert Grade Distribution:** this tells you how strong and how consistent the demonstration policy was before fine-tuning. Tight violins and narrow boxes indicate stable supervision; wider shapes indicate noisier expert behavior.
-- **Figure 5 - Expert Operational Metrics:** use this to connect grade to actual gameplay outcomes. It shows whether expert success comes from balanced security discipline or from brute-force revenue growth.
-- **Figure 6 - Optimization Diagnostics:** this is the health monitor for the training run itself. Gradient norms and learning-rate behavior reveal whether the optimization process stayed controlled and numerically stable.
-- **Figure 7 - Dataset Scaling:** this plot explains curriculum pressure. As examples and sequence lengths rise with difficulty, the model is being asked to reason over richer and longer contexts.
-- **Figure 8 - Curriculum Heatmap:** this is the one-glance summary. It lets a reader compare data scale, expert quality, optimization efficiency, and terminal loss across all five stages without scanning every earlier figure.
+- **Figure 1 - Curriculum Overview:** read this as the high-level V5 run summary: data scale rises with difficulty, while raw V5 and supervisor grades show where training helped and where control logic still matters.
+- **Figure 2 - Per-Level Gate Behavior:** this is the fastest way to see why raw V5 failed acceptance: easy/medium/hard are stable, but Level 4 and Level 5 pass rates collapse.
+- **Figure 3 - Reward Progression:** reward alone can be misleading; compare it with Figure 5 because higher reward is not acceptable when security regresses.
+- **Figure 4 - Grade Distribution:** this is the headline learning view before applying the stricter acceptance gate.
+- **Figure 5 - Operational Metrics:** this connects grade to the actual mission: security retained, sleepers caught, revenue, and reward.
+- **Figure 6 - Run Diagnostics:** this is the checkpoint/provenance panel for the completed Drive run.
+- **Figure 7 - Dataset Scaling:** this confirms the V5 run used a substantially larger 50-episode curriculum than the earlier EP20 fixed run.
+- **Figure 8 - Curriculum Heatmap:** this is the compact one-glance comparison of training scale versus raw and supervised benchmark outcomes.
 
-### Additional Fixed-Run Diagnostics
+### Additional V5 Diagnostics
 
 <table>
   <tr>
-    <td width="50%"><img src="plots/curriculum_progress_timeline.png" alt="Curriculum progress timeline"></td>
-    <td width="50%"><img src="plots/training_action_mix.png" alt="Training action mix"></td>
+    <td width="50%"><img src="plots/curriculum_progress_timeline.png" alt="V5 curriculum progress timeline"></td>
+    <td width="50%"><img src="plots/training_action_mix.png" alt="V5 normalized policy coverage"></td>
   </tr>
   <tr>
-    <td><sub>Canonical resume-aware curriculum progress and logged SFT loss.</sub></td>
-    <td><sub>Weighted action coverage, including Level-4/5 turning and double-agent mechanics.</sub></td>
+    <td><sub>Cumulative V5 examples and expert episodes across the resumable curriculum.</sub></td>
+    <td><sub>Normalized macro coverage across grade, reward, revenue, security, and sleepers caught.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="plots/expert_step_dynamics.png" alt="Expert step dynamics"></td>
-    <td width="50%"><img src="plots/runtime_breakdown.png" alt="Final successful training segment runtime"></td>
+    <td width="50%"><img src="plots/expert_step_dynamics.png" alt="V5 advanced-tier failure dynamics"></td>
+    <td width="50%"><img src="plots/runtime_breakdown.png" alt="V5 Drive artifact footprint"></td>
   </tr>
   <tr>
-    <td><sub>Turn-level reward, revenue, security, leak, canary, and double-agent dynamics.</sub></td>
-    <td><sub>Runtime of the final successful segment for each resumable curriculum stage.</sub></td>
+    <td><sub>Advanced-tier comparison showing where raw V5 fails and the supervisor recovers.</sub></td>
+    <td><sub>Drive artifact footprint for the completed V5 training/evaluation run.</sub></td>
   </tr>
 </table>
 
 ### Reproducibility
 
-The plot pipeline lives in `generate_plots.py` and emits both figures and machine-readable summaries from the raw saved structured event log:
+Regenerate the compact checked-in V5 training and evaluation figures from the summary artifacts:
 
 ```bash
-TRAIN_EVENTS_PATH=training_events_fixed_ep20.jsonl python generate_plots.py
+python generate_security_v5_summary_plots.py
+python generate_security_v5_training_plots.py
 ```
 
-Artifacts written to `plots/`:
+Artifacts written to `plots/` include the 15 main figures, additional V5 diagnostics, and compact machine-readable summaries:
 
 - `training_statistics.json`
 - `training_statistics.md`
@@ -404,40 +394,70 @@ Artifacts written to `plots/`:
 - `expert_step_dynamics.png`
 - `runtime_breakdown.png`
 
-> 📊 **Everything above is derived from the committed raw fixed-run event log rather than hand-entered numbers.**
+To regenerate full optimizer-loss plots instead of compact diagnostics, first download the Drive file `panopticon-security-v5-ep50/training_events.jsonl`, then run:
 
-### Latest Fixed-Model Benchmark
+```bash
+TRAIN_EVENTS_PATH=training_events.jsonl python generate_plots.py
+```
 
-Both matched evaluations completed **75/75 episode checkpoints**: five episodes for each of three agent families across all five levels, using seed `42`. In the base payload, the `trained` slot evaluates untrained `Qwen/Qwen2.5-1.5B-Instruct`; in the fixed payload, it evaluates the merged `/panopticon-fixed-v3-ep20/merged_model`.
+### Latest Security-First V5 Benchmark
 
-This environment does not define classification accuracy. The primary accuracy-like outcome is the weighted **composite grade**, supported by reward, revenue, final security, and sleepers caught.
+The selected Drive folder, `panopticon-security-v5-ep50`, now contains the completed V5 training artifacts, merged model, base evaluation, raw trained-model evaluation, security-first supervisor diagnostic, progress checkpoints, acceptance reports, and generated Drive-side plot folders. The checked-in summary file [`evaluation_comparison_latest.json`](evaluation_comparison_latest.json) stores the compact values used by the plots below, because the full evaluation JSONs are multi-GB Drive artifacts.
 
-| Agent | Easy Grade | Medium Grade | Hard Grade | Level 4 Grade | Level 5 Grade | Level-Macro Grade |
-|---|---:|---:|---:|---:|---:|---:|
-| **Base untrained** | 0.731 | 0.731 | 0.671 | 0.628 | 0.618 | **0.6758** |
-| **Fixed trained** | 0.731 | 0.731 | 0.671 | 0.699 | 0.669 | **0.7002** |
-| **Heuristic** | 0.728 | 0.731 | 0.691 | 0.698 | 0.605 | **0.6906** |
-| **Random** | 0.630 | 0.654 | 0.604 | 0.647 | 0.669 | **0.6408** |
+Both matched V5 evaluations completed **300/300 episode checkpoints**: 20 episodes for each of three agent families across all five levels, using seed `42`, `security-first-v2` reward, and the `security-gated-v2` grader. The V5 curriculum training metadata confirms **250 expert episodes** and **88,896 supervised examples** across the five stages.
 
-| Comparison | Grade | Reward | Revenue | Security | Sleepers Caught |
-|---|---:|---:|---:|---:|---:|
-| **Fixed trained** | **0.7002** | 10.260 | 528.58 | 89.92 | 2.68 |
-| **Base untrained** | 0.6758 | 9.462 | 494.76 | **97.82** | **3.00** |
-| **Heuristic** | 0.6906 | **12.540** | **594.64** | 81.46 | 2.44 |
-| **Fixed minus base** | **+0.0244** | **+0.798** | **+33.82** | **-7.90** | **-0.32** |
-| **Fixed minus heuristic** | **+0.0096** | -2.280 | -66.06 | **+8.46** | **+0.24** |
+| Level | V5 Training Episodes | V5 Supervised Examples | Max Sequence |
+|---|---:|---:|---:|
+| **Easy** | 50 | 7,430 | 512 |
+| **Medium** | 50 | 13,166 | 512 |
+| **Hard** | 50 | 18,414 | 512 |
+| **Level 4** | 50 | 23,889 | 512 |
+| **Level 5** | 50 | 25,997 | 512 |
+| **Total** | **250** | **88,896** | 512 |
 
-**Measured verdict:** the fixed trained model is better than the untrained base on the benchmark's headline composite grade, with all improvement concentrated at Level 4 (`+0.071`) and Level 5 (`+0.051`). It also slightly beats the heuristic on macro grade while retaining substantially more Level-5 security. However, it is not an unqualified win: versus base, Level-4/5 security drops by `18.3`/`21.2` points and sleepers caught drops by `0.8` at both tiers.
+This environment does not define classification accuracy. The primary accuracy-like outcome is the weighted **composite grade**, supported by reward, revenue, final security, sleepers caught, pass rate, missed sleepers, and false accusations.
 
-Compared with the previous pre-fix trained model, the fixed run is a major recovery: macro grade rises from `0.4313` to `0.7002`, security from `27.86` to `89.92`, and sleepers caught from `0.00` to `2.68`. The honest conclusion is **partially successful and directionally strong, but not yet fully aligned with the security-first objective**.
+| Agent / Policy | Easy Grade | Medium Grade | Hard Grade | Level 4 Grade | Level 5 Grade | Level-Macro Grade | Gate Status |
+|---|---:|---:|---:|---:|---:|---:|---|
+| **Base untrained Qwen** | 0.630 | 0.671 | 0.616 | 0.657 | 0.631 | **0.64111** | Reference |
+| **Raw V5 trained model** | 0.728 | 0.731 | 0.671 | 0.722 | 0.656 | **0.701627** | **Failed** |
+| **Security-first supervisor** | 0.720 | 0.735 | 0.679 | 0.901 | 0.917 | **0.790471** | **Passed** |
+| **Heuristic** | 0.725 | 0.727 | 0.680 | 0.689 | 0.626 | **0.6894** | Baseline |
+| **Random** | 0.631 | 0.666 | 0.650 | 0.636 | 0.654 | **0.6474** | Baseline |
 
-Exact comparison values and provenance are stored in [`evaluation_comparison_latest.json`](evaluation_comparison_latest.json).
+| Policy | Macro Grade | Reward | Revenue | Security | Sleepers Caught | Acceptance |
+|---|---:|---:|---:|---:|---:|---|
+| **Security-first supervisor** | **0.790471** | **23.328** | 571.58 | **100.00** | **3.00** | **Accepted** |
+| **Raw V5 trained model** | 0.701627 | 8.204 | 483.90 | 89.26 | 2.68 | Failed |
+| **Heuristic** | 0.6894 | 10.526 | **612.36** | 83.54 | 2.47 | Baseline |
+| **Base untrained Qwen** | 0.64111 | 7.644 | 448.16 | 95.96 | 2.87 | Reference |
+| **Random** | 0.6474 | -25.242 | 216.50 | 69.26 | 2.75 | Baseline |
 
-> **Historical benchmark note:** these figures describe the completed EP20 model before the new `security-first-v2` reward and `security-gated-v2` grader. They remain the correct diagnosis of that model, but a new model must be trained and both base/candidate benchmarks must be rerun under matching v2 schemas.
+**Measured verdict:** the raw V5 trained model is **better than the untrained base on macro grade** (`0.701627` vs. `0.64111`) and slightly above the heuristic on macro grade (`0.701627` vs. `0.6894`). It is still **not accepted** as a fully successful model, because Level 4 and Level 5 break the security gate.
+
+Raw V5 failed checks:
+
+- `level_4.pass_rate_100pct`: actual `0.50`, required `1.00`
+- `level_4.security_not_worse`: actual `85.85`, required `>= 95.05`
+- `level_4.caught_not_worse`: actual `3.50`, required `>= 3.85`
+- `level_4.zero_missed`: actual `0.50`, required `0.00`
+- `level_5.pass_rate_100pct`: actual `0.05`, required `1.00`
+- `level_5.security_not_worse`: actual `60.47`, required `>= 84.81`
+- `level_5.caught_not_worse`: actual `3.90`, required `>= 4.50`
+- `level_5.zero_missed`: actual `1.10`, required `0.00`
+- `level_5.zero_false_accusations`: actual `0.10`, required `0.00`
+
+The security-first supervisor diagnostic **does** pass every acceptance check: `0.790471` macro grade, 100% pass rate on every level, 100.0 final security on Levels 4/5, all advanced sleepers caught, zero missed sleepers, and zero false accusations. That is the strongest operational result in the folder, but it should be read honestly: it validates the security-first controller/policy path, not the raw neural model alone.
+
+Exact comparison values and provenance are stored in [`evaluation_comparison_latest.json`](evaluation_comparison_latest.json). Regenerate the checked-in compact figures with:
+
+```bash
+python generate_security_v5_summary_plots.py
+```
 
 ### Security-First V5 Acceptance Gate
 
-The next model is accepted only when `benchmark_acceptance.py` passes every check:
+The V5 model-quality gate is accepted only when `benchmark_acceptance.py` passes every check:
 
 For the complete Drive-persistent, checkpoint-resumable Colab workflow, use
 [`COLAB_SECURITY_V5_TRAINING.md`](COLAB_SECURITY_V5_TRAINING.md).
@@ -448,7 +468,7 @@ For the complete Drive-persistent, checkpoint-resumable Colab workflow, use
 - Level 4/5 security and sleepers caught do not regress versus base;
 - Level 4/5 have zero missed sleepers and zero false accusations.
 
-The training pipeline now uses a security-first expert that prioritizes confirmed threats over revenue or double-agent actions, requires every generated expert episode to finish with `security >= 90`, all sleepers caught, and zero false accusations, reduces double-agent oversampling, strengthens neutralization examples, and uses deterministic expert-data seeds.
+The training pipeline uses a security-first expert that prioritizes confirmed threats over revenue or double-agent actions, requires generated expert episodes to finish with high security, all sleepers caught, and zero false accusations, reduces double-agent oversampling, strengthens neutralization examples, and uses deterministic expert-data seeds.
 
 Run the local security checks before starting an expensive training job:
 
@@ -457,7 +477,7 @@ python smoke_test.py
 python security_regression_test.py
 ```
 
-Start a fresh curriculum run. The V5 trajectory schema forces regeneration instead of reusing the old unsafe demonstrations:
+Start or resume the V5 curriculum run. The Drive root stores checkpoints, curriculum state, datasets, metrics, logs, adapters, and the merged model:
 
 ```bash
 TRAIN_ROOT=/content/drive/MyDrive/panopticon-security-v5-ep50 \
@@ -469,7 +489,7 @@ python -u train_trl_v2.py \
   --merge
 ```
 
-After training, rerun both sides under the same code and release seed plan, then enforce the gate. Evaluation writes episode checkpoints and a lightweight progress JSON so interrupted Colab runs can resume instead of starting over:
+After training, evaluate both base and raw trained model under the same release seed plan. Evaluation writes episode checkpoints and progress JSON files so interrupted Colab runs can resume:
 
 ```bash
 python full_evaluation.py \
@@ -494,19 +514,37 @@ python benchmark_acceptance.py \
   --report benchmark_acceptance_report.json
 ```
 
+When the raw model fails, the optional supervisor diagnostic separates raw-model failure from environment/gate failure:
+
+```bash
+python full_evaluation.py \
+  --model /content/drive/MyDrive/panopticon-security-v5-ep50/merged_model \
+  --trained-policy security_first \
+  --episodes 20 --seed 42 \
+  --output evaluationResults_security_first_supervisor_v2.json \
+  --plot-dir plots_security_first_supervisor_v2 \
+  --checkpoint-file evaluationResults_security_first_supervisor_v2.json.episodes.jsonl \
+  --progress-file evaluationResults_security_first_supervisor_v2.json.progress.json
+
+python benchmark_acceptance.py \
+  --base evaluationResults_base_security_v2.json \
+  --candidate evaluationResults_security_first_supervisor_v2.json \
+  --report benchmark_acceptance_security_first_supervisor_report.json
+```
+
 <p align="center">
-  <img src="plots/base_vs_fixed_comparison.png" alt="Latest base versus fixed trained comparison" width="100%">
+  <img src="plots/base_vs_fixed_comparison.png" alt="Latest Security-First V5 comparison" width="100%">
 </p>
 
-<sub><b>Direct Matched Comparison.</b> Base untrained, fixed trained, and heuristic behavior across all five levels. The fixed model improves composite grade while exposing the advanced-tier security/capture tradeoff.</sub>
+<sub><b>Direct Matched Comparison.</b> Base untrained, raw V5 trained, heuristic, and security-first supervisor behavior across all five levels. Raw V5 improves macro grade but fails the Level-4/5 security gate; the supervisor passes.</sub>
 
-The scoreboard and evaluation gallery below are the latest outputs generated by the completed fixed-model evaluation.
+The scoreboard and evaluation gallery below are regenerated from the compact V5 summary.
 
 <p align="center">
-  <img src="plots/benchmark_summary_table.png" alt="Benchmark summary table" width="100%">
+  <img src="plots/benchmark_summary_table.png" alt="Security-First V5 benchmark summary table" width="100%">
 </p>
 
-<sub><b>Latest Fixed-Model Benchmark Scoreboard.</b> Random, heuristic, and fixed-trained summaries from the completed fixed-model evaluation.</sub>
+<sub><b>Security-First V5 Benchmark Scoreboard.</b> Random, heuristic, base, raw V5, and security-first supervisor summaries from the completed Drive evaluation artifacts.</sub>
 
 ### Evaluation & Reward Plot Gallery
 
@@ -521,73 +559,62 @@ The scoreboard and evaluation gallery below are the latest outputs generated by 
   </tr>
   <tr>
     <td width="50%"><img src="plots/comparison_radar.png" alt="Comparison radar"></td>
-    <td width="50%"><img src="plots/reward_distributions.png" alt="Reward distributions"></td>
+    <td width="50%"><img src="plots/reward_distributions.png" alt="Reward and grade summary"></td>
   </tr>
   <tr>
     <td><sub><b>Figure 11.</b> Normalized benchmark radar summarizing grade, reward, revenue, security retention, and sleepers caught.</sub></td>
-    <td><sub><b>Figure 12.</b> Research-style reward distribution panels showing spread, variance, and level-wise reward trends for each agent family.</sub></td>
+    <td><sub><b>Figure 12.</b> Reward and grade summaries from the completed V5 evaluations.</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="plots/reward_frontier.png" alt="Reward frontier"></td>
     <td width="50%"><img src="plots/reward_turn_dynamics.png" alt="Reward turn dynamics"></td>
   </tr>
   <tr>
-    <td><sub><b>Figure 13.</b> Reward-security frontier with marker size proportional to revenue, exposing the trained agent's reward-vs-security tradeoff.</sub></td>
+    <td><sub><b>Figure 13.</b> Reward-security frontier with marker size proportional to revenue, exposing where reward is bought by sacrificing security.</sub></td>
     <td><sub><b>Figure 14.</b> Reward and security response curves across escalating difficulty tiers.</sub></td>
   </tr>
   <tr>
     <td colspan="2"><img src="plots/scenario_timeline.png" alt="Scenario timeline"></td>
   </tr>
   <tr>
-    <td colspan="2"><sub><b>Figure 15.</b> Episode-outcome panorama across all logged benchmark runs, showing reward, revenue, and security per scenario-agent episode.</sub></td>
+    <td colspan="2"><sub><b>Figure 15.</b> Scenario-level outcome panorama across the compact V5 benchmark summary.</sub></td>
   </tr>
 </table>
 
 ### How to Read the Evaluation Plots
 
-- **Figure 9 - Comparison Grades:** this is the headline view for the latest fixed-model benchmark. The fixed trained model leads the level-macro composite grade, driven by improvements at Levels 4 and 5.
-- **Figure 10 - Comparison Operations:** use this to separate *why* an agent scored the way it did. Reward, revenue, security, and sleepers caught are split apart so hidden tradeoffs become visible.
-- **Figure 11 - Comparison Radar:** this is the balanced-performance view. It makes it easy to see whether an agent is broadly competent or only strong on one or two axes.
-- **Figure 12 - Reward Distributions:** this exposes variance and brittleness. If an agent has a high average reward but a wide or unstable distribution, it is not reliably solving the task.
-- **Figure 13 - Reward Frontier:** this is the clearest reward-misalignment view. It shows where higher reward or revenue is bought by sacrificing security.
-- **Figure 14 - Reward Turn Dynamics:** this figure is about escalation behavior. It shows how reward and security move as scenario difficulty intensifies, rather than only reporting final means.
-- **Figure 15 - Scenario Timeline:** this latest episode-level panorama exposes run-to-run variance and where the fixed policy's advanced-tier outcomes diverge from the baselines.
+- **Figure 9 - Comparison Grades:** this is the headline view. Raw V5 beats base and heuristic on macro grade, while the supervisor is the only accepted policy.
+- **Figure 10 - Comparison Operations:** use this to separate *why* an agent scored the way it did. Raw V5 gains grade but loses advanced-tier security; the supervisor keeps security at 100.
+- **Figure 11 - Comparison Radar:** this is the balanced-performance view. It shows that the supervisor is broadest, while raw V5 is stronger than base but still uneven.
+- **Figure 12 - Reward and Grade Summary:** this summarizes completed V5 means rather than pretending the compact repo contains the full multi-GB episode distribution.
+- **Figure 13 - Reward Frontier:** this shows where higher reward or revenue is bought by sacrificing security.
+- **Figure 14 - Reward Turn Dynamics:** this shows how reward and security move as scenario difficulty intensifies.
+- **Figure 15 - Scenario Timeline:** this one-glance panorama shows grade, reward, security, and captured sleepers by agent and difficulty.
 
 ### Evaluation Reproducibility
 
-To rerun the full benchmark and generate the reward-analysis figures:
+The full V5 Colab commands are in [`COLAB_SECURITY_V5_TRAINING.md`](COLAB_SECURITY_V5_TRAINING.md). The important rule is that base, raw trained, and supervisor diagnostics must use the same seed, reward schema, grader schema, and checkpoint-resume flags.
+
+To regenerate the compact checked-in V5 comparison and gallery from [`evaluation_comparison_latest.json`](evaluation_comparison_latest.json):
 
 ```bash
-python full_evaluation.py \
-  --model /content/drive/MyDrive/panopticon-fixed-v3-ep20/merged_model \
-  --episodes 5 \
-  --output evaluationResults_fixed.json \
-  --plot-dir plots \
-  --checkpoint-file evaluationResults_fixed.json.episodes.jsonl \
-  --progress-file evaluationResults_fixed.json.progress.json \
-  --showcase-output showcaseResults_fixed.json
+python generate_security_v5_summary_plots.py
 ```
 
-To regenerate the fixed-model figure suite from a saved evaluation JSON without rerunning inference:
+To regenerate reward-analysis figures from a full saved evaluation JSON instead of the compact summary, use the Drive-side JSON and plot directory names from the V5 run:
 
 ```bash
 python generate_evaluation_plots.py \
-  --input evaluationResults_fixed.json \
-  --plot-dir plots \
+  --input evaluationResults_security_first_supervisor_v2.json \
+  --plot-dir plots_security_first_supervisor_v2 \
   --timeline-level level_5
 ```
-
-To regenerate the direct matched comparison from the compact checked-in summary:
-
-```bash
-python generate_latest_evaluation_comparison.py
-```
-
-For lightweight analysis and frontend/demo artifacts, we keep compact derived summaries in:
+For lightweight analysis and frontend/demo artifacts, the latest compact V5 summary is stored in:
 
 - `evaluation_comparison_latest.json`
 - `ui/src/data/evaluationResults.json`
-- `ui/src/data/showcaseResults.json`
+
+`ui/src/data/showcaseResults.json` remains a legacy demo snapshot, not the source for the V5 acceptance verdict.
 
 ---
 
