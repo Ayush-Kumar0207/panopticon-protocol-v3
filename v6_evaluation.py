@@ -30,8 +30,9 @@ from inference_local import (
 from panopticon_bench.seed_plan import canonical_sha256, load_seed_plan
 
 
-V6_SCHEMA_VERSION = "panopticon-evaluation-v6"
+V6_SCHEMA_VERSION = "panopticon-evaluation-v6.1"
 POLICIES = {"random", "heuristic", "security_first", "model_raw", "model_repair"}
+BASELINE_POLICIES = {"random", "heuristic", "security_first"}
 INTERVENTION_LEVEL = {
     "random": "raw",
     "heuristic": "raw",
@@ -92,6 +93,17 @@ def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
         os.fsync(handle.fileno())
 
 
+def atomic_write_jsonl(path: Path, payloads: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        for payload in payloads:
+            handle.write(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    temporary.replace(path)
+
+
 def compact_trace(episode: dict[str, Any]) -> dict[str, Any]:
     for turn in episode["timeline"]:
         for field in ("observation_before", "observation_after", "prompt", "messages"):
@@ -124,6 +136,91 @@ def load_completed(path: Path, config_sha256: str) -> dict[str, dict[str, Any]]:
     return completed
 
 
+def import_reusable_baselines(
+    source_path: Path,
+    target_path: Path,
+    *,
+    config_sha256: str,
+    frozen_config: dict[str, Any],
+    expected_keys: set[str],
+) -> dict[str, Any]:
+    """Atomically reuse only context-independent baselines from an older run."""
+    if target_path.exists():
+        return {"status": "skipped_target_exists", "imported_records": 0}
+    if not source_path.is_file():
+        raise FileNotFoundError(f"Baseline reuse source is missing: {source_path}")
+    source_manifest_path = source_path.parent / "manifest.json"
+    if not source_manifest_path.is_file():
+        raise FileNotFoundError(f"Baseline source manifest is missing: {source_manifest_path}")
+    source_manifest = json.loads(source_manifest_path.read_text(encoding="utf-8"))
+    compatibility_keys = (
+        "seed_plan_sha256",
+        "split",
+        "episodes_per_level",
+        "partial_split",
+        "policies",
+        "hydra_policy",
+        "hydra_checkpoint_sha256",
+        "max_steps",
+        "trace_level",
+        "reward_schema_version",
+        "grader_schema_version",
+    )
+    differences = {
+        key: {"source": source_manifest.get(key), "requested": frozen_config.get(key)}
+        for key in compatibility_keys
+        if source_manifest.get(key) != frozen_config.get(key)
+    }
+    if differences:
+        raise RuntimeError(
+            "Baseline reuse source is scientifically incompatible: "
+            + json.dumps(differences, sort_keys=True)
+        )
+
+    imported_at = utc_now()
+    imported: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    ignored_model_records = 0
+    for line_number, line in enumerate(
+        source_path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        key = record["episode_key"]
+        if key in seen:
+            raise RuntimeError(f"Duplicate source episode key at line {line_number}: {key}")
+        seen.add(key)
+        episode = record["episode"]
+        if canonical_sha256(episode) != record.get("episode_sha256"):
+            raise RuntimeError(f"Source episode digest mismatch at line {line_number}")
+        if record.get("policy_stratum") not in BASELINE_POLICIES:
+            ignored_model_records += 1
+            continue
+        if key not in expected_keys:
+            raise RuntimeError(f"Unexpected baseline episode in reuse source: {key}")
+        migrated = dict(record)
+        migrated["record_schema_version"] = V6_SCHEMA_VERSION
+        migrated["config_sha256"] = config_sha256
+        migrated["baseline_reuse_provenance"] = {
+            "source_path": str(source_path),
+            "source_config_sha256": record.get("config_sha256"),
+            "source_record_sha256": canonical_sha256(record),
+            "imported_at_utc": imported_at,
+        }
+        imported.append(migrated)
+
+    atomic_write_jsonl(target_path, imported)
+    return {
+        "status": "imported",
+        "source_path": str(source_path),
+        "source_file_sha256": file_sha256(source_path),
+        "imported_records": len(imported),
+        "ignored_provisional_model_records": ignored_model_records,
+        "imported_at_utc": imported_at,
+    }
+
+
 def build_policy(policy_name: str, args: argparse.Namespace, seed: int | None = None):
     if policy_name == "random":
         return RandomPolicy(seed=seed)
@@ -133,11 +230,19 @@ def build_policy(policy_name: str, args: argparse.Namespace, seed: int | None = 
         return SecurityFirstPolicy(policy_name="security_first")
     if policy_name == "model_raw":
         return LocalModelPolicy(
-            args.model, deterministic=not args.sampled, intervention_mode="raw"
+            args.model,
+            deterministic=not args.sampled,
+            intervention_mode="raw",
+            max_seq_length=args.model_prompt_max_tokens,
+            max_new_tokens=args.model_max_new_tokens,
         )
     if policy_name == "model_repair":
         return LocalModelPolicy(
-            args.model, deterministic=not args.sampled, intervention_mode="repair"
+            args.model,
+            deterministic=not args.sampled,
+            intervention_mode="repair",
+            max_seq_length=args.model_prompt_max_tokens,
+            max_new_tokens=args.model_max_new_tokens,
         )
     raise ValueError(policy_name)
 
@@ -197,6 +302,9 @@ def build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps", type=int, default=300)
     parser.add_argument("--max-episodes-per-level", type=int, default=0)
     parser.add_argument("--sampled", action="store_true")
+    parser.add_argument("--model-prompt-max-tokens", type=int, default=512)
+    parser.add_argument("--model-max-new-tokens", type=int, default=128)
+    parser.add_argument("--reuse-baselines-from", default="")
     parser.add_argument("--trace-level", choices=["compact", "full"], default="compact")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--verbose", action="store_true")
@@ -207,6 +315,10 @@ def main() -> None:
     args = build_cli().parse_args()
     if any(name.startswith("model_") for name in args.policies) and not args.model:
         raise SystemExit("--model is required for model_raw/model_repair strata")
+    if args.model_prompt_max_tokens < 128:
+        raise SystemExit("--model-prompt-max-tokens must be at least 128")
+    if not 1 <= args.model_max_new_tokens <= args.model_prompt_max_tokens:
+        raise SystemExit("--model-max-new-tokens must be between 1 and prompt max tokens")
 
     seed_plan = load_seed_plan(args.seed_plan)
     split_plan = seed_plan["splits"][args.split]
@@ -237,6 +349,9 @@ def main() -> None:
         "hydra_checkpoint_path": args.hydra_checkpoint or None,
         "hydra_checkpoint_sha256": file_sha256(args.hydra_checkpoint) if args.hydra_checkpoint else None,
         "deterministic_decoding": not args.sampled,
+        "model_prompt_max_tokens": args.model_prompt_max_tokens,
+        "model_max_new_tokens": args.model_max_new_tokens,
+        "prompt_fitting": "structured_compaction_no_token_truncation",
         "max_steps": args.max_steps,
         "trace_level": args.trace_level,
         "reward_schema_version": REWARD_SCHEMA_VERSION,
@@ -275,12 +390,35 @@ def main() -> None:
                 "runtime": manifest["runtime"],
             },
         ][-50:]
+        if "baseline_reuse" in existing_manifest:
+            manifest["baseline_reuse"] = existing_manifest["baseline_reuse"]
     else:
         manifest["initial_git"] = manifest["git"]
         manifest["resume_history"] = []
 
     output_dir.mkdir(parents=True, exist_ok=True)
     atomic_write_json(manifest_path, manifest)
+    expected_baseline_keys = {
+        f"{policy}|{level}|{episode_index}|{seed}"
+        for policy in args.policies
+        if policy in BASELINE_POLICIES
+        for level in levels
+        for episode_index, seed in enumerate(split_plan[level][:limit], start=1)
+    }
+    if args.reuse_baselines_from:
+        baseline_reuse = import_reusable_baselines(
+            Path(args.reuse_baselines_from),
+            episodes_path,
+            config_sha256=config_sha256,
+            frozen_config=frozen_config,
+            expected_keys=expected_baseline_keys,
+        )
+        if (
+            baseline_reuse.get("status") != "skipped_target_exists"
+            or "baseline_reuse" not in manifest
+        ):
+            manifest["baseline_reuse"] = baseline_reuse
+        atomic_write_json(manifest_path, manifest)
     records = load_completed(episodes_path, config_sha256)
     hydra_policy = None
     if args.hydra_checkpoint:

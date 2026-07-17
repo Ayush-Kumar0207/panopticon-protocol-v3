@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import copy
 import gc
 import json
 from dataclasses import dataclass
@@ -20,8 +21,8 @@ except ImportError:  # pragma: no cover - optional dependency in local-only flow
 
 from models import AgentAction, EnvironmentObservation
 
-MAX_SEQ_LENGTH = 1024
-PROMPT_INPUT_BUDGET = 880
+MAX_SEQ_LENGTH = 512
+MAX_NEW_TOKENS = 128
 
 SYSTEM_PROMPT = """You are ARGUS, an AI counter-intelligence agent defending a corporate network from HYDRA infiltrators.
 
@@ -73,6 +74,8 @@ def format_observation(
     max_leaks: int | None = None,
     max_traps: int | None = None,
     max_reports: int | None = 4,
+    max_double_agents: int | None = None,
+    compact: bool = False,
 ) -> str:
     workers, omitted_workers = _take_priority(
         list(obs.workers),
@@ -126,8 +129,13 @@ def format_observation(
             f"  {report.id} {report.report_type} target={report.target} "
             f"conf={report.confidence:.0%} flagged={flagged} :: {findings}"
         )
+    double_agents, omitted_double_agents = _take_priority(
+        list(obs.double_agents),
+        max_double_agents,
+        lambda asset: (asset.active, asset.hydra_trust, asset.effectiveness),
+    )
     da_info = []
-    for asset in obs.double_agents:
+    for asset in double_agents:
         da_info.append(
             f"  {asset.worker_id} active={asset.active} trust={asset.hydra_trust:.0%} "
             f"eff={asset.effectiveness:.0%} disinfo={asset.disinfo_fed_count}"
@@ -139,6 +147,36 @@ def format_observation(
     for worker in obs.workers:
         if worker.department not in active_departments:
             active_departments.append(worker.department)
+    if compact:
+        def compact_section(
+            label: str,
+            items: list[str],
+            omitted: int,
+        ) -> str:
+            selected = " | ".join(item.strip() for item in items) or "none"
+            suffix = f" | +{omitted} omitted" if omitted else ""
+            return f"{label}={selected}{suffix}"
+
+        return "\n".join(
+            [
+                (
+                    f"T={obs.turn}/{obs.max_turns} phase={obs.phase}:{obs.phase_number} "
+                    f"revenue={obs.enterprise_revenue:.0f} security={obs.security_score:.0f}"
+                ),
+                (
+                    f"Counts workers={len(obs.workers)} suspicious={suspicious_workers} "
+                    f"leaks={len(obs.active_leaks)} triggered={triggered_canaries} "
+                    f"intel={len(obs.intel_reports)} doubles={len(obs.double_agents)}"
+                ),
+                f"Departments={','.join(active_departments)}",
+                compact_section("Workers", workers_info, omitted_workers),
+                compact_section("Leaks", leaks_info, omitted_leaks),
+                compact_section("Traps", traps_info, omitted_traps),
+                compact_section("Intel", intel_info, omitted_reports),
+                compact_section("Doubles", da_info, omitted_double_agents),
+            ]
+        )
+
     sections = [
         f"Turn {obs.turn}/{obs.max_turns} | Phase: {obs.phase} ({obs.phase_number}) | Revenue: {obs.enterprise_revenue:.0f} | Security: {obs.security_score:.0f}",
         (
@@ -161,6 +199,11 @@ def format_observation(
         f"  ... {omitted_reports} additional reports omitted" if omitted_reports else "",
         f"Active Double Agents ({len(obs.double_agents)}):",
         "\n".join(da_info) if da_info else "  (none)",
+        (
+            f"  ... {omitted_double_agents} additional double agents omitted"
+            if omitted_double_agents
+            else ""
+        ),
     ]
     return "\n".join(section for section in sections if section)
 
@@ -185,19 +228,44 @@ def parse_llm_action(text: str) -> AgentAction:
 
 
 @dataclass
+class PromptBuild:
+    prompt: str
+    messages: list[dict[str, str]]
+    original_token_count: int
+    final_token_count: int
+    compaction_level: int
+
+
+@dataclass
 class GenerationTrace:
     action: AgentAction
     raw_text: str
     prompt: str
     messages: list[dict[str, str]]
+    original_prompt_tokens: int
+    prompt_tokens: int
+    prompt_limit: int
+    max_new_tokens: int
+    compaction_level: int
+    token_truncated: bool
 
 
 class LocalArgusModel:
     """Loads either a merged model or a PEFT adapter and generates ARGUS actions."""
 
-    def __init__(self, model_ref: str, max_seq_length: int = MAX_SEQ_LENGTH):
+    def __init__(
+        self,
+        model_ref: str,
+        max_seq_length: int = MAX_SEQ_LENGTH,
+        max_new_tokens: int = MAX_NEW_TOKENS,
+    ):
+        if max_seq_length < 128:
+            raise ValueError("max_seq_length must be at least 128")
+        if not 1 <= max_new_tokens <= max_seq_length:
+            raise ValueError("max_new_tokens must be between 1 and max_seq_length")
         self.model_ref = model_ref
         self.max_seq_length = max_seq_length
+        self.max_new_tokens = max_new_tokens
         self.device_map = {"": 0} if torch.cuda.is_available() else None
         self.is_adapter = False
         self.base_model_name: str | None = None
@@ -232,7 +300,7 @@ class LocalArgusModel:
             base_model_name = peft_cfg.base_model_name_or_path
             base_model = AutoModelForCausalLM.from_pretrained(
                 base_model_name,
-                torch_dtype=TRAIN_DTYPE,
+                dtype=TRAIN_DTYPE,
                 device_map=self.device_map,
                 trust_remote_code=True,
             )
@@ -241,7 +309,7 @@ class LocalArgusModel:
 
         model = AutoModelForCausalLM.from_pretrained(
             model_ref,
-            torch_dtype=TRAIN_DTYPE,
+            dtype=TRAIN_DTYPE,
             device_map=self.device_map,
             trust_remote_code=True,
         )
@@ -255,6 +323,8 @@ class LocalArgusModel:
             "dtype": str(TRAIN_DTYPE),
             "device": str(self.device),
             "max_seq_length": self.max_seq_length,
+            "max_new_tokens": self.max_new_tokens,
+            "prompt_fitting": "structured_compaction_no_token_truncation",
         }
 
     def build_messages(self, obs: EnvironmentObservation) -> list[dict[str, str]]:
@@ -279,63 +349,143 @@ class LocalArgusModel:
             )
 
     def _prompt_token_length(self, prompt: str) -> int:
-        return len(self.tokenizer(prompt, add_special_tokens=False)["input_ids"])
+        return len(
+            self.tokenizer(
+                prompt,
+                add_special_tokens=False,
+                verbose=False,
+            )["input_ids"]
+        )
 
-    def build_prompt(self, obs: EnvironmentObservation) -> tuple[str, list[dict[str, str]]]:
+    def build_prompt(self, obs: EnvironmentObservation) -> PromptBuild:
         variants = [
             {},
             {"max_workers": 12, "max_leaks": 18, "max_traps": 10, "max_reports": 6},
             {"max_workers": 10, "max_leaks": 12, "max_traps": 8, "max_reports": 5},
             {"max_workers": 8, "max_leaks": 8, "max_traps": 6, "max_reports": 4},
             {"max_workers": 6, "max_leaks": 5, "max_traps": 4, "max_reports": 3},
+            {"max_workers": 4, "max_leaks": 3, "max_traps": 2, "max_reports": 2},
+            {"max_workers": 3, "max_leaks": 2, "max_traps": 1, "max_reports": 1},
+            {
+                "max_workers": 2,
+                "max_leaks": 1,
+                "max_traps": 1,
+                "max_reports": 1,
+                "max_double_agents": 1,
+            },
+            {
+                "max_workers": 1,
+                "max_leaks": 1,
+                "max_traps": 1,
+                "max_reports": 1,
+                "max_double_agents": 1,
+            },
+            {
+                "max_workers": 0,
+                "max_leaks": 1,
+                "max_traps": 0,
+                "max_reports": 1,
+                "max_double_agents": 1,
+            },
+            {
+                "max_workers": 1,
+                "max_leaks": 1,
+                "max_traps": 0,
+                "max_reports": 0,
+                "max_double_agents": 1,
+            },
+            {
+                "max_workers": 0,
+                "max_leaks": 0,
+                "max_traps": 0,
+                "max_reports": 0,
+                "max_double_agents": 1,
+                "compact": True,
+            },
         ]
-        last_prompt = ""
-        last_messages: list[dict[str, str]] = []
-        for variant in variants:
+        original_token_count = 0
+        last_token_count = 0
+        for compaction_level, variant in enumerate(variants):
             observation_text = format_observation(obs, **variant)
             messages = self._build_messages_from_text(observation_text)
             prompt = self._render_prompt(messages)
-            last_prompt, last_messages = prompt, messages
-            if self._prompt_token_length(prompt) <= PROMPT_INPUT_BUDGET:
-                return prompt, messages
-        return last_prompt, last_messages
+            token_count = self._prompt_token_length(prompt)
+            if compaction_level == 0:
+                original_token_count = token_count
+            last_token_count = token_count
+            if token_count <= self.max_seq_length:
+                return PromptBuild(
+                    prompt=prompt,
+                    messages=messages,
+                    original_token_count=original_token_count,
+                    final_token_count=token_count,
+                    compaction_level=compaction_level,
+                )
+        raise RuntimeError(
+            "Structured prompt compaction could not satisfy the frozen prompt limit: "
+            f"original={original_token_count}, compact={last_token_count}, "
+            f"limit={self.max_seq_length}. Refusing silent token truncation."
+        )
 
     def act(
         self,
         obs: EnvironmentObservation,
         deterministic: bool = False,
-        max_new_tokens: int = 200,
+        max_new_tokens: int | None = None,
         temperature: float = 0.3,
         top_p: float = 0.9,
     ) -> GenerationTrace:
-        prompt, messages = self.build_prompt(obs)
+        prompt_build = self.build_prompt(obs)
+        effective_max_new_tokens = (
+            self.max_new_tokens if max_new_tokens is None else max_new_tokens
+        )
+        if not 1 <= effective_max_new_tokens <= self.max_seq_length:
+            raise ValueError("max_new_tokens is outside the frozen generation contract")
         inputs = self.tokenizer(
-            prompt,
+            prompt_build.prompt,
             return_tensors="pt",
-            truncation=True,
-            max_length=self.max_seq_length,
+            truncation=False,
+            add_special_tokens=False,
         ).to(self.model.device)
+        input_token_count = int(inputs["input_ids"].shape[1])
+        if input_token_count != prompt_build.final_token_count:
+            raise RuntimeError("Prompt token accounting changed between fitting and inference")
+        if input_token_count > self.max_seq_length:
+            raise RuntimeError("Prompt exceeded the frozen limit after structured fitting")
 
-        generation_kwargs: dict[str, Any] = {
-            "max_new_tokens": max_new_tokens,
-            "pad_token_id": self.tokenizer.pad_token_id,
-        }
+        generation_config = copy.deepcopy(self.model.generation_config)
+        generation_config.max_new_tokens = effective_max_new_tokens
+        generation_config.pad_token_id = self.tokenizer.pad_token_id
         if deterministic:
-            generation_kwargs["do_sample"] = False
+            generation_config.do_sample = False
+            generation_config.temperature = None
+            generation_config.top_p = None
+            generation_config.top_k = None
         else:
-            generation_kwargs["do_sample"] = True
-            generation_kwargs["temperature"] = temperature
-            generation_kwargs["top_p"] = top_p
+            generation_config.do_sample = True
+            generation_config.temperature = temperature
+            generation_config.top_p = top_p
 
         with torch.no_grad():
-            output = self.model.generate(**inputs, **generation_kwargs)
+            output = self.model.generate(**inputs, generation_config=generation_config)
 
         raw_text = self.tokenizer.decode(
             output[0][inputs.input_ids.shape[1] :],
             skip_special_tokens=True,
         )
         action = parse_llm_action(raw_text)
-        return GenerationTrace(action=action, raw_text=raw_text, prompt=prompt, messages=messages)
+        return GenerationTrace(
+            action=action,
+            raw_text=raw_text,
+            prompt=prompt_build.prompt,
+            messages=prompt_build.messages,
+            original_prompt_tokens=prompt_build.original_token_count,
+            prompt_tokens=input_token_count,
+            prompt_limit=self.max_seq_length,
+            max_new_tokens=effective_max_new_tokens,
+            compaction_level=prompt_build.compaction_level,
+            token_truncated=False,
+        )
 
     def close(self) -> None:
         del self.model

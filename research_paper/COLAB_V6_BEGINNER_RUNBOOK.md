@@ -48,7 +48,7 @@ After the research tag is pushed:
 3. Click **Open in Colab**, if shown.
 
 The notebook checks out the immutable tag
-`research-v6-pilot-2026-07-17-r2`, so later changes to `main` cannot silently alter
+`research-v6-pilot-2026-07-17-r3`, so later changes to `main` cannot silently alter
 the experiment.
 
 ### Why Colab shows a crossed-out save/cloud icon
@@ -223,7 +223,7 @@ The first run durably completed 21 random-policy episodes. It then reached
 a built-in Python `bool`. Canonical JSON hashing rejected that scalar before the
 22nd record could be appended. The existing 21 records are intact.
 
-Use the `research-v6-pilot-2026-07-17-r2` notebook. It:
+Use the `research-v6-pilot-2026-07-17-r3` notebook. It:
 
 1. converts the complete episode payload to JSON-native values and explicitly
    normalizes the grader pass flag;
@@ -247,11 +247,34 @@ The old editable install followed Panopticon's full production dependency graph:
 Panopticon → OpenEnv → Gradio → Hugging Face Hub 1.x. Transformers 4.57.6
 requires Hugging Face Hub below 1.0, so its import preflight correctly stopped.
 
-Use the `research-v6-pilot-2026-07-17-r2` notebook. Cell 5 removes this unused
+Use the `research-v6-pilot-2026-07-17-r3` notebook. Cell 5 removes this unused
 optional chain, pins Hub 0.36.2, Tokenizers 0.22.1, and Safetensors 0.8.0, then
 installs Panopticon in editable mode with `--no-deps`. It verifies all resolved
 versions before continuing. A fresh Colab runtime is recommended, but no Drive
 files should be deleted.
+
+### `Token indices sequence length ... (566 > 512)` warning
+
+The stopped r2 run completed 75 valid random, heuristic, and security-first
+baselines, followed by three provisional `model_raw` episodes. The older runtime
+allowed prompts above the model's documented 512-token training limit, so those
+model episodes must not be used in paper results.
+
+The r3 notebook performs a one-time, audit-safe migration in Cell 10:
+
+1. renames `pilot/scripted` to `pilot/scripted_pre_prompt512_r2`;
+2. preserves every old record instead of deleting or rewriting it;
+3. validates episode hashes and imports only the 75 context-independent baseline
+   records into a new `pilot/scripted` result set;
+4. ignores the provisional model rows;
+5. freezes a 512-token prompt limit and 128-token generation limit in the manifest;
+6. compacts structured observation sections until the complete prompt fits;
+7. refuses to run if fitting would require silent token truncation; and
+8. records prompt-token and compaction provenance on every model turn.
+
+Rerun the r3 notebook from Cell 1 through Cell 10. A correct resume prints
+`completed 75/125`, skips the 75 baselines, and begins again at
+`model_raw|easy|1|516436961`.
 
 ### Drive is nearly full
 

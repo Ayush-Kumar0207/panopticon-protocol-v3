@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 import uuid
 from pathlib import Path
@@ -196,6 +197,9 @@ def test_v6_evaluator_persists_failure_manifest(monkeypatch) -> None:
         assert manifest["status"] == "failed"
         assert manifest["failed_policy"] == "model_raw"
         assert manifest["completed_episodes"] == 0
+        assert manifest["model_prompt_max_tokens"] == 512
+        assert manifest["model_max_new_tokens"] == 128
+        assert manifest["prompt_fitting"] == "structured_compaction_no_token_truncation"
         assert manifest["failure"]["type"] == "RuntimeError"
         assert "synthetic model-load failure" in manifest["failure"]["message"]
     finally:
@@ -216,4 +220,99 @@ def test_level_5_random_episode_is_canonically_json_serializable() -> None:
     )
     compact = v6_evaluation.compact_trace(episode)
     assert type(compact["grade"]["passed"]) is bool
+    assert compact["provenance_summary"]["model_context"]["model_turns"] == 0
+    assert compact["provenance_summary"]["model_context"]["token_truncated_turns"] == 0
     assert len(canonical_sha256(compact)) == 64
+
+
+def test_structured_prompt_fitting_compacts_without_token_truncation() -> None:
+    from argus_llm import LocalArgusModel
+
+    class WordTokenizer:
+        def apply_chat_template(self, messages, *, tokenize, add_generation_prompt):
+            assert tokenize is False
+            assert add_generation_prompt is True
+            return " ".join(message["content"] for message in messages)
+
+        def __call__(self, text, *, add_special_tokens=False, verbose=False):
+            assert add_special_tokens is False
+            assert verbose is False
+            return {"input_ids": text.split()}
+
+    runtime = LocalArgusModel.__new__(LocalArgusModel)
+    runtime.max_seq_length = 220
+    runtime.tokenizer = WordTokenizer()
+    observation = Environment(seed=1).reset(task_level="level_5", seed=1)
+    prompt = runtime.build_prompt(observation)
+    assert prompt.original_token_count > runtime.max_seq_length
+    assert prompt.final_token_count <= runtime.max_seq_length
+    assert prompt.compaction_level > 0
+
+
+def test_v6_imports_only_compatible_non_model_baselines() -> None:
+    root = Path("research_paper") / f".v6-reuse-test-{uuid.uuid4().hex}"
+    source_dir = root / "legacy"
+    source_dir.mkdir(parents=True)
+    target_path = root / "fresh" / "episodes.jsonl"
+    try:
+        frozen_config = {
+            "seed_plan_sha256": "seed-plan",
+            "split": "pilot",
+            "episodes_per_level": 1,
+            "partial_split": True,
+            "policies": ["random", "model_raw"],
+            "hydra_policy": "scripted_memory_v1",
+            "hydra_checkpoint_sha256": None,
+            "max_steps": 300,
+            "trace_level": "compact",
+            "reward_schema_version": "reward-v1",
+            "grader_schema_version": "grader-v1",
+        }
+        (source_dir / "manifest.json").write_text(
+            json.dumps(frozen_config), encoding="utf-8"
+        )
+
+        def source_record(key: str, policy: str) -> dict:
+            episode = {"policy": policy, "grade": {"score": 0.5, "passed": False}}
+            return {
+                "record_schema_version": "panopticon-evaluation-v6",
+                "config_sha256": "legacy-config",
+                "episode_key": key,
+                "policy_stratum": policy,
+                "episode": episode,
+                "episode_sha256": canonical_sha256(episode),
+            }
+
+        baseline_key = "random|easy|1|123"
+        provisional_key = "model_raw|easy|1|123"
+        source_records = [
+            source_record(baseline_key, "random"),
+            source_record(provisional_key, "model_raw"),
+        ]
+        (source_dir / "episodes.jsonl").write_text(
+            "".join(json.dumps(record) + "\n" for record in source_records),
+            encoding="utf-8",
+        )
+        result = v6_evaluation.import_reusable_baselines(
+            source_dir / "episodes.jsonl",
+            target_path,
+            config_sha256="new-config",
+            frozen_config=frozen_config,
+            expected_keys={baseline_key},
+        )
+        imported = [
+            json.loads(line)
+            for line in target_path.read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+        assert result["imported_records"] == 1
+        assert result["ignored_provisional_model_records"] == 1
+        assert [record["episode_key"] for record in imported] == [baseline_key]
+        assert imported[0]["config_sha256"] == "new-config"
+        assert imported[0]["record_schema_version"] == v6_evaluation.V6_SCHEMA_VERSION
+        assert (
+            imported[0]["baseline_reuse_provenance"]["source_config_sha256"]
+            == "legacy-config"
+        )
+    finally:
+        shutil.rmtree(root, ignore_errors=True)

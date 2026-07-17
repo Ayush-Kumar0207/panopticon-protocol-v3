@@ -107,7 +107,7 @@ def main() -> int:
                 if cell.get("cell_type") == "code":
                     ast.parse("".join(cell.get("source", [])), filename=f"cell-{cell_number}")
             required_notebook_markers = [
-                "research-v6-pilot-2026-07-17-r2",
+                "research-v6-pilot-2026-07-17-r3",
                 "HYDRA_CHECKPOINT_EVERY = 1",
                 "I_UNDERSTAND_FINAL_SPLIT_IS_SINGLE_USE",
                 "--resume",
@@ -115,6 +115,11 @@ def main() -> int:
                 "huggingface-hub==0.36.2",
                 "safetensors==0.8.0",
                 "--no-deps",
+                "MODEL_PROMPT_MAX_TOKENS = 512",
+                "MODEL_MAX_NEW_TOKENS = 128",
+                "structured_compaction_no_token_truncation",
+                "--reuse-baselines-from",
+                "scripted_pre_prompt512_r2",
                 "console_logs",
                 "Last child-process output",
             ]

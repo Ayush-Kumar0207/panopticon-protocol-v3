@@ -119,10 +119,11 @@ CELLS = [
         from pathlib import Path
 
         REPO_URL = "https://github.com/Ayush-Kumar0207/panopticon-protocol-v3.git"
-        RESEARCH_TAG = "research-v6-pilot-2026-07-17-r2"
+        RESEARCH_TAG = "research-v6-pilot-2026-07-17-r3"
         ALLOWED_PREVIOUS_RESEARCH_TAGS = {
             "research-v6-pilot-2026-07-17",
             "research-v6-pilot-2026-07-17-r1",
+            "research-v6-pilot-2026-07-17-r2",
         }
         SOURCE_ROOT = Path("/content/panopticon-protocol-v3-v6")
 
@@ -146,6 +147,8 @@ CELLS = [
 
         POLICIES = "random,heuristic,security_first,model_raw,model_repair"
         MODEL_LABEL = "argus-security-v5-ep50"
+        MODEL_PROMPT_MAX_TOKENS = 512
+        MODEL_MAX_NEW_TOKENS = 128
         MAX_STEPS = 300
 
         DRIVE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -162,6 +165,12 @@ CELLS = [
         print("Pinned release:", RESEARCH_TAG)
         print("Persistent run folder:", DRIVE_ROOT)
         print("ARGUS model:", ARGUS_MODEL)
+        print(
+            "ARGUS prompt/generation contract:",
+            MODEL_PROMPT_MAX_TOKENS,
+            "/",
+            MODEL_MAX_NEW_TOKENS,
+        )
         print("Neural-HYDRA seeds:", HYDRA_TRAINING_SEEDS)
         """
     ),
@@ -169,6 +178,7 @@ CELLS = [
         """
         # Cell 4 — Clone or refresh, then detach at the immutable research tag.
         import os
+        import signal
         import subprocess
         from collections import deque
 
@@ -199,6 +209,15 @@ CELLS = [
                     if log_handle is not None:
                         log_handle.write(line)
                 return_code = process.wait()
+            except KeyboardInterrupt:
+                if process.poll() is None:
+                    process.send_signal(signal.SIGINT)
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                raise
             finally:
                 if log_handle is not None:
                     log_handle.flush()
@@ -457,7 +476,11 @@ CELLS = [
         from argus_llm import LocalArgusModel
 
         print("Preflighting merged ARGUS model load...")
-        model_probe = LocalArgusModel(str(ARGUS_MODEL))
+        model_probe = LocalArgusModel(
+            str(ARGUS_MODEL),
+            max_seq_length=MODEL_PROMPT_MAX_TOKENS,
+            max_new_tokens=MODEL_MAX_NEW_TOKENS,
+        )
         try:
             print("ARGUS load preflight passed:", model_probe.model_info())
         finally:
@@ -478,7 +501,7 @@ CELLS = [
             ).read_text(encoding="utf-8")
         )
         frozen_config = {
-            "schema_version": "panopticon-colab-v6-run-v1",
+            "schema_version": "panopticon-colab-v6-run-v2",
             "research_tag": RESEARCH_TAG,
             "source_commit": SOURCE_COMMIT,
             "seed_plan_sha256": seed_plan["seed_plan_sha256"],
@@ -490,34 +513,57 @@ CELLS = [
             "hydra_target_episodes": HYDRA_TARGET_EPISODES,
             "hydra_checkpoint_every": HYDRA_CHECKPOINT_EVERY,
             "policies": POLICIES.split(","),
+            "model_prompt_max_tokens": MODEL_PROMPT_MAX_TOKENS,
+            "model_max_new_tokens": MODEL_MAX_NEW_TOKENS,
+            "prompt_fitting": "structured_compaction_no_token_truncation",
             "max_steps": MAX_STEPS,
         }
         config_path = DRIVE_ROOT / "frozen_run_config.json"
+        history_path = DRIVE_ROOT / "runtime_patch_history.jsonl"
         if config_path.exists():
             existing = json.loads(config_path.read_text(encoding="utf-8"))
-            scientific_keys = set(frozen_config) - {"research_tag", "source_commit"}
+            contract_keys = {
+                "model_prompt_max_tokens",
+                "model_max_new_tokens",
+                "prompt_fitting",
+            }
+            scientific_keys = set(frozen_config) - {
+                "schema_version",
+                "research_tag",
+                "source_commit",
+            }
             scientific_differences = {
                 key: {"existing": existing.get(key), "requested": frozen_config.get(key)}
                 for key in sorted(scientific_keys)
                 if existing.get(key) != frozen_config.get(key)
             }
-            if scientific_differences:
+            disallowed_differences = {
+                key: value
+                for key, value in scientific_differences.items()
+                if key not in contract_keys
+            }
+            if disallowed_differences:
                 raise RuntimeError(
                     "Frozen scientific configuration mismatch: "
-                    + json.dumps(scientific_differences, sort_keys=True)
+                    + json.dumps(disallowed_differences, sort_keys=True)
                 )
             source_changed = any(
                 existing.get(key) != frozen_config.get(key)
                 for key in ("research_tag", "source_commit")
             )
-            if source_changed:
-                if existing.get("research_tag") not in ALLOWED_PREVIOUS_RESEARCH_TAGS:
+            context_contract_changed = bool(
+                set(scientific_differences).intersection(contract_keys)
+            )
+            schema_changed = existing.get("schema_version") != frozen_config["schema_version"]
+            if source_changed or context_contract_changed or schema_changed:
+                allowed_lineage = {*ALLOWED_PREVIOUS_RESEARCH_TAGS, RESEARCH_TAG}
+                if existing.get("research_tag") not in allowed_lineage:
                     raise RuntimeError(
-                        "Existing source is not in the approved diagnostic-patch lineage. "
+                        "Existing source is not in the approved research-patch lineage. "
                         "Use a new DRIVE_ROOT."
                     )
                 patch_record = {
-                    "schema_version": "panopticon-runtime-patch-v1",
+                    "schema_version": "panopticon-runtime-patch-v2",
                     "applied_at_utc": datetime.datetime.now(
                         datetime.timezone.utc
                     ).isoformat(),
@@ -525,13 +571,18 @@ CELLS = [
                     "previous_source_commit": existing.get("source_commit"),
                     "new_research_tag": RESEARCH_TAG,
                     "new_source_commit": SOURCE_COMMIT,
+                    "scientific_change": {
+                        "context_contract_changed": context_contract_changed,
+                        "differences": scientific_differences,
+                        "baseline_policy_records_reusable": True,
+                        "model_policy_records_reusable": False,
+                    },
                     "reason": (
-                        "NumPy scalar serialization, isolated Python 3.12 inference "
-                        "dependencies, streamed diagnostics, and failure-manifest "
-                        "persistence; no environment or metric change"
+                        "Freeze a 512-token structured prompt-fitting contract, record "
+                        "generation limits, quarantine provisional model rows, and reuse "
+                        "only context-independent baseline rows."
                     ),
                 }
-                history_path = DRIVE_ROOT / "runtime_patch_history.jsonl"
                 prior_patch_commits = set()
                 if history_path.exists():
                     prior_patch_commits = {
@@ -544,12 +595,23 @@ CELLS = [
                         handle.write(json.dumps(patch_record, sort_keys=True) + "\\n")
                         handle.flush()
                         os.fsync(handle.fileno())
-                print("Approved runtime-only patch; existing episode records remain valid.")
+                if context_contract_changed:
+                    backup_path = DRIVE_ROOT / "frozen_run_config.pre_prompt512.json"
+                    if not backup_path.exists():
+                        backup_tmp = backup_path.with_suffix(".json.tmp")
+                        backup_tmp.write_text(json.dumps(existing, indent=2) + "\\n")
+                        backup_tmp.replace(backup_path)
+                temporary = config_path.with_suffix(".json.tmp")
+                temporary.write_text(json.dumps(frozen_config, indent=2) + "\\n")
+                temporary.replace(config_path)
+                print(
+                    "Approved r3 context-contract migration. Baseline rows remain valid; "
+                    "prior model rows will be quarantined."
+                )
         else:
             temporary = config_path.with_suffix(".json.tmp")
             temporary.write_text(json.dumps(frozen_config, indent=2) + "\\n")
             temporary.replace(config_path)
-
         import accelerate
         import safetensors
         import tokenizers
@@ -629,14 +691,43 @@ CELLS = [
         ## Pilot phase
 
         The next cell evaluates the default scripted HYDRA. It saves every completed episode.
-        If Colab stops, rerun Cells 1–10 and then rerun the same pilot cell. The `--resume`
-        flag skips all durable records and continues with the first unfinished episode.
+        On the first r3 run, it atomically quarantines the stopped pre-contract folder, imports
+        only the 75 verified context-independent baselines, and discards no evidence. The three
+        provisional model rows remain in quarantine and are not reused. If Colab later stops,
+        rerun Cells 1–10; `--resume` continues from the first unfinished valid episode.
         """
     ),
     code(
         """
-        # Cell 10 — Run or resume the scripted-HYDRA pilot.
+        # Cell 10 — Migrate once, then run or resume the scripted-HYDRA pilot.
+        import json
+
         scripted_output = DRIVE_ROOT / "pilot" / "scripted"
+        quarantine_output = DRIVE_ROOT / "pilot" / "scripted_pre_prompt512_r2"
+        current_manifest = scripted_output / "manifest.json"
+
+        if current_manifest.exists():
+            current_payload = json.loads(current_manifest.read_text(encoding="utf-8"))
+            old_contract = (
+                current_payload.get("model_prompt_max_tokens"),
+                current_payload.get("model_max_new_tokens"),
+                current_payload.get("prompt_fitting"),
+            )
+            new_contract = (
+                MODEL_PROMPT_MAX_TOKENS,
+                MODEL_MAX_NEW_TOKENS,
+                "structured_compaction_no_token_truncation",
+            )
+            if old_contract != new_contract:
+                if quarantine_output.exists():
+                    raise RuntimeError(
+                        "Both legacy scripted output and its quarantine exist. Refusing an "
+                        "ambiguous migration; inspect both folders before continuing."
+                    )
+                scripted_output.rename(quarantine_output)
+                print("Quarantined the stopped pre-contract run:", quarantine_output)
+
+        reuse_source = quarantine_output / "episodes.jsonl"
         command = [
             sys.executable,
             "v6_evaluation.py",
@@ -652,10 +743,16 @@ CELLS = [
             scripted_output,
             "--max-steps",
             MAX_STEPS,
+            "--model-prompt-max-tokens",
+            MODEL_PROMPT_MAX_TOKENS,
+            "--model-max-new-tokens",
+            MODEL_MAX_NEW_TOKENS,
             "--trace-level",
             "compact",
             "--resume",
         ]
+        if reuse_source.exists():
+            command.extend(["--reuse-baselines-from", reuse_source])
         run(
             command,
             cwd=SOURCE_ROOT,
@@ -788,6 +885,10 @@ CELLS = [
                 output,
                 "--max-steps",
                 MAX_STEPS,
+                "--model-prompt-max-tokens",
+                MODEL_PROMPT_MAX_TOKENS,
+                "--model-max-new-tokens",
+                MODEL_MAX_NEW_TOKENS,
                 "--trace-level",
                 "compact",
                 "--resume",
@@ -826,6 +927,7 @@ CELLS = [
                 episode = record["episode"]
                 final_state = episode["final_state"]
                 provenance = episode["provenance_summary"]
+                model_context = provenance.get("model_context", {})
                 rows.append(
                     {
                         "condition": condition,
@@ -844,6 +946,11 @@ CELLS = [
                         "false_accusations": final_state["false_accusations"],
                         "interventions": provenance["interventions"],
                         "turns": provenance["turns"],
+                        "prompt_tokens_max": model_context.get("prompt_tokens_max", 0),
+                        "compacted_turns": model_context.get("compacted_turns", 0),
+                        "token_truncated_turns": model_context.get(
+                            "token_truncated_turns", 0
+                        ),
                     }
                 )
 
@@ -868,6 +975,9 @@ CELLS = [
                     "intervention_rate": (
                         frame["interventions"].sum() / max(frame["turns"].sum(), 1)
                     ),
+                    "prompt_tokens_max": frame["prompt_tokens_max"].max(),
+                    "compacted_turns": frame["compacted_turns"].sum(),
+                    "token_truncated_turns": frame["token_truncated_turns"].sum(),
                 }
             )
 
@@ -928,6 +1038,30 @@ CELLS = [
 
         if incomplete:
             raise RuntimeError(f"Pilot is incomplete: {incomplete}")
+
+        context_failures = []
+        for condition, _ in conditions:
+            episodes_path = DRIVE_ROOT / "pilot" / condition / "episodes.jsonl"
+            for line in episodes_path.read_text(encoding="utf-8").splitlines():
+                if not line:
+                    continue
+                record = json.loads(line)
+                if not record["policy_stratum"].startswith("model_"):
+                    continue
+                episode = record["episode"]
+                context = episode["provenance_summary"].get("model_context", {})
+                if (
+                    context.get("model_turns") != episode["steps"]
+                    or context.get("prompt_tokens_max", MODEL_PROMPT_MAX_TOKENS + 1)
+                    > MODEL_PROMPT_MAX_TOKENS
+                    or context.get("token_truncated_turns") != 0
+                ):
+                    context_failures.append((condition, record["episode_key"], context))
+        if context_failures:
+            raise RuntimeError(
+                "Pilot contains invalid model-context provenance: "
+                + repr(context_failures[:10])
+            )
 
         PILOT_COMPLETE = True
         print("Pilot completion gate passed for scripted + five neural conditions.")
@@ -992,6 +1126,10 @@ CELLS = [
                     output,
                     "--max-steps",
                     MAX_STEPS,
+                    "--model-prompt-max-tokens",
+                    MODEL_PROMPT_MAX_TOKENS,
+                    "--model-max-new-tokens",
+                    MODEL_MAX_NEW_TOKENS,
                     "--trace-level",
                     "compact",
                     "--resume",
@@ -1020,6 +1158,7 @@ CELLS = [
 
         important_patterns = [
             "frozen_run_config.json",
+            "frozen_run_config.pre_prompt512.json",
             "argus_model_manifest.json",
             "runtime_patch_history.jsonl",
             "console_logs/*.log",

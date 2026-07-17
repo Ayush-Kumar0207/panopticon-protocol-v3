@@ -48,6 +48,7 @@ class PolicyDecision:
     raw_validation_message: str = ""
     intervention_category: str = "none"
     intervention_applied: bool = False
+    model_provenance: dict[str, Any] = field(default_factory=dict)
 
 
 class EpisodePolicy(Protocol):
@@ -140,6 +141,7 @@ def make_policy_decision(
     raw_semantic_valid: bool | None = None,
     raw_validation_message: str = "",
     intervention_category: str = "none",
+    model_provenance: dict[str, Any] | None = None,
 ) -> PolicyDecision:
     source_action = raw_action or action
     changed = (
@@ -163,6 +165,7 @@ def make_policy_decision(
         raw_validation_message=raw_validation_message,
         intervention_category=intervention_category if changed else "none",
         intervention_applied=changed,
+        model_provenance=model_provenance or {},
     )
 
 
@@ -607,16 +610,23 @@ class LocalModelPolicy:
         temperature: float = 0.3,
         top_p: float = 0.9,
         intervention_mode: str = "repair",
+        max_seq_length: int = 512,
+        max_new_tokens: int = 128,
     ):
         from argus_llm import LocalArgusModel
 
         if intervention_mode not in {"raw", "repair"}:
             raise ValueError("intervention_mode must be 'raw' or 'repair'")
-        self.runtime = LocalArgusModel(model_ref)
+        self.runtime = LocalArgusModel(
+            model_ref,
+            max_seq_length=max_seq_length,
+            max_new_tokens=max_new_tokens,
+        )
         self.deterministic = deterministic
         self.temperature = temperature
         self.top_p = top_p
         self.intervention_mode = intervention_mode
+        self.max_new_tokens = max_new_tokens
         self.policy_name = f"trained_{intervention_mode}"
 
     def reset(self) -> None:
@@ -628,6 +638,7 @@ class LocalModelPolicy:
             deterministic=self.deterministic,
             temperature=self.temperature,
             top_p=self.top_p,
+            max_new_tokens=self.max_new_tokens,
         )
         parse_success = not (
             trace.action.action_type == ActionType.NOOP.value
@@ -657,6 +668,14 @@ class LocalModelPolicy:
             raw_semantic_valid=raw_valid,
             raw_validation_message=raw_message,
             intervention_category=category,
+            model_provenance={
+                "original_prompt_tokens": trace.original_prompt_tokens,
+                "prompt_tokens": trace.prompt_tokens,
+                "prompt_limit": trace.prompt_limit,
+                "max_new_tokens": trace.max_new_tokens,
+                "compaction_level": trace.compaction_level,
+                "token_truncated": trace.token_truncated,
+            },
         )
 
     def model_info(self) -> dict[str, Any]:
@@ -971,6 +990,7 @@ def run_episode(
             "raw_text": decision.raw_text,
             "prompt": decision.prompt,
             "messages": decision.messages,
+            "model_provenance": decision.model_provenance,
             "reward": result.reward,
             "done": result.done,
             "truncated": result.truncated,
@@ -1009,6 +1029,24 @@ def run_episode(
         "raw_semantic_invalid": sum(record["raw_semantic_valid"] is False for record in timeline),
         "interventions": sum(record["intervention_applied"] for record in timeline),
         "intervention_categories": intervention_categories,
+        "model_context": {
+            "model_turns": sum(bool(record["model_provenance"]) for record in timeline),
+            "prompt_tokens_max": max(
+                (
+                    record["model_provenance"].get("prompt_tokens", 0)
+                    for record in timeline
+                ),
+                default=0,
+            ),
+            "compacted_turns": sum(
+                record["model_provenance"].get("compaction_level", 0) > 0
+                for record in timeline
+            ),
+            "token_truncated_turns": sum(
+                record["model_provenance"].get("token_truncated", False)
+                for record in timeline
+            ),
+        },
     }
 
     return to_builtin(
