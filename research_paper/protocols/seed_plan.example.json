@@ -1,0 +1,17 @@
+{
+  "schema_version": "panopticon-seed-plan-v1",
+  "status": "EXAMPLE_ONLY_NOT_FINAL_TEST_SEEDS",
+  "created_before_final_results": true,
+  "generator": "AUTHOR-TODO: script/version",
+  "generator_seed": "AUTHOR-TODO: independently chosen value",
+  "training_seed_hash": "AUTHOR-TODO",
+  "development_seed_hash": "AUTHOR-TODO",
+  "levels": {
+    "easy": [100001, 100002, 100003],
+    "medium": [200001, 200002, 200003],
+    "hard": [300001, 300002, 300003],
+    "level_4": [400001, 400002, 400003],
+    "level_5": [500001, 500002, 500003]
+  },
+  "notes": "Replace with a committed, disjoint, frozen list of the preregistered size before final evaluation."
+}

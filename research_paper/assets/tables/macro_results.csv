@@ -1,0 +1,6 @@
+agent,policy,macro_grade,macro_reward,macro_revenue,macro_security,macro_caught,acceptance
+base_untrained,Base untrained,0.641110,7.644,448.160,95.960,2.870,n/a
+raw_v5_trained,Raw V5 trained,0.701627,8.204,483.900,89.264,2.680,failed
+security_first_supervisor,Security-first supervisor,0.790471,23.328,571.580,100.000,3.000,passed
+heuristic,Heuristic,0.689400,10.526,612.360,83.540,2.470,n/a
+random,Random,0.647400,-25.242,216.500,69.260,2.750,n/a

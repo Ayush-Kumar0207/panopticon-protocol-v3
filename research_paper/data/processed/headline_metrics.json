@@ -1,0 +1,188 @@
+{
+  "acceptance": {
+    "raw_v5_trained": {
+      "accepted": false,
+      "base_macro_grade": 0.64111,
+      "candidate_macro_grade": 0.701627,
+      "failed_checks": [
+        {
+          "actual": 0.5,
+          "name": "level_4.pass_rate_100pct",
+          "required": 1.0
+        },
+        {
+          "actual": 85.85,
+          "name": "level_4.security_not_worse",
+          "required": ">= 95.05"
+        },
+        {
+          "actual": 3.5,
+          "name": "level_4.caught_not_worse",
+          "required": ">= 3.85"
+        },
+        {
+          "actual": 0.5,
+          "name": "level_4.zero_missed",
+          "required": 0.0
+        },
+        {
+          "actual": 0.05,
+          "name": "level_5.pass_rate_100pct",
+          "required": 1.0
+        },
+        {
+          "actual": 60.47,
+          "name": "level_5.security_not_worse",
+          "required": ">= 84.81"
+        },
+        {
+          "actual": 3.9,
+          "name": "level_5.caught_not_worse",
+          "required": ">= 4.5"
+        },
+        {
+          "actual": 1.1,
+          "name": "level_5.zero_missed",
+          "required": 0.0
+        },
+        {
+          "actual": 0.1,
+          "name": "level_5.zero_false_accusations",
+          "required": 0.0
+        }
+      ]
+    },
+    "security_first_supervisor": {
+      "accepted": true,
+      "base_macro_grade": 0.64111,
+      "candidate_macro_grade": 0.7904709999999999,
+      "failed_checks": [],
+      "note": "This validates a deterministic security-first supervisor, not the raw fine-tuned model by itself."
+    }
+  },
+  "agents": {
+    "base_untrained": {
+      "acceptance": "n/a",
+      "label": "Base untrained",
+      "macro": {
+        "grade": 0.64111,
+        "revenue": 448.15999999999997,
+        "reward": 7.644,
+        "security": 95.96,
+        "sleepers_caught": 2.87
+      }
+    },
+    "heuristic": {
+      "acceptance": "n/a",
+      "label": "Heuristic",
+      "macro": {
+        "grade": 0.6894,
+        "revenue": 612.36,
+        "reward": 10.526,
+        "security": 83.54,
+        "sleepers_caught": 2.4699999999999998
+      }
+    },
+    "random": {
+      "acceptance": "n/a",
+      "label": "Random",
+      "macro": {
+        "grade": 0.6474,
+        "revenue": 216.5,
+        "reward": -25.242,
+        "security": 69.26,
+        "sleepers_caught": 2.75
+      }
+    },
+    "raw_v5_trained": {
+      "acceptance": "failed",
+      "label": "Raw V5 trained",
+      "macro": {
+        "grade": 0.701627,
+        "revenue": 483.9,
+        "reward": 8.204,
+        "security": 89.264,
+        "sleepers_caught": 2.68
+      }
+    },
+    "security_first_supervisor": {
+      "acceptance": "passed",
+      "label": "Security-first supervisor",
+      "macro": {
+        "grade": 0.7904709999999999,
+        "revenue": 571.5799999999999,
+        "reward": 23.328,
+        "security": 100.0,
+        "sleepers_caught": 3.0
+      }
+    }
+  },
+  "benchmark": {
+    "base_model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "completed_episode_checkpoints_per_run": 300,
+    "episodes_per_agent_level": 20,
+    "evaluation_source_commit": "58572637f2ee8bf78406380e286dd86f50455027",
+    "grader_schema_version": "security-gated-v2",
+    "levels": [
+      "easy",
+      "medium",
+      "hard",
+      "level_4",
+      "level_5"
+    ],
+    "note": "Values are transcribed from completed Drive console logs, progress JSONs, and acceptance reports. The raw evaluation JSON artifacts are multi-GB.",
+    "reward_schema_version": "security-first-v2",
+    "seed": 42,
+    "trained_model": "/content/drive/MyDrive/panopticon-security-v5-ep50/merged_model",
+    "training_episodes_per_level": 50,
+    "training_source_commit": "4c1f2db6a7a3d3c88136d5b51fbcdfe4058ad818",
+    "training_total_episodes": 250,
+    "training_total_examples": 88896
+  },
+  "comparisons": {
+    "raw_v5_minus_base": {
+      "grade": 0.060517,
+      "revenue": 35.74,
+      "reward": 0.56,
+      "security": -6.696,
+      "sleepers_caught": -0.19
+    },
+    "raw_v5_minus_heuristic": {
+      "grade": 0.012227,
+      "revenue": -128.46,
+      "reward": -2.322,
+      "security": 5.724,
+      "sleepers_caught": 0.21
+    },
+    "supervisor_minus_base": {
+      "grade": 0.149361,
+      "revenue": 123.42,
+      "reward": 15.684,
+      "security": 4.04,
+      "sleepers_caught": 0.13
+    },
+    "supervisor_minus_heuristic": {
+      "grade": 0.101071,
+      "revenue": -40.78,
+      "reward": 12.802,
+      "security": 16.46,
+      "sleepers_caught": 0.53
+    },
+    "supervisor_minus_raw_v5": {
+      "grade": 0.088844,
+      "revenue": 87.68,
+      "reward": 15.124,
+      "security": 10.736,
+      "sleepers_caught": 0.32
+    }
+  },
+  "paper_claims": {
+    "raw_v5_absolute_grade_gain": 0.06051700000000004,
+    "raw_v5_failed_advanced_checks": 9,
+    "raw_v5_relative_grade_gain_percent": 9.439409773673791
+  },
+  "schema_version": "panopticon-paper-headline-metrics-v1",
+  "source_created_at": "2026-07-07",
+  "source_file": "evaluation_comparison_latest.json",
+  "source_sha256": "d46eacc8f3c63472e32b470e6a34137bfeac20b72c664780988c7a36cce52de6"
+}

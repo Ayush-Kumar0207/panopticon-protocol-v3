@@ -66,7 +66,7 @@ Raw V5 is better than the untrained model on macro grade, but not fully accepted
 
 ```bash
 pip install -r requirements.txt
-uvicorn server:app --host 0.0.0.0 --port 8000
+uvicorn _server:app --host 0.0.0.0 --port 8000
 ```
 
 ## Links

@@ -21,7 +21,7 @@ class BaseAgent:
 
 class RandomAgent(BaseAgent):
     def act(self, obs: np.ndarray, env: OpenEnvGymWrapper) -> np.ndarray:
-        return env.action_space.sample()
+        return env.sample_valid_action()
 
 
 class HeuristicAgent(BaseAgent):
@@ -95,16 +95,17 @@ class HeuristicAgent(BaseAgent):
 
 class RLAgent(BaseAgent):
     def __init__(self, model_path: str):
-        from train_rl import PanopticonAgent
+        from train_rl import PanopticonAgent, load_agent_checkpoint
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = PanopticonAgent(obs_dim=OBS_SIZE).to(self.device)
-        self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        load_agent_checkpoint(model_path, self.model, self.device)
         self.model.eval()
 
     def act(self, obs: np.ndarray, env: OpenEnvGymWrapper) -> np.ndarray:
         obs_tensor = torch.Tensor(obs).to(self.device)
+        action_mask = torch.as_tensor(env.get_action_mask(), dtype=torch.bool, device=self.device)
         with torch.no_grad():
-            action, _, _, _ = self.model.get_action_and_value(obs_tensor)
+            action, _, _, _ = self.model.get_action_and_value(obs_tensor, action_mask=action_mask)
         return action.cpu().numpy().astype(int)
 
 

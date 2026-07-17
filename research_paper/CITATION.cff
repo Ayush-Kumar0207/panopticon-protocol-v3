@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use Panopticon Protocol or its research artifact, cite this software and the associated paper."
+title: "Panopticon Protocol v3 Research Artifact"
+type: software
+version: 0.1.0-research-draft
+date-released: 2026-07-15
+license: Apache-2.0
+authors:
+  - family-names: Kumar
+    given-names: Ayush
+  - family-names: Prashant
+    given-names: Ravi
+repository-code: "https://github.com/Ayush-Kumar0207/panopticon-protocol-v3"
+url: "https://github.com/Ayush-Kumar0207/panopticon-protocol-v3"
+abstract: >-
+  Panopticon Protocol v3 is a partially observable counter-espionage agent
+  environment with typed state transitions, Gymnasium and language-model
+  interfaces, security-gated expert demonstrations, and multidimensional
+  evaluation with hard advanced-tier constraints.
+keywords:
+  - reinforcement learning
+  - language-model agents
+  - partially observable environments
+  - agent evaluation
+  - safety constraints
+  - imitation learning

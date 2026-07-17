@@ -1,0 +1,13 @@
+{
+  "schema_version": "panopticon-seed-separation-report-v1",
+  "seed_plan_path": "research_paper/data/seed_plans/v6_seed_plan.json",
+  "seed_plan_sha256": "c64f0d0e88c6ea1da34124b2f17b0d94edac75c8cc2db0b55ba0e0a1fbb8ad34",
+  "training_ledger_path": "research_paper/data/training_seed_ledger.drive_verified.json",
+  "training_ledger_seeds_sha256": "741276b1fcbab159db7fee95d5e418f91a12316f6ca4861479f78af595c4415d",
+  "training_ledger_verification_status": "directly-verified-against-drive-expert-metrics",
+  "evaluation_seed_count": 1150,
+  "training_seed_count": 250,
+  "overlap_count": 0,
+  "overlap": [],
+  "conclusion": "directly-verified-disjoint"
+}

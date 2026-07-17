@@ -110,7 +110,9 @@ No single mechanic is complex — but **together they create emergent strategic 
 | 4 | **💣 Dead-Man's Switches** | Terminate a Gen-4 without interrogation → devastating data breach | Gen 4+ |
 | 5 | **🔄 Double Agent Turning** | Convert caught sleepers into YOUR assets (4-turn investment, high risk/reward) | Gen 3+ |
 | 6 | **📡 Disinformation Campaigns** | Feed false intel back to HYDRA through turned double agents | Gen 3+ |
-| 7 | **🧠 HYDRA Adaptive Memory** | The adversary remembers your strategies and evolves counter-tactics | All |
+| 7 | **🧠 HYDRA Adaptive Memory** | The default adversary stores episode-local counters and applies hand-written counter-rules | All |
+
+> **HYDRA terminology:** `HydraMemory` is adaptive scripted state, not neural learning. The optional `NeuralHydraPolicy`/`train_hydra.py` path is a separate 12,685-parameter research adversary. It has not yet been shown to outperform the scripted baseline; use `research_paper/protocols/learned_hydra_protocol.md` for the held-out comparison.
 
 > ⚠️ **Why does this matter for LLM training?** Each mechanic forces a different reasoning skill. Canary traps require causal reasoning. False flags require verification before action. Dead-man's switches require _planning ahead_ — the agent must interrogate before terminating, or face catastrophic consequences. Together, they create a curriculum that systematically builds theory-of-mind.
 
@@ -133,7 +135,7 @@ Trained agents learn to _invest early_ (phases 1-3) for _massive payoffs later_ 
 
 ## 🎮 Action Space
 
-8 action types with sub-action modifiers — `MultiDiscrete([8, 8, 7])`:
+8 action types with sub-action modifiers — `MultiDiscrete([8, 12, 7])`:
 
 | Category | Action | Sub-actions | Target |
 |----------|--------|-------------|--------|
@@ -868,7 +870,7 @@ environment.py → Expert Trajectories → JSON conversation format
 
 ```
 gym_wrapper.py → 136-dim observation vector → 3-head actor network
-    → MultiDiscrete([8, 8, 7]) action → PPO reward signal
+    → MultiDiscrete([8, 12, 7]) action → PPO reward signal
 ```
 
 Both pipelines produce agents that can be evaluated using the same grading system, enabling a direct LLM-vs-RL comparison.

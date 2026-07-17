@@ -35,11 +35,19 @@ LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
 
 @dataclass
 class PolicyDecision:
+    """A decision plus the provenance needed to audit interventions."""
+
     action: AgentAction
     raw_text: str = ""
     prompt: str = ""
     messages: list[dict[str, str]] = field(default_factory=list)
     policy_name: str = ""
+    raw_action: AgentAction | None = None
+    parse_success: bool | None = None
+    raw_semantic_valid: bool | None = None
+    raw_validation_message: str = ""
+    intervention_category: str = "none"
+    intervention_applied: bool = False
 
 
 class EpisodePolicy(Protocol):
@@ -127,13 +135,34 @@ def make_policy_decision(
     raw_text: str = "",
     prompt: str = "",
     messages: list[dict[str, str]] | None = None,
+    raw_action: AgentAction | None = None,
+    parse_success: bool | None = None,
+    raw_semantic_valid: bool | None = None,
+    raw_validation_message: str = "",
+    intervention_category: str = "none",
 ) -> PolicyDecision:
+    source_action = raw_action or action
+    changed = (
+        source_action.action_type,
+        source_action.target,
+        source_action.sub_action,
+    ) != (
+        action.action_type,
+        action.target,
+        action.sub_action,
+    )
     return PolicyDecision(
         action=action,
         raw_text=raw_text,
         prompt=prompt,
         messages=messages or [],
         policy_name=policy_name,
+        raw_action=source_action,
+        parse_success=parse_success,
+        raw_semantic_valid=raw_semantic_valid,
+        raw_validation_message=raw_validation_message,
+        intervention_category=intervention_category if changed else "none",
+        intervention_applied=changed,
     )
 
 
@@ -577,14 +606,18 @@ class LocalModelPolicy:
         deterministic: bool = False,
         temperature: float = 0.3,
         top_p: float = 0.9,
+        intervention_mode: str = "repair",
     ):
         from argus_llm import LocalArgusModel
 
+        if intervention_mode not in {"raw", "repair"}:
+            raise ValueError("intervention_mode must be 'raw' or 'repair'")
         self.runtime = LocalArgusModel(model_ref)
         self.deterministic = deterministic
         self.temperature = temperature
         self.top_p = top_p
-        self.policy_name = "trained"
+        self.intervention_mode = intervention_mode
+        self.policy_name = f"trained_{intervention_mode}"
 
     def reset(self) -> None:
         return None
@@ -596,13 +629,34 @@ class LocalModelPolicy:
             temperature=self.temperature,
             top_p=self.top_p,
         )
-        repaired_action = repair_trained_action(trace.action, trace.raw_text, obs)
+        parse_success = not (
+            trace.action.action_type == ActionType.NOOP.value
+            and "parse failure" in trace.action.reason.lower()
+        )
+        raw_valid, raw_message = validate_action(trace.action, obs)
+        if self.intervention_mode == "raw":
+            executed_action = trace.action
+            category = "none"
+        else:
+            executed_action = repair_trained_action(trace.action, trace.raw_text, obs)
+            if not parse_success:
+                category = "parse_recovery_or_fallback"
+            elif not raw_valid:
+                category = "semantic_validity_repair"
+            else:
+                category = "priority_policy_override"
+
         return make_policy_decision(
-            action=repaired_action,
+            action=executed_action,
             policy_name=self.policy_name,
             raw_text=trace.raw_text,
             prompt=trace.prompt,
             messages=trace.messages,
+            raw_action=trace.action,
+            parse_success=parse_success,
+            raw_semantic_valid=raw_valid,
+            raw_validation_message=raw_message,
+            intervention_category=category,
         )
 
     def model_info(self) -> dict[str, Any]:
@@ -877,9 +931,10 @@ def run_episode(
     seed: int,
     max_steps: int = 300,
     verbose: bool = True,
+    hydra_policy: Any | None = None,
 ) -> dict[str, Any]:
     policy.reset()
-    env = Environment(seed=seed)
+    env = Environment(seed=seed, hydra_policy=hydra_policy)
     obs = env.reset(task_level=task_level, seed=seed)
 
     rewards: list[float] = []
@@ -889,6 +944,12 @@ def run_episode(
     while not env.state.done and steps < max_steps:
         before = compact_observation(obs)
         decision = policy.act(obs)
+        raw_action = decision.raw_action or decision.action
+        raw_valid = decision.raw_semantic_valid
+        raw_message = decision.raw_validation_message
+        if raw_valid is None:
+            raw_valid, raw_message = validate_action(raw_action, obs)
+        executed_valid, executed_message = validate_action(decision.action, obs)
         result = env.step(decision.action)
         after = compact_observation(result.observation)
 
@@ -898,6 +959,15 @@ def run_episode(
             "phase": obs.phase,
             "policy": decision.policy_name,
             "action": serialize_action(decision.action),
+            "raw_action": serialize_action(raw_action),
+            "executed_action": serialize_action(decision.action),
+            "parse_success": decision.parse_success,
+            "raw_semantic_valid": raw_valid,
+            "raw_validation_message": raw_message,
+            "executed_semantic_valid": executed_valid,
+            "executed_validation_message": executed_message,
+            "intervention_applied": decision.intervention_applied,
+            "intervention_category": decision.intervention_category,
             "raw_text": decision.raw_text,
             "prompt": decision.prompt,
             "messages": decision.messages,
@@ -929,15 +999,28 @@ def run_episode(
 
     state = env.state.model_dump()
     grade = grade_episode(task_level, build_grade_payload(state, rewards, steps))
+    intervention_categories: dict[str, int] = {}
+    for record in timeline:
+        category = record["intervention_category"]
+        intervention_categories[category] = intervention_categories.get(category, 0) + 1
+    provenance_summary = {
+        "turns": len(timeline),
+        "parse_failures": sum(record["parse_success"] is False for record in timeline),
+        "raw_semantic_invalid": sum(record["raw_semantic_valid"] is False for record in timeline),
+        "interventions": sum(record["intervention_applied"] for record in timeline),
+        "intervention_categories": intervention_categories,
+    }
 
     return {
         "level": task_level,
         "seed": seed,
         "policy": getattr(policy, "policy_name", "unknown"),
+        "hydra_policy": env.hydra_policy_name,
         "steps": steps,
         "total_reward": sum(rewards),
         "reward_history": rewards,
         "grade": grade.to_dict(),
+        "provenance_summary": provenance_summary,
         "timeline": timeline,
         "final_state": state,
     }
@@ -963,6 +1046,7 @@ def build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps", type=int, default=300, help="Maximum steps per episode")
     parser.add_argument("--temperature", type=float, default=0.3, help="Sampling temperature when not deterministic")
     parser.add_argument("--top-p", type=float, default=0.9, help="Top-p sampling parameter when not deterministic")
+    parser.add_argument("--intervention-mode", choices=["raw", "repair"], default="repair", help="Execute raw parsed model actions or provenance-logged semantic repair")
     parser.add_argument("--quiet", action="store_true", help="Reduce per-turn console output")
     return parser
 
@@ -977,6 +1061,7 @@ def main() -> None:
         deterministic=args.deterministic,
         temperature=args.temperature,
         top_p=args.top_p,
+        intervention_mode=args.intervention_mode,
     )
 
     try:
@@ -1022,6 +1107,7 @@ def main() -> None:
                 "episodes_per_level": args.episodes,
                 "seed": args.seed,
                 "deterministic": args.deterministic,
+                "intervention_mode": args.intervention_mode,
                 "max_steps": args.max_steps,
                 "temperature": args.temperature,
                 "top_p": args.top_p,

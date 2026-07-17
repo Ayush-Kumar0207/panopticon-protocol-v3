@@ -1,0 +1,86 @@
+\section{Environment Configuration}
+
+\begin{table}[h]
+\centering
+\caption{Implemented difficulty presets. ``Gen.'' is the maximum sleeper generation.}
+\begin{tabular}{lrrrrl}
+\toprule
+Level & Turns & Workers & Gen. & Phases & Sleeper spawn turns \\
+\midrule
+Easy & 60 & 6 & 1 & 2 & 15 \\
+Medium & 90 & 7 & 2 & 3 & 12, 45 \\
+Hard & 120 & 8 & 3 & 4 & 10, 40, 75 \\
+Level 4 & 150 & 9 & 4 & 5 & 8, 35, 65, 100 \\
+Level 5 & 160 & 10 & 5 & 6 & 8, 30, 55, 90, 125 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The configuration also stores a \code{hydra\_aggression} value increasing from 0.2 to 0.8. Under the default \code{scripted\_memory\_v1} policy this field is recorded but does not directly alter transition probabilities. The neural policy observes the value, but an effect cannot be claimed until a trained checkpoint and ablation demonstrate one.
+
+\section{Observation Vector}
+
+The Gymnasium observation contains 136 floating-point values:
+\begin{itemize}[leftmargin=*]
+  \item 12 worker slots $\times$ 6 features: department, visible state, performance, loyalty, suspicion, turning-in-progress;
+  \item 8 leak slots $\times$ 4 features: channel, department, canary flag, verified flag;
+  \item 6 canary slots $\times$ 3 features: department, normalized planting turn, triggered flag;
+  \item 3 double-agent slots $\times$ 3 features: trust, effectiveness, normalized disinformation count; and
+  \item 5 global features: normalized revenue, security, current turn, maximum turns, and phase.
+\end{itemize}
+
+The declared observation box spans $[-1,2]$. Padding is zero. Categorical values are ordinal numeric encodings, which are compact but impose arbitrary distances.
+
+\section{Actions}
+
+The version-2 factored Gym action is $(a,t,s) \in \{0,\ldots,7\}\times\{0,\ldots,11\}\times\{0,\ldots,6\}$. The meaning of target $t$ depends on action type: department for work/hire/canary, channel for monitoring, or worker index for investigate/neutralize/deploy-double. A joint mask enumerates canonical triples and admits one only when strict decoding and the public semantic validator both succeed. PPO samples action type, then a conditionally valid target, then a conditionally valid sub-action, and persists the joint mask with each rollout transition.
+
+\section{Grader Details}
+
+The security dimension is
+\[
+g_{sec}=\mathrm{clip}_{[0,1]}\left(0.5\frac{\min(C,N)}{\max(N,1)}+0.3\frac{S}{100}-\min(0.4,0.15F)+0.2\right),
+\]
+where $C$ is sleepers caught, $N$ total spawned, $S$ final security, and $F$ false accusations. Revenue combines final revenue with the standard deviation of the last 20 revenue observations and a capped surge bonus. Intelligence, adaptability, and efficiency are deterministic proxies based on action/outcome counters.
+
+\begin{table}[h]
+\centering
+\caption{Grader weights by tier. Columns are security (Sec.), revenue (Rev.), intelligence (Intel.), adaptability (Adapt.), and efficiency (Eff.).}
+\begin{tabular}{lccccc}
+\toprule
+Tier & Sec. & Rev. & Intel. & Adapt. & Eff. \\
+\midrule
+Easy/Medium & .30 & .25 & .20 & .15 & .10 \\
+Hard & .25 & .20 & .30 & .15 & .10 \\
+Level 4 & .40 & .20 & .15 & .15 & .10 \\
+Level 5 & .40 & .15 & .20 & .15 & .10 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All tiers require a composite threshold. Levels 4 and 5 additionally require final security $\ge 90$, catch rate $=1$, and false accusations $=0$.
+
+\section{Training Configuration}
+
+The V5 data summary records 50 expert episodes per level and 88,896 weighted examples: 7,430 easy, 13,166 medium, 18,414 hard, 23,889 Level 4, and 25,997 Level 5. Maximum sequence length is 512 tokens. LoRA uses rank 16, alpha 32, dropout 0.05, and targets the model's attention and MLP projections. The source model is \code{Qwen/Qwen2.5-1.5B-Instruct}.
+
+\section{Acceptance Failures}
+
+Raw V5 fails four checks on Level 4: 100\% pass rate, security not worse than base, caught count not worse than base, and zero missed sleepers. It fails five on Level 5: those four plus zero false accusations. The supervisor acceptance report contains no failed checks. These are stored outcomes from the comparison artifact, not inferential statistical conclusions.
+
+\section{Proposed Final Evaluation Additions}
+
+The final evaluation should include a frozen paired seed list; raw base and raw V5 with identical decoding; parsing-only and semantic-repair ablations; supervisor-only and hybrid policies; heuristic, random, and matched PPO baselines; 95\% uncertainty intervals; exact advanced failure rates; latency and token cost; and shifted-environment tests. Model selection must not use the final held-out seed set.
+
+\section{Known Engineering Gaps Relevant to Reproduction}
+
+\begin{itemize}[leftmargin=*]
+  \item The root deployment metadata and Docker entry points do not all match the available server files; the deploy subdirectory contains additional compatibility files.
+  \item The server owns one global in-memory environment and exposes full hidden state through a state route; it is suitable for a local evaluator, not an untrusted multi-tenant service.
+  \item Interrogation can reveal an armed dead switch but does not disarm it, and termination still applies the armed consequence.
+  \item Cover integrity and recruitment-accuracy counters are updated but do not currently influence all later detection probabilities.
+  \item The \code{deep\_cover} action label does not add a separate spawn effect beyond its recorded label.
+  \item The new joint mask is validated in unit tests, but a matched trained PPO result under the version-2 action schema is not yet available.
+\end{itemize}
+
+These are documented to bound claims and to help independent reproductions match current behavior rather than an intended future design.

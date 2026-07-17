@@ -21,16 +21,19 @@ RUN pip install --no-cache-dir \
 # Copy application code
 COPY models.py .
 COPY environment.py .
+COPY hydra_policy.py .
 COPY _server.py .
 COPY client.py .
 COPY inference.py .
+COPY inference_local.py .
+COPY argus_llm.py .
+COPY security_policy.py .
 COPY grader.py .
 COPY smoke_test.py .
-COPY stub_env.py .
 COPY gym_wrapper.py .
 
 COPY tasks/ ./tasks/
-COPY server/ ./server/
+COPY static/ ./static/
 
 COPY pyproject.toml .
 COPY openenv.yaml .
@@ -46,4 +49,4 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONIOENCODING=utf-8
 
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "_server:app", "--host", "0.0.0.0", "--port", "7860"]

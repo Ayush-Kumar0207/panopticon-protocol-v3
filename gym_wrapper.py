@@ -3,7 +3,7 @@ The Panopticon Protocol v3 — Gymnasium Wrapper
 ================================================
 Standardized Gymnasium interface for PPO/CleanRL training.
 Encodes the espionage observation into a fixed-size float32 tensor
-and decodes MultiDiscrete([8, 8, 4]) actions back to AgentAction.
+and decodes MultiDiscrete([8, 12, 7]) actions back to AgentAction.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from gymnasium import spaces
 from environment import Environment
 from models import (
     ActionType, SubAction, Department, LeakChannel,
-    AgentAction, EnvironmentObservation, WorkerState,
+    AgentAction, EnvironmentObservation, WorkerState, validate_action,
 )
 
 # ── CAPACITY CONSTANTS ──
@@ -37,15 +37,18 @@ OBS_SIZE = (MAX_WORKERS * WORKER_FEATS) + (MAX_LEAKS * LEAK_FEATS) + \
 
 # Action space sizes
 NUM_ACTION_TYPES = len(ActionType)       # 8
-NUM_TARGETS = 8                          # Workers 0-7, or department/channel index
+NUM_TARGETS = MAX_WORKERS                # Every observable worker can be addressed
 NUM_SUB_ACTIONS = len(SubAction)         # 7
+
+ACTION_SCHEMA_VERSION = "gym-factored-v2-target12-masked"
+OBSERVATION_SCHEMA_VERSION = "flat-v1-redacted-136"
 
 # Department and channel encoding maps
 DEPT_INDEX = {d.value: i / len(Department) for i, d in enumerate(Department)}
 CHANNEL_INDEX = {c.value: i / len(LeakChannel) for i, c in enumerate(LeakChannel)}
 STATE_INDEX = {s.value: i / len(WorkerState) for i, s in enumerate(WorkerState)}
 
-# Target mapping: indices 0-7 can represent worker indices, departments, or channels
+# Target indices are interpreted conditionally by action type and sub-action.
 DEPT_LIST = [d.value for d in Department]
 CHANNEL_LIST = [c.value for c in LeakChannel]
 
@@ -54,7 +57,7 @@ class OpenEnvGymWrapper(gym.Env):
     """
     Panopticon Protocol v3 — Gymnasium adapter.
     Observation: Box(136,) float32
-    Action: MultiDiscrete([8, 8, 7])
+    Action: MultiDiscrete([8, 12, 7])
     """
 
     def __init__(self, task_level: str = "medium", seed: Optional[int] = None):
@@ -72,7 +75,11 @@ class OpenEnvGymWrapper(gym.Env):
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, dict]:
         super().reset(seed=seed)
         self._last_obs = self._env.reset(task_level=self._task_level, seed=seed)
-        return self._flatten_obs(self._last_obs), {"level": self._task_level}
+        return self._flatten_obs(self._last_obs), {
+            "level": self._task_level,
+            "action_schema_version": ACTION_SCHEMA_VERSION,
+            "observation_schema_version": OBSERVATION_SCHEMA_VERSION,
+        }
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, dict]:
         agent_action = self._decode_action(action)
@@ -86,48 +93,80 @@ class OpenEnvGymWrapper(gym.Env):
             result.info,
         )
 
-    def _decode_action(self, action: np.ndarray) -> AgentAction:
-        """Convert MultiDiscrete indices to an AgentAction."""
+    def _decode_action(self, action: np.ndarray, *, strict: bool = False) -> Optional[AgentAction]:
+        """Convert indices to an action.
+
+        ``strict=True`` defines the canonical research action space: it rejects
+        out-of-range targets, semantically irrelevant sub-actions, and duplicate
+        modulo aliases. The default preserves the historical environment API for
+        callers that still submit unmasked actions.
+        """
         idx_type, idx_target, idx_sub = int(action[0]), int(action[1]), int(action[2])
 
         action_types = list(ActionType)
+        if strict and not 0 <= idx_type < len(action_types):
+            return None
         at = action_types[idx_type % len(action_types)]
 
         sub_actions = list(SubAction)
+        if strict and not 0 <= idx_sub < len(sub_actions):
+            return None
         sa = sub_actions[idx_sub % len(sub_actions)]
         dept_list = self._active_departments()
 
-        # Resolve target based on action type
+        if strict and not 0 <= idx_target < NUM_TARGETS:
+            return None
+
         target = ""
-        if at in (ActionType.WORK, ActionType.HIRE, ActionType.CANARY):
-            # Target is a department
+        if at == ActionType.NOOP:
+            if strict and (idx_target != 0 or sa != SubAction.NONE):
+                return None
+        elif at in (ActionType.WORK, ActionType.HIRE, ActionType.CANARY):
+            if strict and (sa != SubAction.NONE or idx_target >= len(dept_list)):
+                return None
             target = dept_list[idx_target % len(dept_list)]
         elif at == ActionType.MONITOR:
-            # Target is a leak channel
+            if strict and (sa != SubAction.NONE or idx_target >= len(CHANNEL_LIST)):
+                return None
             target = CHANNEL_LIST[idx_target % len(CHANNEL_LIST)]
         elif at in (ActionType.INVESTIGATE, ActionType.NEUTRALIZE, ActionType.DEPLOY_DOUBLE):
-            # Target is a worker by index
+            if strict and (not self._last_obs or idx_target >= len(self._last_obs.workers)):
+                if not (at == ActionType.INVESTIGATE and sa in (SubAction.VERIFY, SubAction.CORRELATE)):
+                    return None
             if self._last_obs and idx_target < len(self._last_obs.workers):
-                worker = self._last_obs.workers[idx_target]
-                target = worker.id
+                target = self._last_obs.workers[idx_target].id
             elif self._last_obs and self._last_obs.workers:
                 target = self._last_obs.workers[0].id
 
-            # For INVESTIGATE, also resolve target as department for CORRELATE
             if at == ActionType.INVESTIGATE and sa == SubAction.CORRELATE:
+                if strict and idx_target >= len(dept_list):
+                    return None
                 target = dept_list[idx_target % len(dept_list)]
             elif at == ActionType.INVESTIGATE and sa == SubAction.VERIFY:
-                # Target should be a leak ID
+                if strict and (not self._last_obs or idx_target >= len(self._last_obs.active_leaks)):
+                    return None
                 if self._last_obs and idx_target < len(self._last_obs.active_leaks):
                     target = self._last_obs.active_leaks[idx_target].id
                 elif self._last_obs and self._last_obs.active_leaks:
                     target = self._last_obs.active_leaks[0].id
 
-        # Default sub-action based on action type
-        if at == ActionType.INVESTIGATE and sa not in (SubAction.AUDIT, SubAction.VERIFY, SubAction.CORRELATE):
-            sa = SubAction.AUDIT
-        elif at == ActionType.NEUTRALIZE and sa not in (SubAction.TERMINATE, SubAction.INTERROGATE, SubAction.TURN):
-            sa = SubAction.TERMINATE
+            if strict:
+                if at == ActionType.INVESTIGATE and sa not in (
+                    SubAction.AUDIT, SubAction.VERIFY, SubAction.CORRELATE
+                ):
+                    return None
+                if at == ActionType.NEUTRALIZE and sa not in (
+                    SubAction.TERMINATE, SubAction.INTERROGATE, SubAction.TURN
+                ):
+                    return None
+                if at == ActionType.DEPLOY_DOUBLE and sa != SubAction.NONE:
+                    return None
+
+        if not strict:
+            if at == ActionType.INVESTIGATE and sa not in (SubAction.AUDIT, SubAction.VERIFY, SubAction.CORRELATE):
+                sa = SubAction.AUDIT
+            elif at == ActionType.NEUTRALIZE and sa not in (SubAction.TERMINATE, SubAction.INTERROGATE, SubAction.TURN):
+                sa = SubAction.TERMINATE
 
         return AgentAction(
             action_type=at.value,
@@ -199,15 +238,31 @@ class OpenEnvGymWrapper(gym.Env):
         return vec
 
     def get_action_mask(self) -> np.ndarray:
-        """Boolean mask of valid actions (for masked PPO)."""
-        mask = np.ones((NUM_ACTION_TYPES, NUM_TARGETS, NUM_SUB_ACTIONS), dtype=bool)
-
+        """Return the exact canonical joint-validity mask used by masked PPO."""
+        mask = np.zeros((NUM_ACTION_TYPES, NUM_TARGETS, NUM_SUB_ACTIONS), dtype=bool)
         if not self._last_obs:
             return mask
 
-        # Disable DEPLOY_DOUBLE if no double agents
-        if not self._last_obs.double_agents:
-            da_idx = list(ActionType).index(ActionType.DEPLOY_DOUBLE)
-            mask[da_idx, :, :] = False
+        for idx_type in range(NUM_ACTION_TYPES):
+            for idx_target in range(NUM_TARGETS):
+                for idx_sub in range(NUM_SUB_ACTIONS):
+                    action = self._decode_action(
+                        np.asarray([idx_type, idx_target, idx_sub], dtype=np.int64),
+                        strict=True,
+                    )
+                    if action is not None:
+                        mask[idx_type, idx_target, idx_sub] = validate_action(action, self._last_obs)[0]
 
+        if not mask.any():
+            noop_type = list(ActionType).index(ActionType.NOOP)
+            noop_sub = list(SubAction).index(SubAction.NONE)
+            mask[noop_type, 0, noop_sub] = True
         return mask
+
+    def sample_valid_action(self, rng: Optional[np.random.Generator] = None) -> np.ndarray:
+        """Uniformly sample one canonical valid joint action."""
+        valid = np.argwhere(self.get_action_mask())
+        if not len(valid):
+            raise RuntimeError("No valid action is available; reset the environment first")
+        generator = rng or np.random.default_rng()
+        return valid[int(generator.integers(len(valid)))].astype(np.int64)

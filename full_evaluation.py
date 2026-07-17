@@ -398,7 +398,7 @@ def build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps", type=int, default=300, help="Maximum steps per episode")
     parser.add_argument("--verbose", action="store_true", help="Print per-turn logs during evaluation")
     parser.add_argument("--sampled", action="store_true", help="Use sampled decoding instead of deterministic decoding for the trained model")
-    parser.add_argument("--trained-policy", choices=["model", "security_first"], default="model", help="Policy used in the trained slot: raw/local model or deterministic security-first supervisor")
+    parser.add_argument("--trained-policy", choices=["model_raw", "model_repair", "security_first", "model"], default="model_repair", help="Policy in the trained slot; legacy model is an alias for model_repair")
     parser.add_argument("--checkpoint-file", default="", help="Optional episode JSONL checkpoint path")
     parser.add_argument("--progress-file", default="", help="Optional lightweight progress JSON path")
     parser.add_argument("--restart", action="store_true", help="Delete existing evaluation sidecars and start this output from scratch")
@@ -477,8 +477,18 @@ def main() -> None:
                     print("[*] Using deterministic security-first supervisor in the trained slot", flush=True)
                     trained_policy = SecurityFirstPolicy(policy_name="trained")
                 else:
-                    print(f"[*] Loading trained/model policy only when needed: {args.model}", flush=True)
-                    trained_policy = LocalModelPolicy(args.model, deterministic=not args.sampled)
+                    intervention_mode = "raw" if args.trained_policy == "model_raw" else "repair"
+                    if args.trained_policy == "model":
+                        print("[!] --trained-policy model is legacy and means model_repair", flush=True)
+                    print(
+                        f"[*] Loading trained model ({intervention_mode}) only when needed: {args.model}",
+                        flush=True,
+                    )
+                    trained_policy = LocalModelPolicy(
+                        args.model,
+                        deterministic=not args.sampled,
+                        intervention_mode=intervention_mode,
+                    )
             return trained_policy
 
         for agent_key in AGENT_ORDER:

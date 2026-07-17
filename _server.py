@@ -99,6 +99,23 @@ _agent_policy: Any | None = None
 _agent_load_error: str | None = None
 
 
+def environment_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+PRIVILEGED_DEBUG_ENABLED = environment_flag("PANOPTICON_ENABLE_PRIVILEGED_DEBUG")
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "PANOPTICON_CORS_ORIGINS", "http://localhost:3000,http://localhost:7860"
+    ).split(",")
+    if origin.strip()
+]
+
+
 def get_env() -> Environment:
     global _env
     if _env is None:
@@ -157,7 +174,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials="*" not in CORS_ORIGINS,
     allow_methods=["*"], allow_headers=["*"],
 )
 
@@ -343,6 +361,8 @@ async def get_observation():
 
 @app.get("/state", response_model=StateResponse)
 async def get_state():
+    if not PRIVILEGED_DEBUG_ENABLED:
+        raise HTTPException(status_code=404, detail="Privileged debug endpoint is disabled")
     try:
         env = get_env()
         return StateResponse(state=env.state.model_dump())
@@ -352,6 +372,8 @@ async def get_state():
 
 @app.get("/render")
 async def render_environment():
+    if not PRIVILEGED_DEBUG_ENABLED:
+        raise HTTPException(status_code=404, detail="Privileged debug endpoint is disabled")
     try:
         return {"render": get_env().render()}
     except Exception as e:

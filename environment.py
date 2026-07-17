@@ -33,6 +33,7 @@ from models import (
     HydraMemory, AgentAction, EnvironmentObservation, EnvironmentState,
     validate_action,
 )
+from hydra_policy import HydraPolicy, HydraPolicyObservation, ScriptedHydraPolicy
 
 
 # =============================================================================
@@ -125,7 +126,7 @@ class Environment:
     (HYDRA) that infiltrates sleeper agents of escalating sophistication.
     """
 
-    def __init__(self, seed: int | None = None):
+    def __init__(self, seed: int | None = None, hydra_policy: HydraPolicy | None = None):
         self._rng = random.Random(seed)
         self._state = EnvironmentState()
         self._task_level = "amateur"
@@ -137,10 +138,15 @@ class Environment:
         self._pending_sleepers: dict[int, int] = {}  # turn -> generation
         self._turning_workers: dict[str, int] = {}   # worker_id -> turns remaining
         self._shuffled_names: list[str] = list(WORKER_NAMES)  # shuffled per episode
+        self._hydra_policy = hydra_policy or ScriptedHydraPolicy()
 
     @property
     def state(self) -> EnvironmentState:
         return self._state
+
+    @property
+    def hydra_policy_name(self) -> str:
+        return self._hydra_policy.policy_name
 
     # =========================================================================
     # RESET
@@ -163,6 +169,7 @@ class Environment:
         self._report_counter = 0
         self._pending_sleepers = dict(self._config["sleeper_schedule"])
         self._turning_workers = {}
+        self._hydra_policy.reset()
 
         # Shuffle the name pool so workers get different names each episode
         self._shuffled_names = list(WORKER_NAMES)
@@ -213,7 +220,7 @@ class Environment:
     def step(self, action: AgentAction) -> StepResult:
         """Execute one turn: agent acts, then HYDRA acts, then world updates."""
         s = self._state
-        info: dict = {"valid": True, "events": []}
+        info: dict = {"valid": True, "events": [], "hydra_policy": self.hydra_policy_name}
 
         # ── Validate action ──
         obs = self.get_observation()
@@ -719,8 +726,40 @@ class Environment:
     # HYDRA AI — Adversarial Opponent
     # =========================================================================
 
+    def _get_hydra_policy_observation(self) -> HydraPolicyObservation:
+        """Build HYDRA's explicit information boundary for scripted or learned policies."""
+        s = self._state
+        active_states = {
+            HiddenWorkerState.SLEEPER_ACTIVE.value,
+            HiddenWorkerState.DEAD_SWITCH_ARMED.value,
+        }
+        return HydraPolicyObservation(
+            turn=s.turn,
+            max_turns=s.max_turns,
+            phase_number=s.phase_number,
+            enterprise_revenue=s.enterprise_revenue,
+            security_score=s.security_score,
+            hydra_aggression=s.hydra_aggression,
+            departments_active=tuple(s.departments_active),
+            canary_departments_seen=tuple(s.hydra_memory.canary_departments_seen),
+            agent_audit_pattern=dict(s.hydra_memory.agent_audit_pattern),
+            monitored_channels=tuple(s.hydra_memory.preferred_leak_channels),
+            detection_count=s.hydra_memory.detection_count,
+            disinfo_received=s.hydra_memory.disinfo_received,
+            recruitment_accuracy=s.hydra_memory.recruitment_accuracy,
+            active_sleepers=sum(
+                worker.is_sleeper and worker.hidden_state in active_states
+                for worker in s.workers
+            ),
+            dormant_sleepers=sum(
+                worker.is_sleeper
+                and worker.hidden_state == HiddenWorkerState.SLEEPER_DORMANT.value
+                for worker in s.workers
+            ),
+        )
+
     def _hydra_turn(self) -> list[str]:
-        """HYDRA's autonomous actions each turn."""
+        """HYDRA's autonomous actions each turn through a versioned policy boundary."""
         s = self._state
         events = []
 
@@ -728,7 +767,13 @@ class Environment:
         if s.turn in self._pending_sleepers:
             gen = self._pending_sleepers[s.turn]
             if gen <= self._config["max_gen"]:
-                sleeper_events = self._spawn_sleeper(gen)
+                target_department = self._hydra_policy.choose_spawn_department(
+                    self._get_hydra_policy_observation(),
+                    gen,
+                    list(s.departments_active),
+                    self._rng,
+                )
+                sleeper_events = self._spawn_sleeper(gen, target_department)
                 events.extend(sleeper_events)
 
         # ── 2. Activate dormant sleepers ──
@@ -744,7 +789,13 @@ class Environment:
             if (w.hidden_state == HiddenWorkerState.SLEEPER_ACTIVE.value
                     and w.state != WorkerState.TERMINATED.value
                     and w.leak_cooldown <= 0):
-                leak_events = self._sleeper_leak(w)
+                leak_channel = self._hydra_policy.choose_leak_channel(
+                    self._get_hydra_policy_observation(),
+                    w.generation,
+                    [channel.value for channel in LeakChannel],
+                    self._rng,
+                )
+                leak_events = self._sleeper_leak(w, leak_channel)
                 events.extend(leak_events)
                 w.leak_cooldown = max(2, 5 - w.generation)  # Higher gen = faster leaks
             elif w.leak_cooldown > 0:
@@ -755,7 +806,11 @@ class Environment:
             if (w.is_sleeper and w.generation >= 3
                     and w.hidden_state == HiddenWorkerState.SLEEPER_ACTIVE.value
                     and not w.false_flag_target
-                    and self._rng.random() < 0.3):
+                    and self._hydra_policy.should_plant_false_flag(
+                        self._get_hydra_policy_observation(),
+                        w.generation,
+                        self._rng,
+                    )):
                 self._plant_false_flag(w)
 
         # ── 5. Gen-4 arm dead-man's switch ──
@@ -784,25 +839,12 @@ class Environment:
 
         return events
 
-    def _spawn_sleeper(self, generation: int) -> list[str]:
-        """HYDRA infiltrates a new sleeper agent into the enterprise."""
+    def _spawn_sleeper(self, generation: int, target_dept: str) -> list[str]:
+        """HYDRA infiltrates a new sleeper in the policy-selected department."""
         s = self._state
         events = []
-
-        # Choose department — HYDRA uses memory to pick smart targets
-        depts = list(s.departments_active)
-        if s.hydra_memory.canary_departments_seen and generation >= 2:
-            # Avoid departments where canaries were detected
-            safe_depts = [d for d in depts if d not in s.hydra_memory.canary_departments_seen]
-            if safe_depts:
-                depts = safe_depts
-
-        if s.hydra_memory.agent_audit_pattern and generation >= 2:
-            # Prefer least-audited departments
-            audit_counts = s.hydra_memory.agent_audit_pattern
-            depts.sort(key=lambda d: audit_counts.get(d, 0))
-
-        target_dept = self._rng.choice(depts) if depts else self._rng.choice(s.departments_active)
+        if target_dept not in s.departments_active:
+            raise ValueError(f"HYDRA policy selected inactive department: {target_dept}")
 
         # Disinformation degrades recruitment quality
         quality = s.hydra_memory.recruitment_accuracy
@@ -829,19 +871,12 @@ class Environment:
         events.append(f"[HIDDEN] HYDRA: Gen-{generation} sleeper infiltrated {target_dept}.")
         return events
 
-    def _sleeper_leak(self, worker: Worker) -> list[str]:
-        """A sleeper leaks intelligence through an external channel."""
+    def _sleeper_leak(self, worker: Worker, channel: str) -> list[str]:
+        """A sleeper leaks through the policy-selected external channel."""
         s = self._state
         events = []
-
-        # Choose leak channel — HYDRA adapts away from monitored channels
-        channels = [c.value for c in LeakChannel]
-        if s.hydra_memory.preferred_leak_channels and worker.generation >= 2:
-            safe_channels = [c for c in channels if c not in s.hydra_memory.preferred_leak_channels]
-            if safe_channels:
-                channels = safe_channels
-
-        channel = self._rng.choice(channels)
+        if channel not in {candidate.value for candidate in LeakChannel}:
+            raise ValueError(f"HYDRA policy selected unknown leak channel: {channel}")
 
         # Check if leak carries canary data
         self._leak_counter += 1

@@ -6,7 +6,7 @@ spec_version: 1
 name: panopticon-protocol-v3
 type: space
 runtime: fastapi
-app: server:app
+app: _server:app
 port: 8000
 
 display_name: "The Panopticon Protocol v3"

@@ -1,0 +1,83 @@
+name: research-artifact
+
+on:
+  push:
+    paths:
+      - "panopticon_bench/**"
+      - "research_paper/**"
+      - "tests/test_panopticon_bench.py"
+      - "tests/test_research_validity.py"
+      - "tests/test_server_hardening.py"
+      - "tests/test_packaging_contract.py"
+      - "environment.py"
+      - "gym_wrapper.py"
+      - "hydra_*.py"
+      - "train_hydra.py"
+      - "train_rl.py"
+      - "v6_evaluation.py"
+      - "evaluation_comparison_latest.json"
+      - ".github/workflows/research-artifact.yml"
+  pull_request:
+    paths:
+      - "panopticon_bench/**"
+      - "research_paper/**"
+      - "tests/test_panopticon_bench.py"
+      - "tests/test_research_validity.py"
+      - "tests/test_server_hardening.py"
+      - "tests/test_packaging_contract.py"
+      - "environment.py"
+      - "gym_wrapper.py"
+      - "hydra_*.py"
+      - "train_hydra.py"
+      - "train_rl.py"
+      - "v6_evaluation.py"
+      - "evaluation_comparison_latest.json"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install research dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[train]"
+          python -m pip install matplotlib==3.9.2 pytest==8.3.5
+
+      - name: Compile and test research validity
+        run: |
+          python -m compileall -q panopticon_bench research_paper/scripts environment.py gym_wrapper.py hydra_policy.py hydra_neural.py train_hydra.py train_rl.py v6_evaluation.py
+          python -m pytest -q tests/test_panopticon_bench.py tests/test_research_validity.py tests/test_server_hardening.py tests/test_packaging_contract.py
+
+      - name: Regenerate paper evidence
+        run: |
+          python research_paper/scripts/extract_metrics.py
+          python research_paper/scripts/generate_figures.py
+          python research_paper/scripts/generate_diagrams.py
+          python research_paper/scripts/reconstruct_training_seed_ledger.py --overwrite
+          python research_paper/scripts/verify_drive_seed_ledger.py
+          python research_paper/scripts/verify_seed_separation.py
+          python research_paper/scripts/validate_package.py
+
+      - name: Upload regenerated research assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: panopticon-research-assets
+          path: |
+            research_paper/assets/figures/
+            research_paper/assets/tables/
+            research_paper/data/processed/
+            research_paper/data/raw/SHA256SUMS.txt
+            research_paper/data/seed_plans/v6_seed_plan.json
+            research_paper/data/seed_plans/v6_training_separation_report.json
+            research_paper/data/training_seed_ledger.reconstructed.json
+            research_paper/data/training_seed_ledger.drive_verified.json
+            research_paper/data/raw/v5_drive_seed_evidence.json

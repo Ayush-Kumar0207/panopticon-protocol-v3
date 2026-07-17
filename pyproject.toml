@@ -34,10 +34,10 @@ train = [
 ]
 
 [project.entry-points."openenv.server"]
-panopticon = "server:app"
+panopticon = "_server:app"
 
 [project.scripts]
-server = "server.app:main"
+server = "_server:main"
 
 [project.urls]
 Repository = "https://github.com/Ayush-Kumar0207/panopticon-protocol-v3"
@@ -46,6 +46,13 @@ Repository = "https://github.com/Ayush-Kumar0207/panopticon-protocol-v3"
 target-version = "py311"
 line-length = 100
 
+[tool.setuptools]
+py-modules = [
+    "_server", "argus_llm", "client", "environment", "grader", "gym_wrapper",
+    "hydra_neural", "hydra_policy", "inference", "inference_local", "models",
+    "security_policy", "train_hydra", "train_rl", "v6_evaluation",
+]
+
 [tool.setuptools.packages.find]
-include = ["server*", "tasks*"]
+include = ["tasks*", "panopticon_bench*"]
 exclude = ["results*", "static*", "tests*"]

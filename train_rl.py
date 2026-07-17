@@ -2,7 +2,7 @@
 The Panopticon Protocol v3 — PPO Training Suite
 =================================================
 Phase-scheduled curriculum PPO with multi-head actor for
-MultiDiscrete([8, 8, 7]) action space.
+MultiDiscrete([8, 12, 7]) action space with conditional joint masking.
 
 Supports:
   - 6-phase curriculum auto-escalation
@@ -20,7 +20,15 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.distributions.categorical import Categorical
-from gym_wrapper import OpenEnvGymWrapper, OBS_SIZE, NUM_ACTION_TYPES, NUM_TARGETS, NUM_SUB_ACTIONS
+from gym_wrapper import (
+    ACTION_SCHEMA_VERSION,
+    OBSERVATION_SCHEMA_VERSION,
+    OpenEnvGymWrapper,
+    OBS_SIZE,
+    NUM_ACTION_TYPES,
+    NUM_TARGETS,
+    NUM_SUB_ACTIONS,
+)
 
 # ── HYPERPARAMETERS ──
 LEARNING_RATE = 3e-4
@@ -96,38 +104,119 @@ class PanopticonAgent(nn.Module):
         features = self.backbone(x)
         return self.critic(features)
 
-    def get_action_and_value(self, x, action=None):
-        features = self.backbone(x)
+    @staticmethod
+    def _masked_distribution(logits, valid_mask):
+        valid_mask = valid_mask.to(device=logits.device, dtype=torch.bool)
+        if not torch.all(valid_mask.any(dim=-1)):
+            raise RuntimeError("Conditional action mask contains a row with no valid choice")
+        masked_logits = logits.masked_fill(~valid_mask, torch.finfo(logits.dtype).min)
+        return Categorical(logits=masked_logits)
 
-        # 3 independent distributions
+    def get_action_and_value(self, x, action=None, action_mask=None):
+        """Sample/evaluate a factored action under a canonical joint mask.
+
+        The policy is autoregressive at sampling time: choose a valid action type,
+        then a target valid for that type, then a sub-action valid for that pair.
+        Supplying the stored joint mask reproduces the same log probability during
+        PPO updates. Without a mask, legacy independent-head behavior is retained.
+        """
+        features = self.backbone(x)
         logits_at = self.head_action_type(features)
         logits_tg = self.head_target(features)
         logits_sa = self.head_sub_action(features)
 
-        dist_at = Categorical(logits=logits_at)
-        dist_tg = Categorical(logits=logits_tg)
-        dist_sa = Categorical(logits=logits_sa)
-
-        if action is None:
-            act_at = dist_at.sample()
-            act_tg = dist_tg.sample()
-            act_sa = dist_sa.sample()
-            action = torch.stack([act_at, act_tg, act_sa], dim=-1)
-        else:
+        supplied_action = action is not None
+        if supplied_action:
             act_at = action[..., 0].long()
             act_tg = action[..., 1].long()
             act_sa = action[..., 2].long()
 
-        # Sum log probs and entropies across 3 heads
+        if action_mask is None:
+            dist_at = Categorical(logits=logits_at)
+            dist_tg = Categorical(logits=logits_tg)
+            dist_sa = Categorical(logits=logits_sa)
+            if not supplied_action:
+                act_at = dist_at.sample()
+                act_tg = dist_tg.sample()
+                act_sa = dist_sa.sample()
+        else:
+            joint_mask = action_mask.to(device=logits_at.device, dtype=torch.bool)
+            type_mask = joint_mask.any(dim=-1).any(dim=-1)
+            dist_at = self._masked_distribution(logits_at, type_mask)
+            if not supplied_action:
+                act_at = dist_at.sample()
+
+            if joint_mask.dim() == 3:
+                selected_type_mask = joint_mask[act_at]
+            else:
+                batch_index = torch.arange(joint_mask.shape[0], device=joint_mask.device)
+                selected_type_mask = joint_mask[batch_index, act_at]
+            target_mask = selected_type_mask.any(dim=-1)
+            dist_tg = self._masked_distribution(logits_tg, target_mask)
+            if not supplied_action:
+                act_tg = dist_tg.sample()
+
+            if selected_type_mask.dim() == 2:
+                selected_target_mask = selected_type_mask[act_tg]
+            else:
+                batch_index = torch.arange(selected_type_mask.shape[0], device=selected_type_mask.device)
+                selected_target_mask = selected_type_mask[batch_index, act_tg]
+            dist_sa = self._masked_distribution(logits_sa, selected_target_mask)
+            if not supplied_action:
+                act_sa = dist_sa.sample()
+
+        if not supplied_action:
+            action = torch.stack([act_at, act_tg, act_sa], dim=-1)
+
         log_prob = dist_at.log_prob(act_at) + dist_tg.log_prob(act_tg) + dist_sa.log_prob(act_sa)
+        # The conditional entropies form an unbiased sampled estimate of joint entropy.
         entropy = dist_at.entropy() + dist_tg.entropy() + dist_sa.entropy()
         value = self.critic(features)
-
         return action, log_prob, entropy, value
 
 
 # For backward compatibility
 Agent = PanopticonAgent
+
+CHECKPOINT_SCHEMA_VERSION = 2
+
+
+def save_agent_checkpoint(path: str, agent: PanopticonAgent, **metadata) -> None:
+    payload = {
+        "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "action_schema_version": ACTION_SCHEMA_VERSION,
+        "observation_schema_version": OBSERVATION_SCHEMA_VERSION,
+        "state_dict": agent.state_dict(),
+        "parameter_count": sum(parameter.numel() for parameter in agent.parameters()),
+        "metadata": metadata,
+    }
+    torch.save(payload, path)
+
+
+def load_agent_checkpoint(path: str, agent: PanopticonAgent, device) -> dict:
+    payload = torch.load(path, map_location=device, weights_only=True)
+    metadata = {}
+    if isinstance(payload, dict) and "state_dict" in payload:
+        found_schema = payload.get("action_schema_version")
+        if found_schema != ACTION_SCHEMA_VERSION:
+            raise RuntimeError(
+                f"Checkpoint action schema {found_schema!r} is incompatible with "
+                f"{ACTION_SCHEMA_VERSION!r}. Retrain or explicitly migrate the target head."
+            )
+        state_dict = payload["state_dict"]
+        metadata = payload.get("metadata", {})
+    else:
+        state_dict = payload
+
+    try:
+        agent.load_state_dict(state_dict)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "Checkpoint tensor shapes do not match the current 12-target masked PPO schema. "
+            "Legacy 8-target checkpoints are intentionally not loaded silently because workers "
+            "8-11 were unreachable under that policy. Retrain with the current action schema."
+        ) from exc
+    return metadata
 
 
 def train(task_level: str = "medium", checkpoint_path: str = None,
@@ -142,13 +231,16 @@ def train(task_level: str = "medium", checkpoint_path: str = None,
     # Resume from checkpoint
     if checkpoint_path and os.path.exists(checkpoint_path):
         print(f"[*] Resuming from checkpoint: {checkpoint_path}")
-        agent.load_state_dict(torch.load(checkpoint_path, map_location=device, weights_only=True))
+        load_agent_checkpoint(checkpoint_path, agent, device)
 
     timesteps = total_timesteps or TOTAL_TIMESTEPS
 
     # Storage
     obs_buf = torch.zeros((NUM_STEPS, OBS_SIZE)).to(device)
-    actions_buf = torch.zeros((NUM_STEPS, 3)).to(device)
+    actions_buf = torch.zeros((NUM_STEPS, 3), dtype=torch.long).to(device)
+    action_masks_buf = torch.zeros(
+        (NUM_STEPS, NUM_ACTION_TYPES, NUM_TARGETS, NUM_SUB_ACTIONS), dtype=torch.bool
+    ).to(device)
     logprobs_buf = torch.zeros(NUM_STEPS).to(device)
     rewards_buf = torch.zeros(NUM_STEPS).to(device)
     dones_buf = torch.zeros(NUM_STEPS).to(device)
@@ -168,8 +260,12 @@ def train(task_level: str = "medium", checkpoint_path: str = None,
             obs_buf[step] = next_obs
             dones_buf[step] = next_done
 
+            action_mask = torch.as_tensor(env.get_action_mask(), dtype=torch.bool, device=device)
+            action_masks_buf[step] = action_mask
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_obs)
+                action, logprob, _, value = agent.get_action_and_value(
+                    next_obs, action_mask=action_mask
+                )
                 values_buf[step] = value.flatten()
 
             actions_buf[step] = action
@@ -210,6 +306,7 @@ def train(task_level: str = "medium", checkpoint_path: str = None,
         b_obs = obs_buf
         b_logprobs = logprobs_buf
         b_actions = actions_buf
+        b_action_masks = action_masks_buf
         b_advantages = advantages
         b_returns = returns
 
@@ -221,7 +318,7 @@ def train(task_level: str = "medium", checkpoint_path: str = None,
                 mb_inds = inds[start:end]
 
                 _, newlogprob, entropy, newvalue = agent.get_action_and_value(
-                    b_obs[mb_inds], b_actions[mb_inds]
+                    b_obs[mb_inds], b_actions[mb_inds], b_action_masks[mb_inds]
                 )
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
@@ -261,11 +358,11 @@ def train(task_level: str = "medium", checkpoint_path: str = None,
 
             if mean_reward > best_mean_reward and len(episode_rewards) >= 5:
                 best_mean_reward = mean_reward
-                torch.save(agent.state_dict(), f"best_ppo_{task_level}.pt")
+                save_agent_checkpoint(f"best_ppo_{task_level}.pt", agent, task_level=task_level, global_step=global_step, mean_reward=float(mean_reward))
                 print(f"  [SAVED] New best: best_ppo_{task_level}.pt (Reward: {best_mean_reward:.2f})")
 
     # Save final
-    torch.save(agent.state_dict(), f"final_ppo_{task_level}.pt")
+    save_agent_checkpoint(f"final_ppo_{task_level}.pt", agent, task_level=task_level, timesteps=timesteps)
     print(f"[*] Training Complete. Saved: final_ppo_{task_level}.pt")
 
 
