@@ -26,6 +26,7 @@ from hydra_neural import (
 )
 from inference_local import HeuristicPolicy, RandomPolicy, SecurityFirstPolicy
 from models import HiddenWorkerState, WorkerState
+from panopticon_bench.seed_plan import canonical_sha256, load_seed_plan
 
 
 HYDRA_OBJECTIVE_SCHEMA_VERSION = "hydra-episodic-objective-v1"
@@ -80,10 +81,99 @@ def append_training_record(path: Path, payload: dict[str, Any]) -> None:
         os.fsync(handle.fileno())
 
 
+def prepare_training_log(
+    path: Path,
+    *,
+    start_episode: int,
+    config_sha256: str,
+    resuming: bool,
+) -> None:
+    """Keep the append-only log aligned with the last durable checkpoint."""
+    if not path.exists():
+        if resuming and start_episode > 0:
+            raise RuntimeError(
+                f"Resume checkpoint is at episode {start_episode}, but its training log "
+                f"is missing: {path}"
+            )
+        return
+    if not resuming:
+        raise RuntimeError(
+            f"Training log already exists: {path}. Pass --resume with its checkpoint "
+            "or choose a new output/log path."
+        )
+    retained: list[str] = []
+    retained_episodes: list[int] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if record.get("config_sha256") != config_sha256:
+            raise RuntimeError(f"Training log configuration mismatch at line {line_number}")
+        episode = int(record["episode"])
+        if episode <= start_episode:
+            retained.append(json.dumps(record, sort_keys=True))
+            retained_episodes.append(episode)
+    expected_episodes = list(range(1, start_episode + 1))
+    if retained_episodes != expected_episodes:
+        raise RuntimeError(
+            "Training log is not a complete, ordered record through the resume checkpoint: "
+            f"expected episodes 1..{start_episode}, found {retained_episodes[:5]}..."
+        )
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text("\n".join(retained) + ("\n" if retained else ""), encoding="utf-8")
+    temporary.replace(path)
+
+
+def training_episode_spec(
+    *,
+    training_seed: int,
+    episode_number: int,
+    levels: list[str],
+    argus_population: list[str],
+    development_split: dict[str, list[int]],
+) -> tuple[str, int, str]:
+    """Return the resume-independent level, environment seed, and defender."""
+    schedule_rng = random.Random(f"{training_seed}:{episode_number}")
+    level = schedule_rng.choice(levels)
+    episode_seed = schedule_rng.choice(development_split[level])
+    argus_name = schedule_rng.choice(argus_population)
+    return level, episode_seed, argus_name
+
+
+def checkpoint_metadata(
+    *,
+    episode: int,
+    baseline: float,
+    recent_scores: list[float],
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "episode": episode,
+        "baseline": baseline,
+        "recent_mean_score": statistics.mean(recent_scores) if recent_scores else 0.0,
+        "recent_scores": list(recent_scores),
+        "config": config,
+        "torch_rng_state": torch.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        metadata["cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
+    return metadata
+
+
 def build_cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--episodes", type=int, default=2_000)
+    parser.add_argument(
+        "--episodes",
+        type=int,
+        default=2_000,
+        help="Target total; rerunning with --resume never exceeds this episode count",
+    )
     parser.add_argument("--seed", type=int, default=20260715)
+    parser.add_argument(
+        "--seed-plan",
+        default="research_paper/data/seed_plans/v6_seed_plan.json",
+        help="Frozen plan; HYDRA training uses only its development split",
+    )
     parser.add_argument(
         "--levels",
         type=lambda value: parse_csv_subset(value, set(LEVELS), "levels"),
@@ -111,9 +201,28 @@ def main() -> None:
     if not 0.0 <= args.entropy_coef <= 1.0 or not 0.0 <= args.baseline_decay < 1.0:
         raise SystemExit("invalid entropy coefficient or baseline decay")
 
+    seed_plan = load_seed_plan(args.seed_plan)
+    missing_levels = set(args.levels) - set(seed_plan["levels"])
+    if missing_levels:
+        raise SystemExit(f"levels missing from seed plan: {sorted(missing_levels)}")
+    training_split = seed_plan["splits"]["development"]
+
     random.seed(args.seed)
     torch.manual_seed(args.seed)
-    rng = random.Random(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+    config = {
+        "objective_schema_version": HYDRA_OBJECTIVE_SCHEMA_VERSION,
+        "seed": args.seed,
+        "levels": args.levels,
+        "argus_population": args.argus_population,
+        "learning_rate": args.learning_rate,
+        "entropy_coef": args.entropy_coef,
+        "baseline_decay": args.baseline_decay,
+        "seed_plan_sha256": seed_plan["seed_plan_sha256"],
+        "training_seed_split": "development",
+    }
+    config_sha256 = canonical_sha256(config)
     policy = NeuralHydraPolicy(
         checkpoint=args.resume or None,
         deterministic=False,
@@ -123,28 +232,48 @@ def main() -> None:
     optimizer = torch.optim.Adam(policy.model.parameters(), lr=args.learning_rate)
     start_episode = 0
     baseline = 0.0
+    restored_recent_scores: list[float] = []
     if args.resume:
         training_state = load_hydra_training_state(args.resume, optimizer, policy.device)
+        if training_state.get("config") != config:
+            raise RuntimeError("Resume checkpoint configuration differs from requested training run")
         start_episode = int(training_state.get("episode", 0))
         baseline = float(training_state.get("baseline", 0.0))
+        restored_recent_scores = [
+            float(score) for score in training_state.get("recent_scores", [])
+        ][-100:]
+        torch_rng_state = training_state.get("torch_rng_state")
+        if torch_rng_state is None:
+            raise RuntimeError("Resume checkpoint is missing the PyTorch RNG state")
+        torch.set_rng_state(torch_rng_state.cpu())
+        cuda_rng_states = training_state.get("cuda_rng_state_all")
+        if torch.cuda.is_available() and cuda_rng_states is not None:
+            torch.cuda.set_rng_state_all([state.cpu() for state in cuda_rng_states])
 
     output_path = Path(args.output)
     log_path = Path(args.training_log)
-    recent_scores: list[float] = []
-    config = {
-        "objective_schema_version": HYDRA_OBJECTIVE_SCHEMA_VERSION,
-        "seed": args.seed,
-        "levels": args.levels,
-        "argus_population": args.argus_population,
-        "learning_rate": args.learning_rate,
-        "entropy_coef": args.entropy_coef,
-        "baseline_decay": args.baseline_decay,
-    }
+    prepare_training_log(
+        log_path,
+        start_episode=start_episode,
+        config_sha256=config_sha256,
+        resuming=bool(args.resume),
+    )
+    if start_episode >= args.episodes:
+        print(
+            f"Checkpoint already reached episode {start_episode}, "
+            f"which satisfies target {args.episodes}; nothing to do."
+        )
+        return
+    recent_scores: list[float] = restored_recent_scores
 
-    for episode_number in range(start_episode + 1, start_episode + args.episodes + 1):
-        episode_seed = rng.randint(0, 2**31 - 1)
-        level = rng.choice(args.levels)
-        argus_name = rng.choice(args.argus_population)
+    for episode_number in range(start_episode + 1, args.episodes + 1):
+        level, episode_seed, argus_name = training_episode_spec(
+            training_seed=args.seed,
+            episode_number=episode_number,
+            levels=args.levels,
+            argus_population=args.argus_population,
+            development_split=training_split,
+        )
         argus = make_argus_policy(argus_name, episode_seed)
         argus.reset()
         env = Environment(seed=episode_seed, hydra_policy=policy)
@@ -178,6 +307,7 @@ def main() -> None:
         recent_scores.append(score)
         recent_scores = recent_scores[-100:]
         record = {
+            "config_sha256": config_sha256,
             "episode": episode_number,
             "seed": episode_seed,
             "level": level,
@@ -206,25 +336,25 @@ def main() -> None:
             save_hydra_checkpoint(
                 output_path,
                 policy.model,
-                metadata={
-                    "episode": episode_number,
-                    "baseline": baseline,
-                    "recent_mean_score": statistics.mean(recent_scores),
-                    "config": config,
-                },
+                metadata=checkpoint_metadata(
+                    episode=episode_number,
+                    baseline=baseline,
+                    recent_scores=recent_scores,
+                    config=config,
+                ),
                 optimizer_state_dict=optimizer.state_dict(),
             )
 
-    final_episode = start_episode + args.episodes
+    final_episode = args.episodes
     save_hydra_checkpoint(
         output_path,
         policy.model,
-        metadata={
-            "episode": final_episode,
-            "baseline": baseline,
-            "recent_mean_score": statistics.mean(recent_scores),
-            "config": config,
-        },
+        metadata=checkpoint_metadata(
+            episode=final_episode,
+            baseline=baseline,
+            recent_scores=recent_scores,
+            config=config,
+        ),
         optimizer_state_dict=optimizer.state_dict(),
     )
     print(f"Saved neural HYDRA checkpoint: {output_path}")

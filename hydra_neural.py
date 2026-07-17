@@ -199,7 +199,9 @@ def save_hydra_checkpoint(
         "optimizer_state_dict": optimizer_state_dict,
         "metadata": metadata or {},
     }
-    torch.save(payload, destination)
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    torch.save(payload, temporary)
+    temporary.replace(destination)
     return destination
 
 

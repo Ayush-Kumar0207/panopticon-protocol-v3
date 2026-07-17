@@ -22,6 +22,7 @@ The **paper package is complete as a professional research scaffold and first ma
 - A digest-protected V6 pilot/development/final seed plan and resumable provenance-aware evaluator.
 - Versioned 12-target conditional PPO masking with action-coverage and hidden-state tests.
 - An explicit scripted-HYDRA baseline plus trainable neural-HYDRA implementation and study protocol.
+- A pinned Colab run that trains on development seeds only, writes rolling atomic per-episode checkpoints, restores exact RNG/optimizer state, resumes evaluation per episode, and guards the final split.
 
 ## Yellow — required scientific work
 

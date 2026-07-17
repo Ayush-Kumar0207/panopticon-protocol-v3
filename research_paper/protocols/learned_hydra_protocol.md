@@ -27,7 +27,7 @@ Failure to reject the null, instability across training seeds, or an effect conf
 ## 4. Experimental design
 
 - Train at least five neural-HYDRA initializations.
-- Use only pilot/development seeds for debugging, reward selection, early stopping, and checkpoint selection.
+- Neural-HYDRA training samples only the frozen development split. The pilot split remains unseen by neural training and is used for infrastructure validation/descriptive debugging; the final split remains untouched until all decisions are frozen.
 - Do not inspect final-split outcomes until code, checkpoints, metrics, and hypotheses are frozen.
 - Compare the same ARGUS checkpoint against scripted and neural HYDRA using identical final seeds.
 - Evaluate random, heuristic, security-first, raw-model, and repaired-model ARGUS strata separately.
@@ -74,11 +74,14 @@ Training is intentionally separate from final evaluation:
 python train_hydra.py `
   --episodes 2000 `
   --seed 20260715 `
+  --seed-plan research_paper/data/seed_plans/v6_seed_plan.json `
   --argus-population random,heuristic,security_first `
-  --output checkpoints/hydra_neural_seed20260715.pt
+  --checkpoint-every 1 `
+  --output checkpoints/hydra_neural_seed20260715.pt `
+  --training-log research_paper/data/hydra_seed20260715.jsonl
 ```
 
-Pilot validation against the frozen seed plan:
+The target episode count is idempotent under `--resume`. The trainer restores model, optimizer, moving baseline, recent-score history, and CPU/CUDA RNG states. Each checkpoint is written atomically to one rolling file, so the prior safe point is retained during the write and historical checkpoints do not accumulate. Pilot validation against the frozen seed plan:
 
 ```powershell
 python v6_evaluation.py `

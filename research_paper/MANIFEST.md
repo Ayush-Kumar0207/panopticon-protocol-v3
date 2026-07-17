@@ -29,6 +29,7 @@
 | `templates/pilot_evaluation_report.md` | Authorized commercial-pilot report template. |
 | `checklists/submission_checklist.md` | Scientific, artifact, ethics, and administrative checks. |
 | `checklists/author_contributions.md` | CRediT contribution worksheet. |
+| `COLAB_V6_BEGINNER_RUNBOOK.md` | Beginner-safe GPU execution, interruption recovery, and final-split instructions. |
 
 ## Generated assets
 
@@ -52,6 +53,7 @@
 | `data/raw/v5_drive_seed_evidence.json` | Authenticated read-only Drive extraction | ordered seeds and identities from five original expert-metrics files |
 | `data/training_seed_ledger.drive_verified.json` | `scripts/verify_drive_seed_ledger.py` | exact Drive-versus-reconstruction comparison |
 | `data/seed_plans/v6_training_separation_report.json` | `scripts/verify_seed_separation.py` | frozen V6 plan plus directly verified V5 ledger |
+| `../Panopticon_V6_Research_Colab.ipynb` | `scripts/build_colab_v6_notebook.py` | complete pinned, resume-safe pilot/training/final Colab workflow |
 
 ## Implemented research extension
 

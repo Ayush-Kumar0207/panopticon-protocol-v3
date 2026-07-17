@@ -46,6 +46,10 @@ Repository = "https://github.com/Ayush-Kumar0207/panopticon-protocol-v3"
 target-version = "py311"
 line-length = 100
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["hf-space-deploy", ".git", ".venv", ".venv-research"]
+
 [tool.setuptools]
 py-modules = [
     "_server", "argus_llm", "client", "environment", "grader", "gym_wrapper",

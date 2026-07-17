@@ -97,10 +97,13 @@ The compact summary reports 250 accepted expert episodes and 88,896 weighted exa
 & '.\.venv-research\Scripts\python.exe' train_hydra.py `
   --episodes 2000 `
   --seed 20260715 `
-  --output checkpoints\hydra_neural_seed20260715.pt
+  --seed-plan research_paper\data\seed_plans\v6_seed_plan.json `
+  --checkpoint-every 1 `
+  --output checkpoints\hydra_neural_seed20260715.pt `
+  --training-log research_paper\data\hydra_seed20260715.jsonl
 ```
 
-Evaluate scripted and neural HYDRA in separate V6 output directories with the same frozen seed digest. Follow `learned_hydra_protocol.md`; a training score is never a held-out result.
+Training samples only the seed plan development split. `--episodes` is a target total, so rerunning with `--resume` is idempotent. The single checkpoint per training seed is atomically replaced after every configured safe point and includes optimizer plus CPU/CUDA RNG state; historical checkpoint files do not accumulate. Evaluate scripted and neural HYDRA in separate V6 output directories with the same frozen seed digest. Follow `learned_hydra_protocol.md`; a training score is never a held-out result. The complete Colab implementation is `../Panopticon_V6_Research_Colab.ipynb`.
 
 ## 9. Final evaluation
 

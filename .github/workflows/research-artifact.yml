@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "panopticon_bench/**"
+      - "Panopticon_V6_Research_Colab.ipynb"
       - "research_paper/**"
       - "tests/test_panopticon_bench.py"
       - "tests/test_research_validity.py"
@@ -20,6 +21,7 @@ on:
   pull_request:
     paths:
       - "panopticon_bench/**"
+      - "Panopticon_V6_Research_Colab.ipynb"
       - "research_paper/**"
       - "tests/test_panopticon_bench.py"
       - "tests/test_research_validity.py"
@@ -65,6 +67,8 @@ jobs:
           python research_paper/scripts/reconstruct_training_seed_ledger.py --overwrite
           python research_paper/scripts/verify_drive_seed_ledger.py
           python research_paper/scripts/verify_seed_separation.py
+          python research_paper/scripts/build_colab_v6_notebook.py
+          git diff --exit-code -- Panopticon_V6_Research_Colab.ipynb
           python research_paper/scripts/validate_package.py
 
       - name: Upload regenerated research assets
@@ -81,3 +85,5 @@ jobs:
             research_paper/data/training_seed_ledger.reconstructed.json
             research_paper/data/training_seed_ledger.drive_verified.json
             research_paper/data/raw/v5_drive_seed_evidence.json
+            Panopticon_V6_Research_Colab.ipynb
+            research_paper/COLAB_V6_BEGINNER_RUNBOOK.md

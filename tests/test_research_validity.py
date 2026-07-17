@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import uuid
+from pathlib import Path
+
 import numpy as np
 import torch
 
 from environment import Environment
 from gym_wrapper import NUM_SUB_ACTIONS, NUM_TARGETS, OpenEnvGymWrapper
-from hydra_neural import NeuralHydraPolicy
+from hydra_neural import HydraPolicyNetwork, NeuralHydraPolicy, save_hydra_checkpoint
 from hydra_policy import ScriptedHydraPolicy
 from inference_local import HeuristicPolicy
 from models import HiddenWorkerState, validate_action
+from panopticon_bench.seed_plan import load_seed_plan
+from train_hydra import training_episode_spec
 from train_rl import PanopticonAgent
 
 
@@ -96,3 +101,60 @@ def test_neural_hydra_uses_declared_boundary_and_records_trainable_decisions() -
     log_probability = hydra.episode_log_probability()
     assert log_probability is not None and log_probability.requires_grad
     assert env.hydra_policy_name == "neural_hydra_v1"
+
+
+def test_neural_hydra_checkpoint_save_is_atomic_and_rolling() -> None:
+    tmp_path = Path("research_paper") / f".hydra-checkpoint-test-{uuid.uuid4().hex}"
+    tmp_path.mkdir(parents=False, exist_ok=False)
+    checkpoint = tmp_path / "hydra.pt"
+    try:
+        model = HydraPolicyNetwork()
+        save_hydra_checkpoint(checkpoint, model, metadata={"episode": 1})
+        first_size = checkpoint.stat().st_size
+        save_hydra_checkpoint(checkpoint, model, metadata={"episode": 2})
+        payload = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        assert checkpoint.stat().st_size > 0
+        assert first_size > 0
+        assert payload["metadata"]["episode"] == 2
+        assert not checkpoint.with_suffix(".pt.tmp").exists()
+        assert list(tmp_path.glob("*.pt")) == [checkpoint]
+    finally:
+        checkpoint.unlink(missing_ok=True)
+        checkpoint.with_suffix(".pt.tmp").unlink(missing_ok=True)
+        tmp_path.rmdir()
+
+
+def test_neural_hydra_training_schedule_uses_only_development_seeds() -> None:
+    plan = load_seed_plan("research_paper/data/seed_plans/v6_seed_plan.json")
+    development = plan["splits"]["development"]
+    prohibited = {
+        seed
+        for split_name in ("pilot", "final")
+        for seeds in plan["splits"][split_name].values()
+        for seed in seeds
+    }
+    first = []
+    second = []
+    for episode_number in range(1, 101):
+        spec = training_episode_spec(
+            training_seed=2026071701,
+            episode_number=episode_number,
+            levels=LEVELS,
+            argus_population=["random", "heuristic", "security_first"],
+            development_split=development,
+        )
+        level, environment_seed, argus_name = spec
+        assert environment_seed in development[level]
+        assert environment_seed not in prohibited
+        assert argus_name in {"random", "heuristic", "security_first"}
+        first.append(spec)
+        second.append(
+            training_episode_spec(
+                training_seed=2026071701,
+                episode_number=episode_number,
+                levels=LEVELS,
+                argus_population=["random", "heuristic", "security_first"],
+                development_split=development,
+            )
+        )
+    assert first == second

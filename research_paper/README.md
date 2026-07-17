@@ -60,6 +60,12 @@ python v6_evaluation.py `
 
 The original HYDRA is `scripted_memory_v1`: adaptive rules, not a neural network. A separate trainable 12,685-parameter neural HYDRA is implemented in `hydra_neural.py`/`train_hydra.py`. Its held-out comparison is governed by `protocols/learned_hydra_protocol.md`; no effectiveness claim is currently made.
 
+## Run the complete Colab experiment
+
+Use [`../Panopticon_V6_Research_Colab.ipynb`](../Panopticon_V6_Research_Colab.ipynb) for the remaining GPU work and [`COLAB_V6_BEGINNER_RUNBOOK.md`](COLAB_V6_BEGINNER_RUNBOOK.md) for cell-by-cell instructions. Neural training is restricted to the frozen development split, saves one rolling atomic checkpoint after every episode, restores RNG and optimizer state exactly, and never accumulates historical checkpoint directories. Scripted/neural pilot and final evaluation append one durable record per episode and resume by verified episode key.
+
+The final cell is deliberately locked until the pilot is complete and the protocol is frozen.
+
 ## Build the manuscript
 
 A TeX distribution is not currently installed in this workspace. After installing TeX Live or MiKTeX:

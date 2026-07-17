@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import sys
@@ -15,6 +16,8 @@ REQUIRED = [
     "README.md",
     "RESEARCH_STATUS.md",
     "MANIFEST.md",
+    "COLAB_V6_BEGINNER_RUNBOOK.md",
+    "scripts/build_colab_v6_notebook.py",
     "CITATION.cff",
     "paper/main.tex",
     "paper/supplementary.tex",
@@ -87,6 +90,33 @@ def main() -> int:
         path = PACKAGE / rel
         if not path.is_file() or path.stat().st_size == 0:
             fail(f"missing or empty required file: {rel}", errors)
+
+    notebook_path = ROOT / "Panopticon_V6_Research_Colab.ipynb"
+    if not notebook_path.is_file():
+        fail("missing generated Panopticon V6 Colab notebook", errors)
+    else:
+        try:
+            notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+            cells = notebook.get("cells", [])
+            source = "".join(
+                "".join(cell.get("source", [])) for cell in cells
+            )
+            if notebook.get("nbformat") != 4 or len(cells) < 20:
+                fail("V6 Colab notebook has an invalid format or incomplete cell set", errors)
+            for cell_number, cell in enumerate(cells, start=1):
+                if cell.get("cell_type") == "code":
+                    ast.parse("".join(cell.get("source", [])), filename=f"cell-{cell_number}")
+            required_notebook_markers = [
+                "research-v6-pilot-2026-07-17",
+                "HYDRA_CHECKPOINT_EVERY = 1",
+                "I_UNDERSTAND_FINAL_SPLIT_IS_SINGLE_USE",
+                "--resume",
+            ]
+            for marker in required_notebook_markers:
+                if marker not in source:
+                    fail(f"V6 Colab notebook is missing marker: {marker}", errors)
+        except Exception as exc:
+            fail(f"invalid V6 Colab notebook: {exc}", errors)
 
     seed_plan_path = PACKAGE / "data" / "seed_plans" / "v6_seed_plan.json"
     if seed_plan_path.exists():
