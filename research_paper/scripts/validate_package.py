@@ -107,11 +107,14 @@ def main() -> int:
                 if cell.get("cell_type") == "code":
                     ast.parse("".join(cell.get("source", [])), filename=f"cell-{cell_number}")
             required_notebook_markers = [
-                "research-v6-pilot-2026-07-17-r1",
+                "research-v6-pilot-2026-07-17-r2",
                 "HYDRA_CHECKPOINT_EVERY = 1",
                 "I_UNDERSTAND_FINAL_SPLIT_IS_SINGLE_USE",
                 "--resume",
                 "transformers==4.57.6",
+                "huggingface-hub==0.36.2",
+                "safetensors==0.8.0",
+                "--no-deps",
                 "console_logs",
                 "Last child-process output",
             ]

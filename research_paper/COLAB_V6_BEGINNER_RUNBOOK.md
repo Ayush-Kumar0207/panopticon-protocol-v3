@@ -48,7 +48,7 @@ After the research tag is pushed:
 3. Click **Open in Colab**, if shown.
 
 The notebook checks out the immutable tag
-`research-v6-pilot-2026-07-17-r1`, so later changes to `main` cannot silently alter
+`research-v6-pilot-2026-07-17-r2`, so later changes to `main` cannot silently alter
 the experiment.
 
 ### Why Colab shows a crossed-out save/cloud icon
@@ -223,14 +223,15 @@ The first run durably completed 21 random-policy episodes. It then reached
 a built-in Python `bool`. Canonical JSON hashing rejected that scalar before the
 22nd record could be appended. The existing 21 records are intact.
 
-Use the `research-v6-pilot-2026-07-17-r1` notebook. It:
+Use the `research-v6-pilot-2026-07-17-r2` notebook. It:
 
 1. converts the complete episode payload to JSON-native values and explicitly
    normalizes the grader pass flag;
 2. includes seed `922094758` as a permanent serialization regression test;
-3. removes stale PEFT, TRL, and torchvision packages that are unnecessary for the
-   merged text-only model;
-4. installs Transformers 4.57.6 and Accelerate 1.14.0;
+3. removes unused optional packages that conflict with the merged text-only
+   model's Transformers stack;
+4. installs an exact compatible Transformers, Tokenizers, Hugging Face Hub,
+   Accelerate, and Safetensors stack;
 5. loads and unloads ARGUS once in Cell 7 as a preflight;
 6. streams child stdout and stderr into Colab; and
 7. saves persistent console output under `console_logs/` and structured failure
@@ -239,6 +240,18 @@ Use the `research-v6-pilot-2026-07-17-r1` notebook. It:
 Do not delete `pilot/scripted/episodes.jsonl`. Rerun the updated notebook from
 Cell 1 through Cell 10. The 21 verified episode keys are skipped, and evaluation
 continues with the exact previously failing seed.
+
+### `huggingface-hub>=0.34.0,<1.0` import error from Cell 5
+
+The old editable install followed Panopticon's full production dependency graph:
+Panopticon → OpenEnv → Gradio → Hugging Face Hub 1.x. Transformers 4.57.6
+requires Hugging Face Hub below 1.0, so its import preflight correctly stopped.
+
+Use the `research-v6-pilot-2026-07-17-r2` notebook. Cell 5 removes this unused
+optional chain, pins Hub 0.36.2, Tokenizers 0.22.1, and Safetensors 0.8.0, then
+installs Panopticon in editable mode with `--no-deps`. It verifies all resolved
+versions before continuing. A fresh Colab runtime is recommended, but no Drive
+files should be deleted.
 
 ### Drive is nearly full
 

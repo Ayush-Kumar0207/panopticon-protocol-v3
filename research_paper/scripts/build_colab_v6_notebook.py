@@ -119,8 +119,11 @@ CELLS = [
         from pathlib import Path
 
         REPO_URL = "https://github.com/Ayush-Kumar0207/panopticon-protocol-v3.git"
-        RESEARCH_TAG = "research-v6-pilot-2026-07-17-r1"
-        ALLOWED_PREVIOUS_RESEARCH_TAGS = {"research-v6-pilot-2026-07-17"}
+        RESEARCH_TAG = "research-v6-pilot-2026-07-17-r2"
+        ALLOWED_PREVIOUS_RESEARCH_TAGS = {
+            "research-v6-pilot-2026-07-17",
+            "research-v6-pilot-2026-07-17-r1",
+        }
         SOURCE_ROOT = Path("/content/panopticon-protocol-v3-v6")
 
         DRIVE_ROOT = Path("/content/drive/MyDrive/panopticon-v6-research-20260717")
@@ -247,8 +250,9 @@ CELLS = [
         import subprocess
         import sys
 
-        # The merged text-only Qwen model does not need PEFT, TRL, or torchvision.
-        # Removing stale optional packages avoids import-time ABI/API conflicts in Colab.
+        # The research workflow does not use these optional Colab packages. OpenEnv pulls
+        # Gradio, whose Hub 1.x requirement conflicts with Transformers 4.57.6 (<1.0).
+        # Removing the unused chain makes the text-only ARGUS environment deterministic.
         run(
             [
                 sys.executable,
@@ -260,13 +264,23 @@ CELLS = [
                 "peft",
                 "trl",
                 "torchvision",
+                "timm",
+                "diffusers",
+                "gradio",
+                "gradio-client",
+                "openenv-core",
+                "panopticon-protocol-v3",
             ]
         )
         packages = [
             "transformers==4.57.6",
+            "tokenizers==0.22.1",
+            "huggingface-hub==0.36.2",
             "accelerate==1.14.0",
-            "safetensors==0.6.2",
+            "safetensors==0.8.0",
             "pydantic>=2.6,<3",
+            "fastapi==0.115.12",
+            "httpx==0.28.1",
             "gymnasium==0.29.1",
             "numpy>=1.26",
             "pandas>=2.2",
@@ -284,16 +298,35 @@ CELLS = [
                 *packages,
             ]
         )
-        run([sys.executable, "-m", "pip", "install", "-q", "-e", f"{SOURCE_ROOT}[train]"])
+        # Dependencies are deliberately installed above. --no-deps prevents the editable
+        # project metadata from reintroducing OpenEnv/Gradio and upgrading Hub to 1.x.
+        run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "-q",
+                "--no-deps",
+                "-e",
+                str(SOURCE_ROOT),
+            ]
+        )
         run(
             [
                 sys.executable,
                 "-c",
                 (
-                    "import accelerate, torch, transformers; "
+                    "import accelerate, importlib.metadata as md, torch, transformers; "
                     "from transformers import AutoModelForCausalLM, AutoTokenizer; "
+                    "expected={'transformers':'4.57.6','tokenizers':'0.22.1',"
+                    "'huggingface-hub':'0.36.2','accelerate':'1.14.0',"
+                    "'safetensors':'0.8.0'}; "
+                    "actual={name:md.version(name) for name in expected}; "
+                    "assert actual == expected, (actual, expected); "
                     "print('torch', torch.__version__, 'transformers', "
-                    "transformers.__version__, 'accelerate', accelerate.__version__)"
+                    "transformers.__version__, 'accelerate', accelerate.__version__, "
+                    "'resolved', actual)"
                 ),
             ]
         )
@@ -493,9 +526,9 @@ CELLS = [
                     "new_research_tag": RESEARCH_TAG,
                     "new_source_commit": SOURCE_COMMIT,
                     "reason": (
-                        "NumPy scalar serialization, Python 3.12 inference compatibility, "
-                        "streamed diagnostics, and failure-manifest persistence; no "
-                        "environment or metric change"
+                        "NumPy scalar serialization, isolated Python 3.12 inference "
+                        "dependencies, streamed diagnostics, and failure-manifest "
+                        "persistence; no environment or metric change"
                     ),
                 }
                 history_path = DRIVE_ROOT / "runtime_patch_history.jsonl"
