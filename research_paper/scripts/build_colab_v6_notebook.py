@@ -69,6 +69,11 @@ CELLS = [
         Persistent files are stored under
         `MyDrive/panopticon-v6-research-20260717`. Reusing that exact folder is what enables
         resume. Do not delete it between sessions.
+
+        When this notebook is opened from GitHub, Colab may show a crossed-out save/cloud icon.
+        That icon concerns the notebook document, not mounted-Drive experiment outputs. Click
+        **Copy to Drive** if you want an editable notebook copy; output persistence is verified
+        separately inside Cell 9.
         """
     ),
     code(
@@ -100,7 +105,11 @@ CELLS = [
         from google.colab import drive
 
         drive.mount("/content/drive", force_remount=False)
-        print("Drive mounted.")
+        print("Drive mounted for experiment outputs.")
+        print(
+            "The Colab save icon is separate. Use Copy to Drive only if you want the notebook "
+            "document itself stored in MyDrive."
+        )
         """
     ),
     code(
@@ -110,7 +119,8 @@ CELLS = [
         from pathlib import Path
 
         REPO_URL = "https://github.com/Ayush-Kumar0207/panopticon-protocol-v3.git"
-        RESEARCH_TAG = "research-v6-pilot-2026-07-17"
+        RESEARCH_TAG = "research-v6-pilot-2026-07-17-r1"
+        ALLOWED_PREVIOUS_RESEARCH_TAGS = {"research-v6-pilot-2026-07-17"}
         SOURCE_ROOT = Path("/content/panopticon-protocol-v3-v6")
 
         DRIVE_ROOT = Path("/content/drive/MyDrive/panopticon-v6-research-20260717")
@@ -141,6 +151,7 @@ CELLS = [
         (DRIVE_ROOT / "pilot").mkdir(exist_ok=True)
         (DRIVE_ROOT / "final").mkdir(exist_ok=True)
         (DRIVE_ROOT / "analysis").mkdir(exist_ok=True)
+        (DRIVE_ROOT / "console_logs").mkdir(exist_ok=True)
 
         os.environ["PYTHONUNBUFFERED"] = "1"
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -154,16 +165,50 @@ CELLS = [
     code(
         """
         # Cell 4 — Clone or refresh, then detach at the immutable research tag.
+        import os
         import subprocess
+        from collections import deque
 
-        def run(command, *, cwd=None):
-            print("+", " ".join(map(str, command)))
-            return subprocess.run(
-                list(map(str, command)),
+        def run(command, *, cwd=None, log_path=None):
+            command = list(map(str, command))
+            print("+", " ".join(command), flush=True)
+            log_handle = None
+            if log_path is not None:
+                log_path = Path(log_path)
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_handle = log_path.open("a", encoding="utf-8", buffering=1)
+                log_handle.write("\\n+ " + " ".join(command) + "\\n")
+            tail = deque(maxlen=80)
+            process = subprocess.Popen(
+                command,
                 cwd=cwd,
-                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
+                bufsize=1,
+                env={**os.environ, "PYTHONUNBUFFERED": "1"},
             )
+            try:
+                assert process.stdout is not None
+                for line in process.stdout:
+                    print(line, end="", flush=True)
+                    tail.append(line.rstrip())
+                    if log_handle is not None:
+                        log_handle.write(line)
+                return_code = process.wait()
+            finally:
+                if log_handle is not None:
+                    log_handle.flush()
+                    os.fsync(log_handle.fileno())
+                    log_handle.close()
+            if return_code != 0:
+                recent = "\\n".join(tail) or "(the child process emitted no text)"
+                location = f" Persistent log: {log_path}." if log_path else ""
+                raise RuntimeError(
+                    f"Command failed with exit code {return_code}.{location}\\n"
+                    f"Last child-process output:\\n{recent}"
+                )
+            return return_code
 
         if not (SOURCE_ROOT / ".git").exists():
             run(["git", "clone", "--filter=blob:none", REPO_URL, SOURCE_ROOT])
@@ -202,16 +247,26 @@ CELLS = [
         import subprocess
         import sys
 
+        # The merged text-only Qwen model does not need PEFT, TRL, or torchvision.
+        # Removing stale optional packages avoids import-time ABI/API conflicts in Colab.
+        run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "uninstall",
+                "-q",
+                "-y",
+                "peft",
+                "trl",
+                "torchvision",
+            ]
+        )
         packages = [
-            "transformers==4.46.3",
-            "tokenizers==0.20.3",
-            "accelerate==0.34.2",
-            "peft==0.12.0",
-            "trl==0.12.2",
-            "datasets==3.1.0",
-            "huggingface-hub==0.26.5",
-            "safetensors==0.4.5",
-            "pydantic==2.6.1",
+            "transformers==4.57.6",
+            "accelerate==1.14.0",
+            "safetensors==0.6.2",
+            "pydantic>=2.6,<3",
             "gymnasium==0.29.1",
             "numpy>=1.26",
             "pandas>=2.2",
@@ -219,9 +274,30 @@ CELLS = [
             "matplotlib>=3.8",
             "pytest==8.3.5",
         ]
-        run([sys.executable, "-m", "pip", "install", "-q", *packages])
+        run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "-q",
+                *packages,
+            ]
+        )
         run([sys.executable, "-m", "pip", "install", "-q", "-e", f"{SOURCE_ROOT}[train]"])
-        print("Dependencies installed.")
+        run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import accelerate, torch, transformers; "
+                    "from transformers import AutoModelForCausalLM, AutoTokenizer; "
+                    "print('torch', torch.__version__, 'transformers', "
+                    "transformers.__version__, 'accelerate', accelerate.__version__)"
+                ),
+            ]
+        )
+        print("Python-3.12-compatible text-inference dependencies installed.")
         """
     ),
     code(
@@ -342,6 +418,18 @@ CELLS = [
 
         MODEL_MANIFEST_SHA256 = model_manifest["manifest_sha256"]
         print("ARGUS manifest digest:", MODEL_MANIFEST_SHA256)
+
+        # Load the exact model once before any pilot episode. If loading fails, this cell
+        # shows the complete traceback before the long evaluator starts.
+        from argus_llm import LocalArgusModel
+
+        print("Preflighting merged ARGUS model load...")
+        model_probe = LocalArgusModel(str(ARGUS_MODEL))
+        try:
+            print("ARGUS load preflight passed:", model_probe.model_info())
+        finally:
+            model_probe.close()
+            del model_probe
         """
     ),
     code(
@@ -374,21 +462,76 @@ CELLS = [
         config_path = DRIVE_ROOT / "frozen_run_config.json"
         if config_path.exists():
             existing = json.loads(config_path.read_text(encoding="utf-8"))
-            if existing != frozen_config:
+            scientific_keys = set(frozen_config) - {"research_tag", "source_commit"}
+            scientific_differences = {
+                key: {"existing": existing.get(key), "requested": frozen_config.get(key)}
+                for key in sorted(scientific_keys)
+                if existing.get(key) != frozen_config.get(key)
+            }
+            if scientific_differences:
                 raise RuntimeError(
-                    "Frozen configuration mismatch. Restore the original values or choose "
-                    "a new DRIVE_ROOT. Never mix configurations in one results folder."
+                    "Frozen scientific configuration mismatch: "
+                    + json.dumps(scientific_differences, sort_keys=True)
                 )
+            source_changed = any(
+                existing.get(key) != frozen_config.get(key)
+                for key in ("research_tag", "source_commit")
+            )
+            if source_changed:
+                if existing.get("research_tag") not in ALLOWED_PREVIOUS_RESEARCH_TAGS:
+                    raise RuntimeError(
+                        "Existing source is not in the approved diagnostic-patch lineage. "
+                        "Use a new DRIVE_ROOT."
+                    )
+                patch_record = {
+                    "schema_version": "panopticon-runtime-patch-v1",
+                    "applied_at_utc": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
+                    "previous_research_tag": existing.get("research_tag"),
+                    "previous_source_commit": existing.get("source_commit"),
+                    "new_research_tag": RESEARCH_TAG,
+                    "new_source_commit": SOURCE_COMMIT,
+                    "reason": (
+                        "NumPy scalar serialization, Python 3.12 inference compatibility, "
+                        "streamed diagnostics, and failure-manifest persistence; no "
+                        "environment or metric change"
+                    ),
+                }
+                history_path = DRIVE_ROOT / "runtime_patch_history.jsonl"
+                prior_patch_commits = set()
+                if history_path.exists():
+                    prior_patch_commits = {
+                        json.loads(line)["new_source_commit"]
+                        for line in history_path.read_text(encoding="utf-8").splitlines()
+                        if line.strip()
+                    }
+                if SOURCE_COMMIT not in prior_patch_commits:
+                    with history_path.open("a", encoding="utf-8") as handle:
+                        handle.write(json.dumps(patch_record, sort_keys=True) + "\\n")
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                print("Approved runtime-only patch; existing episode records remain valid.")
         else:
             temporary = config_path.with_suffix(".json.tmp")
             temporary.write_text(json.dumps(frozen_config, indent=2) + "\\n")
             temporary.replace(config_path)
+
+        import accelerate
+        import safetensors
+        import tokenizers
+        import transformers
 
         runtime_record = {
             "started_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "gpu": GPU_NAME,
             "gpu_memory_gb": GPU_GB,
             "torch": torch.__version__,
+            "transformers": transformers.__version__,
+            "accelerate": accelerate.__version__,
+            "tokenizers": tokenizers.__version__,
+            "safetensors": safetensors.__version__,
+            "research_tag": RESEARCH_TAG,
             "source_commit": SOURCE_COMMIT,
         }
         with (DRIVE_ROOT / "runtime_sessions.jsonl").open("a", encoding="utf-8") as handle:
@@ -402,6 +545,20 @@ CELLS = [
         # Cell 9 — Inspect resumable progress and Drive storage.
         import shutil
         import torch
+
+        # Prove that mounted-Drive writes persist independently of the Colab save icon.
+        drive_probe = DRIVE_ROOT / ".drive_write_probe"
+        drive_probe_tmp = DRIVE_ROOT / ".drive_write_probe.tmp"
+        probe_text = f"drive-persistence-ok:{SOURCE_COMMIT}"
+        with drive_probe_tmp.open("w", encoding="utf-8") as handle:
+            handle.write(probe_text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        drive_probe_tmp.replace(drive_probe)
+        if drive_probe.read_text(encoding="utf-8") != probe_text:
+            raise RuntimeError("Mounted Drive write/read verification failed.")
+        drive_probe.unlink()
+        print("Mounted Drive write/read verification passed.")
 
         usage = shutil.disk_usage(DRIVE_ROOT)
         print(f"Drive free space: {usage.free / 1024**3:.2f} GB")
@@ -466,7 +623,11 @@ CELLS = [
             "compact",
             "--resume",
         ]
-        run(command, cwd=SOURCE_ROOT)
+        run(
+            command,
+            cwd=SOURCE_ROOT,
+            log_path=DRIVE_ROOT / "console_logs" / "pilot_scripted.log",
+        )
         print((scripted_output / "summary.json").read_text(encoding="utf-8")[:4000])
         """
     ),
@@ -514,7 +675,11 @@ CELLS = [
                 command.extend(["--resume", checkpoint])
             print("\\n", "=" * 78)
             print(f"Training/resuming neural HYDRA seed {seed}")
-            run(command, cwd=SOURCE_ROOT)
+            run(
+                command,
+                cwd=SOURCE_ROOT,
+                log_path=DRIVE_ROOT / "console_logs" / f"train_hydra_{seed}.log",
+            )
 
         print("All requested neural-HYDRA checkpoints reached the target.")
         """
@@ -596,7 +761,11 @@ CELLS = [
             ]
             print("\\n", "=" * 78)
             print(f"Evaluating neural HYDRA seed {seed}")
-            run(command, cwd=SOURCE_ROOT)
+            run(
+                command,
+                cwd=SOURCE_ROOT,
+                log_path=DRIVE_ROOT / "console_logs" / f"pilot_neural_{seed}.log",
+            )
 
         print("All neural-HYDRA pilot evaluations are complete.")
         """
@@ -801,7 +970,11 @@ CELLS = [
                     command.extend(["--hydra-checkpoint", checkpoint])
                 print("\\n", "=" * 78)
                 print("Final condition:", condition)
-                run(command, cwd=SOURCE_ROOT)
+                run(
+                    command,
+                    cwd=SOURCE_ROOT,
+                    log_path=DRIVE_ROOT / "console_logs" / f"final_{condition}.log",
+                )
 
             print("All final conditions completed.")
         """
@@ -815,6 +988,8 @@ CELLS = [
         important_patterns = [
             "frozen_run_config.json",
             "argus_model_manifest.json",
+            "runtime_patch_history.jsonl",
+            "console_logs/*.log",
             "checkpoints/*.pt",
             "training_logs/*.jsonl",
             "pilot/*/manifest.json",

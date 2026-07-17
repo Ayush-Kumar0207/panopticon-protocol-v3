@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+import json
+import sys
 import uuid
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
+import v6_evaluation
 from environment import Environment
 from gym_wrapper import NUM_SUB_ACTIONS, NUM_TARGETS, OpenEnvGymWrapper
 from hydra_neural import HydraPolicyNetwork, NeuralHydraPolicy, save_hydra_checkpoint
 from hydra_policy import ScriptedHydraPolicy
-from inference_local import HeuristicPolicy
+from inference_local import HeuristicPolicy, RandomPolicy, run_episode
 from models import HiddenWorkerState, validate_action
-from panopticon_bench.seed_plan import load_seed_plan
+from panopticon_bench.seed_plan import canonical_sha256, load_seed_plan
 from train_hydra import training_episode_spec
 from train_rl import PanopticonAgent
 
@@ -158,3 +162,58 @@ def test_neural_hydra_training_schedule_uses_only_development_seeds() -> None:
             )
         )
     assert first == second
+
+
+def test_v6_evaluator_persists_failure_manifest(monkeypatch) -> None:
+    output_dir = Path("research_paper") / f".v6-failure-test-{uuid.uuid4().hex}"
+
+    def fail_model_load(*_args, **_kwargs):
+        raise RuntimeError("synthetic model-load failure")
+
+    monkeypatch.setattr(v6_evaluation, "build_policy", fail_model_load)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "v6_evaluation.py",
+            "--split",
+            "pilot",
+            "--policies",
+            "model_raw",
+            "--model",
+            "unused-local-model",
+            "--max-episodes-per-level",
+            "1",
+            "--output-dir",
+            str(output_dir),
+            "--resume",
+        ],
+    )
+    try:
+        with pytest.raises(RuntimeError, match="synthetic model-load failure"):
+            v6_evaluation.main()
+        manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["status"] == "failed"
+        assert manifest["failed_policy"] == "model_raw"
+        assert manifest["completed_episodes"] == 0
+        assert manifest["failure"]["type"] == "RuntimeError"
+        assert "synthetic model-load failure" in manifest["failure"]["message"]
+    finally:
+        if output_dir.exists():
+            for child in output_dir.iterdir():
+                child.unlink()
+            output_dir.rmdir()
+
+
+def test_level_5_random_episode_is_canonically_json_serializable() -> None:
+    """Regression for the exact pilot episode that stopped the first Colab run."""
+    episode = run_episode(
+        RandomPolicy(seed=922094758),
+        task_level="level_5",
+        seed=922094758,
+        max_steps=300,
+        verbose=False,
+    )
+    compact = v6_evaluation.compact_trace(episode)
+    assert type(compact["grade"]["passed"]) is bool
+    assert len(canonical_sha256(compact)) == 64

@@ -1011,19 +1011,21 @@ def run_episode(
         "intervention_categories": intervention_categories,
     }
 
-    return {
-        "level": task_level,
-        "seed": seed,
-        "policy": getattr(policy, "policy_name", "unknown"),
-        "hydra_policy": env.hydra_policy_name,
-        "steps": steps,
-        "total_reward": sum(rewards),
-        "reward_history": rewards,
-        "grade": grade.to_dict(),
-        "provenance_summary": provenance_summary,
-        "timeline": timeline,
-        "final_state": state,
-    }
+    return to_builtin(
+        {
+            "level": task_level,
+            "seed": seed,
+            "policy": getattr(policy, "policy_name", "unknown"),
+            "hydra_policy": env.hydra_policy_name,
+            "steps": steps,
+            "total_reward": sum(rewards),
+            "reward_history": rewards,
+            "grade": grade.to_dict(),
+            "provenance_summary": provenance_summary,
+            "timeline": timeline,
+            "final_state": state,
+        }
+    )
 
 
 def print_level_summary(level: str, summary: dict[str, Any]) -> None:

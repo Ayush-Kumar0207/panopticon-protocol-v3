@@ -54,7 +54,7 @@ class GraderResult:
         return {
             "task_id": self.task_id,
             "score": round(self.score, 4),
-            "passed": self.passed,
+            "passed": bool(self.passed),
             "success_threshold": self.success_threshold,
             "dimensions": {k: round(v, 4) for k, v in self.dimensions.items()},
             "details": self.details,

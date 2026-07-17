@@ -10,6 +10,7 @@ import os
 import platform
 import subprocess
 import sys
+import traceback
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -253,8 +254,30 @@ def main() -> None:
     if manifest_path.exists():
         existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if existing_manifest.get("config_sha256") != config_sha256:
-            raise SystemExit("Existing manifest has a different frozen configuration")
+            differences = {
+                key: {"existing": existing_manifest.get(key), "requested": value}
+                for key, value in frozen_config.items()
+                if existing_manifest.get(key) != value
+            }
+            raise SystemExit(
+                "Existing manifest has a different frozen configuration: "
+                + json.dumps(differences, sort_keys=True)
+            )
         manifest["created_at_utc"] = existing_manifest["created_at_utc"]
+        manifest["initial_git"] = existing_manifest.get(
+            "initial_git", existing_manifest.get("git")
+        )
+        manifest["resume_history"] = [
+            *existing_manifest.get("resume_history", []),
+            {
+                "resumed_at_utc": utc_now(),
+                "git": manifest["git"],
+                "runtime": manifest["runtime"],
+            },
+        ][-50:]
+    else:
+        manifest["initial_git"] = manifest["git"]
+        manifest["resume_history"] = []
 
     output_dir.mkdir(parents=True, exist_ok=True)
     atomic_write_json(manifest_path, manifest)
@@ -267,50 +290,88 @@ def main() -> None:
     planned = len(args.policies) * len(levels) * limit
     print(f"V6 config: {config_sha256} | completed {len(records)}/{planned}")
 
-    for policy_name in args.policies:
-        shared_policy = None if policy_name == "random" else build_policy(policy_name, args)
-        try:
-            for level in levels:
-                for episode_index, seed in enumerate(split_plan[level][:limit], start=1):
-                    key = f"{policy_name}|{level}|{episode_index}|{seed}"
-                    if key in records:
-                        print(f"[skip] {key}")
-                        continue
-                    policy = build_policy(policy_name, args, seed=seed) if policy_name == "random" else shared_policy
-                    episode = run_episode(
-                        policy,
-                        task_level=level,
-                        seed=seed,
-                        max_steps=args.max_steps,
-                        verbose=args.verbose,
-                        hydra_policy=hydra_policy,
-                    )
-                    if args.trace_level == "compact":
-                        episode = compact_trace(episode)
-                    record = {
-                        "record_schema_version": V6_SCHEMA_VERSION,
-                        "config_sha256": config_sha256,
-                        "episode_key": key,
-                        "policy_stratum": policy_name,
-                        "intervention_level": INTERVENTION_LEVEL[policy_name],
-                        "model_label": args.model_label if policy_name.startswith("model_") else None,
-                        "level": level,
-                        "episode_index": episode_index,
-                        "seed": seed,
-                        "completed_at_utc": utc_now(),
-                        "episode": episode,
-                    }
-                    record["episode_sha256"] = canonical_sha256(episode)
-                    append_jsonl(episodes_path, record)
-                    records[key] = record
-                    print(
-                        f"[{len(records):>4}/{planned}] {key} "
-                        f"grade={episode['grade']['score']:.3f} "
-                        f"interventions={episode['provenance_summary']['interventions']}"
-                    )
-        finally:
-            if shared_policy is not None and hasattr(shared_policy, "close"):
-                shared_policy.close()
+    active_policy = ""
+    try:
+        for policy_name in args.policies:
+            active_policy = policy_name
+            shared_policy = (
+                None if policy_name == "random" else build_policy(policy_name, args)
+            )
+            try:
+                for level in levels:
+                    for episode_index, seed in enumerate(
+                        split_plan[level][:limit], start=1
+                    ):
+                        key = f"{policy_name}|{level}|{episode_index}|{seed}"
+                        if key in records:
+                            print(f"[skip] {key}")
+                            continue
+                        policy = (
+                            build_policy(policy_name, args, seed=seed)
+                            if policy_name == "random"
+                            else shared_policy
+                        )
+                        episode = run_episode(
+                            policy,
+                            task_level=level,
+                            seed=seed,
+                            max_steps=args.max_steps,
+                            verbose=args.verbose,
+                            hydra_policy=hydra_policy,
+                        )
+                        if args.trace_level == "compact":
+                            episode = compact_trace(episode)
+                        record = {
+                            "record_schema_version": V6_SCHEMA_VERSION,
+                            "config_sha256": config_sha256,
+                            "episode_key": key,
+                            "policy_stratum": policy_name,
+                            "intervention_level": INTERVENTION_LEVEL[policy_name],
+                            "model_label": (
+                                args.model_label if policy_name.startswith("model_") else None
+                            ),
+                            "level": level,
+                            "episode_index": episode_index,
+                            "seed": seed,
+                            "completed_at_utc": utc_now(),
+                            "episode": episode,
+                        }
+                        record["episode_sha256"] = canonical_sha256(episode)
+                        append_jsonl(episodes_path, record)
+                        records[key] = record
+                        manifest.update(
+                            {
+                                "status": "running",
+                                "completed_episodes": len(records),
+                                "last_episode_key": key,
+                                "updated_at_utc": utc_now(),
+                            }
+                        )
+                        atomic_write_json(manifest_path, manifest)
+                        print(
+                            f"[{len(records):>4}/{planned}] {key} "
+                            f"grade={episode['grade']['score']:.3f} "
+                            f"interventions={episode['provenance_summary']['interventions']}"
+                        )
+            finally:
+                if shared_policy is not None and hasattr(shared_policy, "close"):
+                    shared_policy.close()
+    except BaseException as exc:
+        manifest.update(
+            {
+                "status": "failed",
+                "completed_episodes": len(records),
+                "failed_policy": active_policy,
+                "failed_at_utc": utc_now(),
+                "failure": {
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                    "traceback": traceback.format_exc()[-12000:],
+                },
+            }
+        )
+        atomic_write_json(manifest_path, manifest)
+        raise
 
     summary = {
         "schema_version": V6_SCHEMA_VERSION,

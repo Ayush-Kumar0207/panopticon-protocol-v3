@@ -48,8 +48,19 @@ After the research tag is pushed:
 3. Click **Open in Colab**, if shown.
 
 The notebook checks out the immutable tag
-`research-v6-pilot-2026-07-17`, so later changes to `main` cannot silently alter
+`research-v6-pilot-2026-07-17-r1`, so later changes to `main` cannot silently alter
 the experiment.
+
+### Why Colab shows a crossed-out save/cloud icon
+
+Opening a notebook from GitHub does not automatically save the notebook document
+or its cell outputs to MyDrive. The icon is unrelated to `drive.mount()`.
+
+- Click **Copy to Drive** if you want an editable notebook copy saved in MyDrive.
+- The experiment files are written directly under `DRIVE_ROOT` even when the
+  notebook document is not saved.
+- Cell 9 writes, atomically renames, reads, and removes a probe file to prove that
+  mounted-Drive persistence is working.
 
 ## 3. Select the runtime
 
@@ -167,6 +178,8 @@ MyDrive/
     ├── frozen_run_config.json
     ├── argus_model_manifest.json
     ├── runtime_sessions.jsonl
+    ├── runtime_patch_history.jsonl   # present when a diagnostic patch was applied
+    ├── console_logs/
     ├── checkpoints/
     ├── training_logs/
     ├── pilot/
@@ -202,6 +215,30 @@ old results folder.
 
 The output directory belongs to a different policy/checkpoint/configuration.
 Restore the original command or use a new condition directory.
+
+### `CalledProcessError` from Cell 10
+
+The first run durably completed 21 random-policy episodes. It then reached
+`random|level_5|2|922094758`, where `grade.passed` was a `numpy.bool_` rather than
+a built-in Python `bool`. Canonical JSON hashing rejected that scalar before the
+22nd record could be appended. The existing 21 records are intact.
+
+Use the `research-v6-pilot-2026-07-17-r1` notebook. It:
+
+1. converts the complete episode payload to JSON-native values and explicitly
+   normalizes the grader pass flag;
+2. includes seed `922094758` as a permanent serialization regression test;
+3. removes stale PEFT, TRL, and torchvision packages that are unnecessary for the
+   merged text-only model;
+4. installs Transformers 4.57.6 and Accelerate 1.14.0;
+5. loads and unloads ARGUS once in Cell 7 as a preflight;
+6. streams child stdout and stderr into Colab; and
+7. saves persistent console output under `console_logs/` and structured failure
+   details inside the condition `manifest.json`.
+
+Do not delete `pilot/scripted/episodes.jsonl`. Rerun the updated notebook from
+Cell 1 through Cell 10. The 21 verified episode keys are skipped, and evaluation
+continues with the exact previously failing seed.
 
 ### Drive is nearly full
 
