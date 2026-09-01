@@ -364,9 +364,8 @@ class LocalArgusModel:
                 add_generation_prompt=True,
             )
         except Exception:
-            return (
-                f"{SYSTEM_PROMPT}\n\nCurrent State:\n{messages[1]['content'].replace('Current State:\\n', '', 1)}"
-            )
+            observation = messages[1]["content"].replace("Current State:\n", "", 1)
+            return f"{SYSTEM_PROMPT}\n\nCurrent State:\n{observation}"
 
     def _prompt_token_length(self, prompt: str) -> int:
         return len(
