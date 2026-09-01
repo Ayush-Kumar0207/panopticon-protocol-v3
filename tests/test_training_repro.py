@@ -25,6 +25,8 @@ from research_repro import (
 )
 from tools.build_submission_bundle import build_bundle
 from tools.freeze_model_artifact import create_or_verify_model_manifest
+from full_evaluation import write_evidence_blob
+from tools.install_canonical_training_env import TORCH_INDEX, install_commands
 from tools.verify_training_artifacts import validate_evaluation, verify_run
 
 
@@ -148,23 +150,30 @@ def _evaluation(
                     {"prompt_tokens": 256, "token_truncated": False}
                     if agent == "trained" else {}
                 )
-                timeline = [{
-                    "step_index": index,
-                    "turn": index,
-                    "phase": "fixture",
-                    "reward": score / 2,
-                    "metrics_after": {"enterprise_revenue": 100.0, "security_score": security},
-                    "intervention_applied": False,
-                    "model_provenance": model_provenance,
-                    "prompt_sha256": "0" * 64,
-                    "prompt_bytes": 1,
-                    "messages_sha256": "1" * 64,
-                    "messages_bytes": 1,
-                    "observation_before_sha256": "2" * 64,
-                    "observation_before_bytes": 1,
-                    "observation_after_sha256": "3" * 64,
-                    "observation_after_bytes": 1,
-                } for index in range(2)]
+                timeline = []
+                for index in range(2):
+                    row = {
+                        "step_index": index,
+                        "turn": index,
+                        "phase": "fixture",
+                        "reward": score / 2,
+                        "metrics_after": {"enterprise_revenue": 100.0, "security_score": security},
+                        "intervention_applied": False,
+                        "model_provenance": model_provenance,
+                    }
+                    for key, value in {
+                        "prompt": f"fixture prompt {index}",
+                        "messages": [{"role": "user", "content": f"fixture {index}"}],
+                        "observation_before": {"turn": index},
+                        "observation_after": {"turn": index + 1},
+                    }.items():
+                        evidence = write_evidence_blob(
+                            root, spec["outputs"]["raw_evidence_dir"], value
+                        )
+                        row[f"{key}_sha256"] = evidence["sha256"]
+                        row[f"{key}_bytes"] = evidence["bytes"]
+                        row[f"{key}_artifact"] = evidence["artifact"]
+                    timeline.append(row)
                 episode = {
                     "agent": agent,
                     "level": level,
@@ -267,8 +276,12 @@ def _valid_run(tmp_path: Path, *, accepted: bool = True) -> tuple[Path, dict]:
         "run_fingerprint": fingerprint, "git": {"commit": commit, "dirty": False},
         "spec_sha256": lock["spec_sha256"],
         "runtime": {
-            "python": "3.12.0 fixture",
-            "gpu": {"cuda_available": True, "name": "Fixture GPU", "vram_gb": 24.0},
+            "python": "3.11.0 fixture",
+            "gpu": {
+                "cuda_available": True, "name": "Fixture GPU", "vram_gb": 24.0,
+                "torch_build": "2.2.1+cu121", "cuda": "12.1",
+                "compute_capability": [8, 0], "bf16_supported": True,
+            },
             "packages": spec["dependencies"], "all_packages": {"fixture": "1.0"},
         },
         "deterministic_environment": spec["runtime"]["deterministic_environment"],
@@ -281,8 +294,12 @@ def _valid_run(tmp_path: Path, *, accepted: bool = True) -> tuple[Path, dict]:
         "spec_sha256": lock["spec_sha256"],
         "dependencies": spec["dependencies"],
         "runtime": {
-            "python": "3.12.0 fixture",
-            "gpu": {"cuda_available": True, "name": "Fixture GPU", "vram_gb": 24.0},
+            "python": "3.11.0 fixture",
+            "gpu": {
+                "cuda_available": True, "name": "Fixture GPU", "vram_gb": 24.0,
+                "torch_build": "2.2.1+cu121", "cuda": "12.1",
+                "compute_capability": [8, 0], "bf16_supported": True,
+            },
         },
         "cpu_smoke_only": False,
         "deterministic_environment": spec["runtime"]["deterministic_environment"],
@@ -477,7 +494,7 @@ def test_noisy_mean_improvement_fails_paired_confidence_gate(tmp_path):
     assert report["accepted"] is False
 
 
-@pytest.mark.parametrize("target", ["model", "model_tamper", "results", "data", "event"])
+@pytest.mark.parametrize("target", ["model", "model_tamper", "results", "data", "event", "raw_evidence"])
 def test_artifact_validator_rejects_missing_or_corrupt_artifacts(tmp_path, target):
     run, spec = _valid_run(tmp_path)
     if target == "model":
@@ -489,7 +506,7 @@ def test_artifact_validator_rejects_missing_or_corrupt_artifacts(tmp_path, targe
         (run / spec["outputs"]["canonical_candidate_evaluation"]).unlink()
     elif target == "data":
         (run / "training_data_easy.jsonl").write_text("tampered\n", encoding="utf-8")
-    else:
+    elif target == "event":
         events_path = run / spec["outputs"]["events"]
         first_evaluation = next(
             line for line in events_path.read_text(encoding="utf-8").splitlines()
@@ -497,6 +514,9 @@ def test_artifact_validator_rejects_missing_or_corrupt_artifacts(tmp_path, targe
         )
         with events_path.open("a", encoding="utf-8") as handle:
             handle.write(first_evaluation + "\n")
+    else:
+        blob = next((run / spec["outputs"]["raw_evidence_dir"]).rglob("*.json.gz"))
+        blob.write_bytes(b"not-a-valid-gzip-stream")
     with pytest.raises(ReproducibilityError):
         verify_run(run, SPEC_PATH, enforce_checkout=False)
 
@@ -564,6 +584,15 @@ def test_canonical_dependency_spec_matches_exact_requirement_lock():
             f"dependency lock drift for {raw_name}: spec={expected}, "
             f"requirements={locked.get(name)}"
         )
+
+
+def test_gpu_installer_selects_official_cuda_wheel_before_locked_stack():
+    commands = install_commands()
+    assert commands[0][-1] == "torch==2.2.1"
+    assert "--index-url" in commands[0]
+    assert TORCH_INDEX in commands[0]
+    assert commands[1][-1].endswith("requirements-training.txt")
+    assert commands[2][-2:] == ["pip", "check"]
 
 
 def test_submission_bundle_labels_status_and_external_weights(tmp_path):

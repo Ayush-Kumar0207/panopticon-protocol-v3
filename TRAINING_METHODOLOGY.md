@@ -35,6 +35,13 @@ deterministic CUDA workspace are enabled; nevertheless, GPU libraries can retain
 hardware-specific numerical behavior, so hardware and package provenance is
 reported rather than claiming universal bitwise identity.
 
+The canonical runtime is not T4/free-tier compatible: it is Python 3.11,
+`torch==2.2.1+cu121`, native BF16 on NVIDIA Ampere-or-newer (compute capability
+8.0+), and at least 14 GiB VRAM. The official-index installer and preflight reject
+CPU-only torch, a wrong CUDA/local build, or a T4/Turing allocation. FP32-on-T4 or
+stabilized FP16 would change the optimization path and requires a separate
+preregistered experiment plus numerical/equivalence evidence.
+
 Before expert generation, preflight loads the exact upstream model revision and
 runs one assistant-only LoRA forward/backward/AdamW step at the canonical sequence
 shape. Non-finite/zero loss or gradients, unsupported BF16, or OOM stops the run.
@@ -57,11 +64,14 @@ namespaces. Canonical and confirmation each run an exact matched matrix:
 - the frozen reward/grader schemas;
 - no policy repair/controller intervention and no token-truncated model turn.
 
-Large repeated prompt/message/state bodies are replaced in canonical episode
-records by SHA-256 hashes and byte counts. Actions, outputs, validation decisions,
-model token telemetry, rewards, timeline metrics, final state, and grading remain
-available. The environment seed, action trace, source, and hashes make the omitted
-bodies reproducible and tamper-evident while keeping complete evaluation tractable.
+Large repeated prompt/message/state bodies are replaced in Git-facing canonical
+episode records by SHA-256 hashes, byte counts, and content-addressed artifact
+paths. The full canonical JSON bytes are preserved once as deterministic gzip
+blobs under `raw_evidence/`. Verification decompresses, parses, canonicalizes, and
+re-hashes every referenced blob. Actions, outputs, validation decisions, model
+token telemetry, rewards, timeline metrics, final state, and grading remain in the
+compact record. Large blobs may be hosted outside Git but remain mandatory in the
+artifact manifest and submission index.
 
 Evaluation checkpoints one record after every episode. Final JSON is generated
 only from a complete agent × level × seed matrix. The verifier independently

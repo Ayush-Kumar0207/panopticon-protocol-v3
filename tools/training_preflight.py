@@ -88,9 +88,9 @@ def run_validation_commands(spec: dict) -> list[dict[str, object]]:
 
 def perform_preflight(spec_path: str | Path, *, allow_cpu_smoke: bool = False, run_tests: bool = True) -> dict:
     spec, resolved_spec = load_spec(spec_path)
-    if not ((3, 11) <= sys.version_info[:2] < (3, 13)):
+    if sys.version_info[:2] != (3, 11):
         raise ReproducibilityError(
-            f"Python {sys.version_info.major}.{sys.version_info.minor} is unsupported; canonical runs require 3.11 or 3.12"
+            f"Python {sys.version_info.major}.{sys.version_info.minor} is unsupported; canonical runs require exactly 3.11"
         )
     git = git_metadata(ROOT)
     critical_dirty = training_critical_dirty_paths(spec, git)
@@ -117,10 +117,30 @@ def perform_preflight(spec_path: str | Path, *, allow_cpu_smoke: bool = False, r
     minimum = float(spec["runtime"].get("minimum_vram_gb", 0))
     if gpu["cuda_available"] and float(gpu["vram_gb"] or 0) < minimum:
         raise ReproducibilityError(f"GPU has {gpu['vram_gb']} GiB VRAM; the canonical profile requires at least {minimum} GiB.")
+    if gpu["cuda_available"]:
+        expected_torch = (
+            f"{spec['runtime']['torch_distribution_version']}+"
+            f"{spec['runtime']['torch_local_build']}"
+        )
+        if gpu.get("torch_build") != expected_torch:
+            raise ReproducibilityError(
+                f"CUDA PyTorch build mismatch: expected {expected_torch}, found {gpu.get('torch_build')}"
+            )
+        if str(gpu.get("cuda")) != str(spec["runtime"]["torch_cuda_runtime"]):
+            raise ReproducibilityError(
+                f"PyTorch CUDA runtime mismatch: expected {spec['runtime']['torch_cuda_runtime']}, "
+                f"found {gpu.get('cuda')}"
+            )
+        capability = gpu.get("compute_capability")
+        required_major = int(spec["runtime"]["minimum_compute_capability_major"])
+        if not isinstance(capability, list) or not capability or int(capability[0]) < required_major:
+            raise ReproducibilityError(
+                "canonical BF16 requires NVIDIA Ampere-or-newer compute capability; T4/Turing is prohibited"
+            )
     seed_separation = verify_seed_separation(spec)
     if gpu["cuda_available"] and spec["training"]["precision"] == "bf16":
         import torch
-        if not torch.cuda.is_bf16_supported():
+        if not torch.cuda.is_bf16_supported() or gpu.get("bf16_supported") is not True:
             raise ReproducibilityError("canonical BF16 precision is not supported by this GPU")
     tests = run_validation_commands(spec) if run_tests else []
     if gpu["cuda_available"] and run_tests:

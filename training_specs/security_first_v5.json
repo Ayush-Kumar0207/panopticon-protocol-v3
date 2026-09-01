@@ -45,17 +45,21 @@
     "merge_final_adapter": true
   },
   "runtime": {
-    "profile": "low-vram-gpu-safe",
+    "profile": "ampere-bf16-cu121",
     "requires_cuda": true,
     "minimum_vram_gb": 14.0,
+    "minimum_compute_capability_major": 8,
     "minimum_free_disk_gb_before_training": 25.0,
     "deterministic_environment": {
       "PYTHONHASHSEED": "4200",
       "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
       "TOKENIZERS_PARALLELISM": "false"
     },
-    "supported_gpu_policy": "Any CUDA GPU with sufficient memory is allowed. GPU model is provenance, not run identity; all training-critical values above remain fixed.",
-    "python": ">=3.11,<3.13"
+    "supported_gpu_policy": "Canonical training requires NVIDIA Ampere-or-newer, native BF16, at least 14 GiB VRAM, Python 3.11, and the exact torch 2.2.1+cu121 build. T4/Turing is prohibited for this experiment; FP32 or stabilized FP16 requires a separately preregistered and numerically validated experiment.",
+    "python": "3.11",
+    "torch_distribution_version": "2.2.1",
+    "torch_local_build": "cu121",
+    "torch_cuda_runtime": "12.1"
   },
   "evaluation": {
     "episodes_per_level": 20,
@@ -65,7 +69,7 @@
     "model_prompt_max_tokens": 512,
     "model_max_new_tokens": 128,
     "timeline_level": "level_5",
-    "episode_evidence_schema": "canonical-episode-compact-v1",
+    "episode_evidence_schema": "canonical-episode-content-addressed-v2",
     "trained_policy": "model_raw",
     "canonical_seed": 42,
     "confirmation_seed": 43,
@@ -90,6 +94,7 @@
     "canonical_acceptance_report": "acceptance_canonical.json",
     "confirmation_acceptance_report": "acceptance_confirmation.json",
     "training_plots_dir": "training_plots",
+    "raw_evidence_dir": "raw_evidence",
     "artifact_manifest": "artifact_manifest.json",
     "checksums": "SHA256SUMS.txt",
     "submission_bundle": "panopticon_submission_bundle.zip"
@@ -110,6 +115,7 @@
     "inference_local.py",
     "research_repro.py",
     "tools/gpu_training_probe.py",
+    "tools/install_canonical_training_env.py",
     "tools/verify_training_artifacts.py",
     "tools/build_submission_bundle.py",
     "tools/freeze_model_artifact.py",
@@ -129,10 +135,10 @@
     "full_evaluation.py",
     "benchmark_acceptance.py",
     "tools/gpu_training_probe.py",
+    "tools/install_canonical_training_env.py",
     "tools/verify_training_artifacts.py",
     "tools/build_submission_bundle.py",
     "tools/freeze_model_artifact.py",
-    "requirements.txt",
     "requirements-training.txt"
   ],
   "preflight_commands": [

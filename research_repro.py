@@ -265,7 +265,11 @@ def package_versions(names: Iterable[str]) -> dict[str, str | None]:
     versions: dict[str, str | None] = {}
     for name in names:
         try:
-            versions[name] = metadata.version(name)
+            version = metadata.version(name)
+            # CUDA wheels carry a local tag (for example 2.2.1+cu121).  The
+            # canonical CUDA build is checked separately; dependency identity
+            # uses the upstream distribution version shared with CPU CI.
+            versions[name] = version.split("+", 1)[0] if name == "torch" else version
         except metadata.PackageNotFoundError:
             versions[name] = None
     return versions
@@ -281,14 +285,28 @@ def all_package_versions() -> dict[str, str]:
 
 
 def runtime_metadata(dependencies: Iterable[str]) -> dict[str, Any]:
-    gpu: dict[str, Any] = {"cuda_available": False, "name": None, "vram_gb": None, "cuda": None}
+    gpu: dict[str, Any] = {
+        "cuda_available": False,
+        "name": None,
+        "vram_gb": None,
+        "cuda": None,
+        "compute_capability": None,
+        "bf16_supported": False,
+        "torch_build": None,
+    }
     try:
         import torch
         gpu["cuda_available"] = bool(torch.cuda.is_available())
         gpu["cuda"] = torch.version.cuda
+        gpu["torch_build"] = str(torch.__version__)
         if torch.cuda.is_available():
             props = torch.cuda.get_device_properties(0)
-            gpu.update(name=props.name, vram_gb=round(props.total_memory / 1024**3, 3))
+            gpu.update(
+                name=props.name,
+                vram_gb=round(props.total_memory / 1024**3, 3),
+                compute_capability=list(torch.cuda.get_device_capability(0)),
+                bf16_supported=bool(torch.cuda.is_bf16_supported()),
+            )
     except Exception as exc:  # preflight reports this without leaking environment state
         gpu["torch_probe_error"] = type(exc).__name__
     return {

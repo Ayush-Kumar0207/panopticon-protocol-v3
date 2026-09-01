@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import functools
+import gzip
 import json
 import math
 import random
@@ -123,13 +124,16 @@ def _verify_raw_summary(
         raise ReproducibilityError(f"summary episode count mismatch: {label}")
 
 
-def _verify_episode_trace(episode: dict[str, Any], spec: dict[str, Any], label: str) -> None:
+def _verify_episode_trace(
+    episode: dict[str, Any], spec: dict[str, Any], label: str, run_root: Path
+) -> list[Path]:
     if episode.get("evidence_schema_version") != spec["evaluation"]["episode_evidence_schema"]:
         raise ReproducibilityError(f"episode evidence schema mismatch: {label}")
     timeline = episode.get("timeline")
     if not isinstance(timeline, list) or len(timeline) != episode.get("steps"):
         raise ReproducibilityError(f"episode timeline/step mismatch: {label}")
     hash_fields = ("prompt", "messages", "observation_before", "observation_after")
+    evidence_files: list[Path] = []
     for step_index, row in enumerate(timeline):
         if any(key in row for key in hash_fields):
             raise ReproducibilityError(f"uncompacted canonical episode field: {label}/step-{step_index}")
@@ -140,6 +144,31 @@ def _verify_episode_trace(episode: dict[str, Any], spec: dict[str, Any], label: 
                 raise ReproducibilityError(f"invalid evidence hash: {label}/step-{step_index}/{key}")
             if not isinstance(size, int) or size <= 0:
                 raise ReproducibilityError(f"invalid evidence byte count: {label}/step-{step_index}/{key}")
+            relative = row.get(f"{key}_artifact")
+            if not isinstance(relative, str):
+                raise ReproducibilityError(f"missing raw-evidence artifact: {label}/step-{step_index}/{key}")
+            expected_parent = Path(spec["outputs"]["raw_evidence_dir"]) / "sha256" / digest[:2]
+            raw_relative = Path(relative)
+            if raw_relative.parent != expected_parent or raw_relative.name != f"{digest}.json.gz":
+                raise ReproducibilityError(f"noncanonical raw-evidence path: {label}/step-{step_index}/{key}")
+            artifact = (run_root / raw_relative).resolve()
+            try:
+                artifact.relative_to(run_root.resolve())
+            except ValueError as exc:
+                raise ReproducibilityError(f"raw-evidence path escapes run directory: {relative}") from exc
+            try:
+                replayed = gzip.decompress(artifact.read_bytes())
+            except (OSError, EOFError) as exc:
+                raise ReproducibilityError(f"raw-evidence artifact is missing/corrupt: {relative}") from exc
+            if len(replayed) != size or sha256_bytes(replayed) != digest:
+                raise ReproducibilityError(f"raw-evidence replay hash mismatch: {relative}")
+            try:
+                decoded = json.loads(replayed)
+            except json.JSONDecodeError as exc:
+                raise ReproducibilityError(f"raw-evidence JSON is invalid: {relative}") from exc
+            if canonical_json(decoded).encode("utf-8") != replayed:
+                raise ReproducibilityError(f"raw-evidence encoding is not canonical: {relative}")
+            evidence_files.append(artifact)
     provenance = episode.get("provenance_summary", {})
     context = provenance.get("model_context", {})
     derived = {
@@ -156,6 +185,7 @@ def _verify_episode_trace(episode: dict[str, Any], spec: dict[str, Any], label: 
     }
     if actual != derived:
         raise ReproducibilityError(f"episode provenance does not match its trace: {label}")
+    return evidence_files
 
 
 def _verify_plot_manifest(payload: dict[str, Any], root: Path, label: str) -> list[Path]:
@@ -254,6 +284,7 @@ def validate_evaluation(
 
     seen: set[tuple[str, str, int]] = set()
     final_by_key: dict[str, dict[str, Any]] = {}
+    raw_evidence_files: list[Path] = []
     for agent in spec["evaluation"]["required_agents"]:
         agent_payload = payload.get("agents", {}).get(agent)
         if not isinstance(agent_payload, dict):
@@ -271,7 +302,11 @@ def validate_evaluation(
                 seen.add(key_tuple)
                 if int(episode.get("seed", -1)) != int(seed) or episode.get("level") != level:
                     raise ReproducibilityError(f"episode identity mismatch: {agent}/{level}/{index}")
-                _verify_episode_trace(episode, spec, f"{agent}/{level}/{index}/{seed}")
+                raw_evidence_files.extend(
+                    _verify_episode_trace(
+                        episode, spec, f"{agent}/{level}/{index}/{seed}", path.parent
+                    )
+                )
                 provenance = episode.get("provenance_summary", {})
                 context = provenance.get("model_context", {})
                 if agent == "trained":
@@ -329,7 +364,7 @@ def validate_evaluation(
             raise ReproducibilityError(f"evaluation progress sidecar is incomplete: {progress_path}")
         sidecar_files.extend([checkpoint_path, progress_path])
     plot_files = _verify_plot_manifest(payload, path.parent, f"{split}/{model_kind}") if require_plots else []
-    payload["_verified_files"] = [path, *sidecar_files, *plot_files]
+    payload["_verified_files"] = [path, *sidecar_files, *plot_files, *raw_evidence_files]
     return payload
 
 
@@ -361,12 +396,20 @@ def _validate_training(root: Path, spec: dict[str, Any], lock: dict[str, Any]) -
     runtime = preflight.get("runtime", {})
     gpu = runtime.get("gpu", {})
     if (
-        not str(runtime.get("python", "")).startswith(("3.11.", "3.12."))
+        not str(runtime.get("python", "")).startswith("3.11.")
         or gpu.get("cuda_available") is not True
         or not isinstance(gpu.get("vram_gb"), (int, float))
         or float(gpu["vram_gb"]) < float(spec["runtime"]["minimum_vram_gb"])
+        or gpu.get("torch_build") != (
+            f"{spec['runtime']['torch_distribution_version']}+{spec['runtime']['torch_local_build']}"
+        )
+        or str(gpu.get("cuda")) != str(spec["runtime"]["torch_cuda_runtime"])
+        or not isinstance(gpu.get("compute_capability"), list)
+        or not gpu.get("compute_capability")
+        or int(gpu["compute_capability"][0]) < int(spec["runtime"]["minimum_compute_capability_major"])
+        or gpu.get("bf16_supported") is not True
     ):
-        raise ReproducibilityError("canonical Python/CUDA/VRAM preflight evidence is incompatible")
+        raise ReproducibilityError("canonical Python/CUDA/BF16/VRAM preflight evidence is incompatible")
     if preflight.get("seed_separation", {}).get("status") != "verified-disjoint":
         raise ReproducibilityError("training/evaluation seed separation was not verified")
     probes = [item.get("report", {}) for item in preflight.get("validations", []) if item.get("report")]

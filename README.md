@@ -266,6 +266,12 @@ The full gauntlet. Gen-5 Manchurian candidates with active counter-intelligence.
 
 The latest selected Drive run is **Security-First V5**, stored at `panopticon-security-v5-ep50`. It trained from `Qwen/Qwen2.5-1.5B-Instruct` with TRL SFT + LoRA, saved checkpoints and curriculum state directly to Google Drive, merged the final adapter, and completed matched base/raw/supervisor evaluations.
 
+> **Historical/non-canonical evidence:** this Drive run used the older T4 profile
+> and its raw model failed nine advanced acceptance/security checks. It is retained
+> for forensic comparison, not accepted evidence and not the executable contributor
+> protocol. New canonical V5 reproductions require the Ampere/BF16/CUDA profile in
+> [`TRAINING_CONTRIBUTION_GUIDE.md`](TRAINING_CONTRIBUTION_GUIDE.md).
+
 The full V5 optimizer event log is still in Drive as `training_events.jsonl`; the checked-in training plots below are compact diagnostics generated from Drive metadata and completed benchmark reports. This keeps the repository lightweight while avoiding stale EP20 plots.
 
 ### V5 Training Configuration

@@ -1,6 +1,9 @@
 # Canonical training/evaluation environment. This is intentionally isolated
 # from the OpenEnv/FastMCP/Gradio server stack so unrelated server dependency
 # releases cannot change or block a training run.
+# GPU contributors must use tools/install_canonical_training_env.py. It selects
+# the official cu121 index for torch; a direct generic pip install can select a
+# CPU wheel and is therefore not a canonical installation procedure.
 fastapi==0.135.3
 httpx==0.28.1
 torch==2.2.1

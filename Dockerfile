@@ -10,13 +10,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 # Install core dependencies only (no torch/TRL for server container)
 COPY requirements.txt .
 RUN pip install --no-cache-dir \
-    fastapi==0.135.3 \
-    "uvicorn[standard]==0.44.0" \
-    pydantic==2.12.5 \
-    httpx==0.28.1 \
-    openai==2.30.0 \
+    fastapi==0.110.0 \
+    "uvicorn[standard]==0.27.1" \
+    pydantic==2.6.1 \
+    httpx==0.26.0 \
+    openai==1.12.0 \
     numpy==1.26.4 \
-    tqdm==4.66.5
+    tqdm==4.66.1
 
 # Copy application code
 COPY models.py .

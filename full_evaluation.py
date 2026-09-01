@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import os
 import random
@@ -57,8 +58,32 @@ def build_seed_plan(episodes_per_level: int, seed: int) -> dict[str, list[int]]:
     }
 
 
-def compact_episode_evidence(episode: dict[str, Any], schema: str) -> dict[str, Any]:
-    """Remove repeated large prompts/states while retaining hashes and audit telemetry."""
+def write_evidence_blob(root: Path, relative_dir: str, value: Any) -> dict[str, Any]:
+    """Write one deterministic, compressed, content-addressed evidence blob."""
+    encoded = canonical_json(value).encode("utf-8")
+    digest = sha256_bytes(encoded)
+    relative = Path(relative_dir) / "sha256" / digest[:2] / f"{digest}.json.gz"
+    target = root / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    compressed = gzip.compress(encoded, compresslevel=9, mtime=0)
+    if target.exists():
+        try:
+            existing = gzip.decompress(target.read_bytes())
+        except (OSError, EOFError) as exc:
+            raise ReproducibilityError(f"existing raw-evidence blob is corrupt: {relative.as_posix()}") from exc
+        if existing != encoded:
+            raise ReproducibilityError(f"content-addressed evidence collision: {relative.as_posix()}")
+    else:
+        temporary = target.with_name(target.name + f".tmp-{os.getpid()}")
+        temporary.write_bytes(compressed)
+        os.replace(temporary, target)
+    return {"sha256": digest, "bytes": len(encoded), "artifact": relative.as_posix()}
+
+
+def compact_episode_evidence(
+    episode: dict[str, Any], schema: str, *, artifact_root: Path, relative_dir: str
+) -> dict[str, Any]:
+    """Compact Git-facing traces while preserving every raw field as a replayable blob."""
     compact = dict(episode)
     compact["evidence_schema_version"] = schema
     compact_timeline = []
@@ -66,9 +91,10 @@ def compact_episode_evidence(episode: dict[str, Any], schema: str) -> dict[str, 
     for record in episode.get("timeline", []):
         row = {key: value for key, value in record.items() if key not in large_fields}
         for key in large_fields:
-            encoded = canonical_json(record.get(key)).encode("utf-8")
-            row[f"{key}_sha256"] = sha256_bytes(encoded)
-            row[f"{key}_bytes"] = len(encoded)
+            evidence = write_evidence_blob(artifact_root, relative_dir, record.get(key))
+            row[f"{key}_sha256"] = evidence["sha256"]
+            row[f"{key}_bytes"] = evidence["bytes"]
+            row[f"{key}_artifact"] = evidence["artifact"]
         compact_timeline.append(row)
     compact["timeline"] = compact_timeline
     return compact
@@ -735,7 +761,10 @@ def main() -> None:
                     )
                     if active_spec:
                         episode = compact_episode_evidence(
-                            episode, active_spec["evaluation"]["episode_evidence_schema"]
+                            episode,
+                            active_spec["evaluation"]["episode_evidence_schema"],
+                            artifact_root=output_path.parent,
+                            relative_dir=active_spec["outputs"]["raw_evidence_dir"],
                         )
                     episode["agent"] = agent_key
                     record = {
