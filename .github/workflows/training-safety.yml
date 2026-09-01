@@ -1,0 +1,37 @@
+name: training-safety
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  cpu-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install CPU test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pytest==8.3.5
+      - name: Validate spec, Python, and notebooks
+        run: |
+          python -m json.tool training_specs/security_first_v5.json > /dev/null
+          python -m json.tool training_specs/historical_attempts.json > /dev/null
+          python -m compileall -q . -x '/(\.git|\.venv|static|ui/node_modules)/'
+          python -c "import json, pathlib; [json.loads(p.read_text(encoding='utf-8-sig')) for p in pathlib.Path('.').glob('*.ipynb')]"
+      - name: Run full CPU test suite
+        run: python -m pytest -q
+      - name: Run smoke and security regression gates
+        run: |
+          python smoke_test.py
+          python security_regression_test.py
+      - name: Scan text artifacts for credential signatures
+        run: |
+          python -c "from pathlib import Path; from tools.training_preflight import scan_secrets; findings=scan_secrets(Path('.').resolve()); assert not findings, findings"

@@ -258,19 +258,37 @@ class LocalArgusModel:
         model_ref: str,
         max_seq_length: int = MAX_SEQ_LENGTH,
         max_new_tokens: int = MAX_NEW_TOKENS,
+        revision: str | None = None,
+        precision: str = "auto",
     ):
         if max_seq_length < 128:
             raise ValueError("max_seq_length must be at least 128")
         if not 1 <= max_new_tokens <= max_seq_length:
             raise ValueError("max_new_tokens must be between 1 and max_seq_length")
         self.model_ref = model_ref
+        self.revision = None if Path(model_ref).exists() else revision
         self.max_seq_length = max_seq_length
         self.max_new_tokens = max_new_tokens
         self.device_map = {"": 0} if torch.cuda.is_available() else None
         self.is_adapter = False
         self.base_model_name: str | None = None
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_ref, trust_remote_code=True)
+        if precision == "bf16":
+            if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
+                raise RuntimeError("BF16 model evaluation requires compatible CUDA hardware")
+            self.model_dtype = torch.bfloat16
+        elif precision == "fp16":
+            if not torch.cuda.is_available():
+                raise RuntimeError("FP16 model evaluation requires CUDA")
+            self.model_dtype = torch.float16
+        elif precision == "fp32":
+            self.model_dtype = torch.float32
+        elif precision == "auto":
+            self.model_dtype = TRAIN_DTYPE
+        else:
+            raise ValueError("precision must be auto, bf16, fp16, or fp32")
+        revision_kwargs = {"revision": self.revision} if self.revision else {}
+        self.tokenizer = AutoTokenizer.from_pretrained(model_ref, trust_remote_code=True, **revision_kwargs)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.truncation_side = "left"
@@ -292,7 +310,7 @@ class LocalArgusModel:
             )
 
         try:
-            peft_cfg = PeftConfig.from_pretrained(model_ref) if PeftConfig is not None else None
+            peft_cfg = PeftConfig.from_pretrained(model_ref, **({"revision": self.revision} if self.revision else {})) if PeftConfig is not None else None
         except Exception:
             peft_cfg = None
 
@@ -300,7 +318,7 @@ class LocalArgusModel:
             base_model_name = peft_cfg.base_model_name_or_path
             base_model = AutoModelForCausalLM.from_pretrained(
                 base_model_name,
-                dtype=TRAIN_DTYPE,
+                torch_dtype=self.model_dtype,
                 device_map=self.device_map,
                 trust_remote_code=True,
             )
@@ -309,18 +327,20 @@ class LocalArgusModel:
 
         model = AutoModelForCausalLM.from_pretrained(
             model_ref,
-            dtype=TRAIN_DTYPE,
+            torch_dtype=self.model_dtype,
             device_map=self.device_map,
             trust_remote_code=True,
+            **({"revision": self.revision} if self.revision else {}),
         )
         return model, False, None
 
     def model_info(self) -> dict[str, Any]:
         return {
             "model_ref": self.model_ref,
+            "revision": self.revision,
             "is_adapter": self.is_adapter,
             "base_model_name": self.base_model_name,
-            "dtype": str(TRAIN_DTYPE),
+            "dtype": str(self.model_dtype),
             "device": str(self.device),
             "max_seq_length": self.max_seq_length,
             "max_new_tokens": self.max_new_tokens,

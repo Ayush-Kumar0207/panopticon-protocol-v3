@@ -1,5 +1,13 @@
 # Security-First V5 Colab Training
 
+> **Canonical workflow:** This cell-by-cell document is retained for explanation
+> and historical recovery. New independent runs must use
+> [`TRAINING_CONTRIBUTION_GUIDE.md`](TRAINING_CONTRIBUTION_GUIDE.md),
+> `training_specs/security_first_v5.json`, and
+> `tools/run_canonical_experiment.py`. Those executable controls take precedence
+> if a command below drifts. Do not copy individual cells around the preflight or
+> run-lock gates.
+
 This notebook sequence trains the Security-First V5 model on a T4 GPU while
 writing checkpoints, curriculum state, datasets, metrics, and logs directly to
 Google Drive.

@@ -73,6 +73,17 @@ def mean_std(values: list[float]) -> tuple[float, float]:
     return statistics.mean(values), statistics.pstdev(values)
 
 
+def bootstrap_mean_ci(values: list[float], *, samples: int = 2000) -> tuple[float, float]:
+    """Deterministic percentile bootstrap interval for transparent reporting."""
+    if not values:
+        return 0.0, 0.0
+    if len(values) == 1:
+        return values[0], values[0]
+    rng = random.Random(0x50414E4F50544943 + len(values))
+    means = sorted(statistics.mean(rng.choices(values, k=len(values))) for _ in range(samples))
+    return means[int(0.025 * (samples - 1))], means[int(0.975 * (samples - 1))]
+
+
 def state_success(state: dict[str, Any]) -> bool:
     return state.get("security_score", 0.0) > 20 and state.get("enterprise_revenue", 0.0) > 20
 
@@ -612,6 +623,8 @@ class LocalModelPolicy:
         intervention_mode: str = "repair",
         max_seq_length: int = 512,
         max_new_tokens: int = 128,
+        revision: str | None = None,
+        precision: str = "auto",
     ):
         from argus_llm import LocalArgusModel
 
@@ -621,6 +634,8 @@ class LocalModelPolicy:
             model_ref,
             max_seq_length=max_seq_length,
             max_new_tokens=max_new_tokens,
+            revision=revision,
+            precision=precision,
         )
         self.deterministic = deterministic
         self.temperature = temperature
@@ -903,6 +918,7 @@ def summarize_level_results(level: str, episodes: list[dict[str, Any]]) -> dict[
         dimension_summary[name] = {"mean": value_mean, "std": value_std}
 
     grade_mean, grade_std = mean_std(grades)
+    grade_ci95_low, grade_ci95_high = bootstrap_mean_ci(grades)
     reward_mean, reward_std = mean_std(rewards)
     revenue_mean, revenue_std = mean_std(revenues)
     security_mean, security_std = mean_std(securities)
@@ -918,6 +934,9 @@ def summarize_level_results(level: str, episodes: list[dict[str, Any]]) -> dict[
         "pass_rate": pass_rate,
         "grade_mean": grade_mean,
         "grade_std": grade_std,
+        "grade_median": statistics.median(grades) if grades else 0.0,
+        "grade_ci95_low": grade_ci95_low,
+        "grade_ci95_high": grade_ci95_high,
         "reward_mean": reward_mean,
         "reward_std": reward_std,
         "revenue_mean": revenue_mean,

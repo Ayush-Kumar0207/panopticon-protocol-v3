@@ -33,4 +33,4 @@ huggingface-hub==0.26.5
 safetensors==0.4.5
 
 # Visualization
-matplotlib>=3.8.0
+matplotlib==3.9.4
