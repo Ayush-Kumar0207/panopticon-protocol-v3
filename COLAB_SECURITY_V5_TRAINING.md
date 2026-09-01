@@ -131,8 +131,8 @@ CUDA-enabled PyTorch build.
   "datasets==3.1.0" \
   "huggingface-hub==0.26.5" \
   "safetensors==0.4.5" \
-  "pydantic==2.6.1" \
-  "matplotlib>=3.8"
+  "pydantic==2.12.5" \
+  "matplotlib==3.9.4"
 ```
 
 ## Cell 5 - Require a T4-Class Runtime

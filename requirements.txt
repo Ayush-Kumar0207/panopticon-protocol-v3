@@ -1,17 +1,20 @@
 # Core framework
-fastapi==0.115.12
-uvicorn[standard]==0.27.1
-pydantic==2.6.1
+fastapi==0.135.3
+uvicorn[standard]==0.44.0
+pydantic==2.12.5
 
 # HTTP client
 httpx==0.28.1
 
 # LLM client (for inference.py)
-# openenv-core requires OpenAI 2.7.2+.
-openai>=2.7.2,<3.0.0
+# OpenEnv-facing dependencies are explicit so upstream releases cannot silently
+# change the canonical environment or make the lock unresolvable.
+openai==2.30.0
 
 # OpenEnv core (required for hackathon validation)
-openenv-core==0.2.1
+openenv-core==0.2.3
+fastmcp==3.2.4
+gradio==6.11.0
 
 # RL training stack (Native PyTorch)
 torch==2.2.1
@@ -29,7 +32,7 @@ tokenizers==0.20.3
 accelerate==0.34.2
 peft==0.12.0
 datasets==3.1.0
-huggingface-hub==0.26.5
+huggingface-hub==0.36.2
 safetensors==0.4.5
 
 # Visualization

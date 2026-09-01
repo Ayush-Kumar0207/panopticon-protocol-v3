@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -536,6 +537,33 @@ def test_historical_registry_is_explicitly_noncanonical_and_safeguarded():
         "2026-07-v6-pilot-r0-r3",
     } <= ids
     assert all(item.get("status") and item.get("safeguards") for item in registry["attempts"])
+
+
+def test_canonical_dependency_spec_matches_exact_requirement_lock():
+    spec, _ = load_spec(SPEC_PATH)
+    exact = re.compile(r"^([A-Za-z0-9_.-]+)(?:\[[^\]]+\])?==([^\s;]+)$")
+    locked: dict[str, str] = {}
+    non_exact: list[str] = []
+    for requirements_path in (Path("requirements-training.txt"),):
+        for raw_line in requirements_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or line.startswith("-r "):
+                continue
+            match = exact.fullmatch(line)
+            if match is None:
+                non_exact.append(f"{requirements_path}:{line}")
+                continue
+            name = match.group(1).lower().replace("_", "-")
+            version = match.group(2)
+            assert name not in locked or locked[name] == version
+            locked[name] = version
+    assert not non_exact, f"canonical dependency ranges are prohibited: {non_exact}"
+    for raw_name, expected in spec["dependencies"].items():
+        name = raw_name.lower().replace("_", "-")
+        assert locked.get(name) == expected, (
+            f"dependency lock drift for {raw_name}: spec={expected}, "
+            f"requirements={locked.get(name)}"
+        )
 
 
 def test_submission_bundle_labels_status_and_external_weights(tmp_path):

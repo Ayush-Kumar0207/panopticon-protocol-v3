@@ -20,6 +20,7 @@ into a committed artifact. `unknown / insufficient evidence` is not a guess.
 | Security-First V5 raw model | Full transcribed 20-episode/agent/level comparison | Macro grade improved by 0.060517, yet nine advanced-level acceptance/security checks failed | evaluated and rejected |
 | Security-First V5 supervisor | Controller passed transcribed gates | It is a deterministic controller, not evidence that the raw trained model passed | separate system only |
 | V6 pilot r0–r3 | Pilot iterations | NumPy serialization failure, dependency coupling, then a corrected 512/128/no-truncation context contract invalidated earlier model rows | experimental/provisional |
+| Training-safety CI runs 1–3 (2026-09-01) | Checkout/static validation only; no training | Runs 1–2 omitted the declared PyTorch test dependency. Run 3 then proved the prior dependency set was unresolvable: unbounded `fastmcp` resolution required Pydantic 2.11.7+ while the lock required 2.6.1. All later gates were skipped. | failed infrastructure, no training evidence |
 
 Other source-history warnings are also material: assistant labels were repaired in
 `428cd41`; hidden training failures and shell logging were repaired in `a80b76a`
@@ -41,6 +42,7 @@ set is `unknown / insufficient evidence`, so the safeguards cover every new run.
 | S08 | Completion requires the exact agent × level × episode matrix in final JSON and episode sidecars, matching progress, plots, all lifecycle events, model headers, and content hashes. A partial 17/20 evaluation receives `STOP`, never “complete.” |
 | S09 | Acceptance is recomputed from raw episode summaries for both canonical and confirmation splits. Every gate and a deterministic paired-bootstrap positive-improvement check must pass; aggregate grade cannot override uncertainty or any security failure. Raw model and supervisor/controller identities cannot be substituted. |
 | S10 | Contributor-facing entry points convert expected failures to `STOP:` messages; the verifier distinguishes artifact integrity from scientific acceptance and returns a failing exit code for rejected evidence. |
+| S11 | CI installs the complete version-controlled training requirements, runs `pip check`, and then executes every test/security gate. Training dependencies are isolated from the OpenEnv/FastMCP/Gradio server chain; both sets are explicitly pinned, and a regression test rejects ranges or drift between the experiment spec and training requirements before contributor GPU work. |
 
 The safeguards intentionally do not change historical thresholds, graders, reward
 schemas, or security tests. More epochs, a larger model, or extra GPU are not a
