@@ -10,7 +10,7 @@ httpx==0.28.1
 # openenv-core requires OpenAI 2.7.2+.
 openai>=2.7.2,<3.0.0
 
-# OpenEnv core (required for hackathon validation)
+# OpenEnv core (required for protocol compatibility)
 openenv-core==0.2.1
 
 # RL training stack (Native PyTorch)

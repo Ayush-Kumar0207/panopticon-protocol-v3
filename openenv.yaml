@@ -125,7 +125,6 @@ action_schema:
 
 tags:
   - openenv
-  - hackathon
   - counter-espionage
   - adversarial-rl
   - multi-agent

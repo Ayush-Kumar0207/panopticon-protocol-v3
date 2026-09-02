@@ -15,24 +15,22 @@
 
 ---
 
-🏆 **Meta PyTorch OpenEnv Hackathon x Scaler — Grand Finale 2026**
-
 🤗 **Demo Space**: [panopticon-protocol-v3](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)  
-🧪 **Submitted Trainer Space**: [panopticon-trainer](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer)  
+🧪 **Historical Trainer Space**: [panopticon-trainer](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer)
 🧠 **Model Repo**: [panopticon-argus-qwen-1.5B](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B)  
 📝 **Blog Post**: [blog.md](blog.md)  
-📓 **Submitted Colab URL**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)  
+📓 **Historical Hosted Colab**: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
 📘 **Canonical Training Notebook in Repo**: [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)  
-📈 **Compatibility Copy for Submitted Colab Link**: [Panopticon_Plots_Colab.ipynb](Panopticon_Plots_Colab.ipynb)<br>
+📈 **Compatibility Notebook for Hosted Colab**: [Panopticon_Plots_Colab.ipynb](Panopticon_Plots_Colab.ipynb)<br>
 🔬 **V6 Research Pilot + Neural HYDRA Notebook**: [Panopticon_V6_Research_Colab.ipynb](Panopticon_V6_Research_Colab.ipynb)<br>
 📖 **Beginner V6 Colab Runbook**: [research_paper/COLAB_V6_BEGINNER_RUNBOOK.md](research_paper/COLAB_V6_BEGINNER_RUNBOOK.md)
 
-> **Important notebook note:** the end-to-end training pipeline lives in `Panopticon_Training_FINAL.ipynb`. Because the already-submitted Google Colab URL cannot be changed, `Panopticon_Plots_Colab.ipynb` is now a compatibility copy of the same training pipeline with the historical filename preserved.
+> **Important notebook note:** the end-to-end training pipeline lives in `Panopticon_Training_FINAL.ipynb`. `Panopticon_Plots_Colab.ipynb` is a compatibility copy retained so the historical hosted Colab link continues to resolve.
 
 
 ---
 
-## ✅ Submission Checklist
+## ✅ Research Assets and Reproducibility Status
 
 > **Research-status warning:** all retained pre-infrastructure training attempts,
 > including the completed/high-scoring V5 artifacts below, are historical,
@@ -44,16 +42,16 @@
 
 - **OpenEnv environment hosted on Hugging Face Spaces:** [Demo Space](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
 - **Minimal TRL training script / Colab path:** [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)
-- **Submitted Colab link used in the form:** [Google Colab URL](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
+- **Historical hosted Colab:** [Google Colab URL](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
 - **Newest Security-First V5 evidence:** [`evaluation_comparison_latest.json`](evaluation_comparison_latest.json), [`COLAB_SECURITY_V5_TRAINING.md`](COLAB_SECURITY_V5_TRAINING.md), and the refreshed V5 evaluation gallery in [`plots/`](plots)
 - **Historical fixed-run raw log:** [`training_events_fixed_ep20.jsonl`](training_events_fixed_ep20.jsonl)
 - **Historical training evidence:** [`output_logs.txt`](output_logs.txt) and the uploaded [`training_metrics/`](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B/tree/main/training_metrics) folder in the previous model repo
-- **Trainer Space link preserved for judges:** [panopticon-trainer](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer)
+- **Historical Trainer Space:** [panopticon-trainer](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-trainer)
 - **Merged model destination:** [panopticon-argus-qwen-1.5B](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B)
 
 ## 🖥️ Interactive Dashboard Preview
 
-The project ships with a full operator-facing dashboard, not just a backend API. Judges can see the trained model reasoning live in the **Command Center**, inspect a curated phase-by-phase walkthrough in **AI Agent Demo**, and review the systems story in **Architecture**.
+The project ships with a full operator-facing dashboard, not just a backend API. Researchers and contributors can inspect trained-model behavior in the **Command Center**, follow a curated phase-by-phase walkthrough in **AI Agent Demo**, and review the systems story in **Architecture**.
 
 <table>
   <tr>
@@ -1026,8 +1024,6 @@ The container exposes the OpenEnv-compliant FastAPI server with health checks.
 
 ## 🙏 Acknowledgments
 
-- **Meta AI** — For hosting the PyTorch OpenEnv Hackathon
-- **Scaler School of Technology** — For the Grand Finale venue and compute credits
 - **Hugging Face** — For Spaces infrastructure and A10G GPUs
 - **OpenEnv Community** — For the standardized RL environment protocol
 
@@ -1039,7 +1035,7 @@ Apache 2.0 — See [LICENSE](LICENSE) for details.
 
 ---
 
-**Built for the Meta PyTorch OpenEnv Hackathon x Scaler 2026**
+**Open-source research environment for scalable AI oversight**
 
 **Created by Ayush Kumar & Ravi Prashant**
 

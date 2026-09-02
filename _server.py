@@ -487,7 +487,7 @@ async def get_metadata():
             "disinformation_campaigns", "hydra_adaptive_memory",
         ],
         "tags": [
-            "openenv", "hackathon", "counter-espionage", "adversarial-rl",
+            "openenv", "ai-safety", "counter-espionage", "adversarial-rl",
             "multi-agent", "deception-games", "turn-based",
             "json-observation", "json-action", "llm-agent",
             "multi-dimensional-grading",
