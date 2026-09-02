@@ -27,6 +27,23 @@
 
 > **Important notebook note:** the end-to-end training pipeline lives in `Panopticon_Training_FINAL.ipynb`. `Panopticon_Plots_Colab.ipynb` is a compatibility copy retained so the historical hosted Colab link continues to resolve.
 
+## Research compute contributors wanted
+
+The frozen development/model-selection protocol is authorized for independent
+external execution. [Claim a Panopticon compute run](https://github.com/Ayush-Kumar0207/panopticon-protocol-v3/issues/1)
+· [Read the contributor guide](TRAINING_CONTRIBUTION_GUIDE.md)
+· [Read the frozen protocol](MODEL_SELECTION_PROTOCOL.md)
+
+- **Question:** which preregistered Qwen 2.5 1.5B candidate most reliably improves
+  deception/sleeper-agent detection without regressing any security gate?
+- **Needed:** local or cloud-based NVIDIA Ampere-or-newer compute with native BF16,
+  at least 14 GiB VRAM, Python 3.11, persistent storage, and a stable long-running
+  environment—or an independent evidence reviewer.
+- **One command after qualification:** `python tools/run_model_selection.py --campaign-dir /persistent/path/panopticon-development-selection`
+- **Boundary:** candidates, seeds, budgets, gates, and 8→3→2→1 decisions are
+  preregistered; canonical and confirmation evaluation remain sealed.
+- **Credit:** accepted substantive contributions receive permanent public technical
+  attribution. Authorship is contribution-dependent and never promised for compute alone.
 
 ---
 

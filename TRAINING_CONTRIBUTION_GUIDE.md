@@ -4,18 +4,19 @@ The eventual canonical workflow is designed so that a contributor supplies compu
 their own account without receiving any maintainer credential. Trustworthy
 negative results are welcome; benchmark scores must never be selected or edited.
 
-> **Current stop condition:** `security_first_v5.json` is a provisional
-> fixed-method baseline and `model_selection_v1.json` says compute is not
-> authorized. Do not start an expensive run from this branch. The commands below
-> become valid only after an explicit reviewed compute-authorization commit,
-> development-only selection, and a reviewed new spec with
-> `status: frozen-selected-canonical`.
+> **Current state:** development/model-selection compute is authorized by the
+> committed `model_selection_v1.json` status
+> `preregistered-development-compute-authorized`. External compute and
+> reproducibility contributors are being recruited now.
+>
+> **Still sealed:** final refit, canonical evaluation, and confirmation evaluation
+> remain unauthorized. The development campaign may not use either held-out
+> namespace. They become eligible only after model selection finishes and a
+> separate reviewed spec is committed with `status: frozen-selected-canonical`.
 
-## Development-only selection (only after explicit authorization)
+## Authorized development-only selection
 
-The current committed protocol intentionally makes this real command stop before
-training. After maintainers explicitly authorize development compute in the
-version-controlled protocol, contributors use one unchanged command:
+The committed protocol authorizes one unchanged campaign command:
 
 ```bash
 python tools/run_model_selection.py \
@@ -30,11 +31,38 @@ decisions. It can train only mechanically derived
 confirmation. The output V6 spec is proposal-only and uses the preregistered fresh
 final-refit seed; a reviewer must commit and freeze it before held-out access.
 
+Every candidate is derived from `security_first_v5.json`, so the frozen
+Ampere/native-BF16 runtime applies to development selection too: Python 3.11,
+NVIDIA compute capability 8.0 or newer, at least 14 GiB VRAM, and the exact CUDA
+12.1/PyTorch environment. Before the full campaign, run the repository installer,
+normal validation suite, and `tools/gpu_training_probe.py`. Stop after the probe
+and ask the maintainer to review its JSON evidence before spending substantial
+compute.
+
+Compatible compute may be local or cloud-based. A contributor who already owns a
+suitable NVIDIA workstation or gaming laptop may not need to purchase cloud GPU
+time, but “Ampere” alone is not qualification: all VRAM, native-BF16, exact-runtime,
+free-disk, and numerical probes still apply. Local systems also need adequate
+cooling, stable power, persistent storage, and an operating-system configuration
+that can stay awake through a long resumable campaign.
+
 ## Choose the contribution type
 
-- **Compute-only reproduction:** after a selected spec is frozen, run that exact experiment and return its complete evidence chain.
-- **Code contribution:** improve tests, safety, documentation, or infrastructure without claiming a new canonical result.
-- **Research/methodology change:** propose a new spec and validation protocol. Never reuse the canonical V5 run identity.
+- **Track A — environment/preflight verifier:** run the exact environment checks
+  and real BF16 LoRA forward/backward/optimizer probe, then submit the qualification
+  evidence. This is a small commitment and does not claim a campaign result.
+- **Track B — development compute contributor:** run the authorized, frozen
+  model-selection campaign and return its complete evidence chain.
+- **Track C — independent artifact/reproducibility reviewer:** verify hashes,
+  identities, completeness, resume lineage, gates, and survivor decisions without
+  choosing results or opening held-out evaluation.
+- **Track D — research contributor:** propose substantive methodology, analysis,
+  or writing as a separately reviewed research contribution. Never reuse the
+  canonical V5 run identity for changed methodology.
+
+Tracks A–C receive public technical credit appropriate to accepted work but do not
+carry promised authorship. Authorship, if a manuscript results, follows actual
+scholarly contribution and the applicable venue/authorship standards.
 
 ## Canonical compute workflow (after a selected spec is frozen)
 
