@@ -1,7 +1,7 @@
 # The Panopticon Protocol v3: What We Actually Trained
 
 **Team:** Ayush Kumar & Ravi Prashant  
-**Hackathon:** Meta PyTorch OpenEnv x Scaler - Grand Finale 2026  
+**Project:** Open-source AI-safety and reproducibility research
 **Demo Space:** [panopticon-protocol-v3](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)  
 **Model Repo:** [panopticon-argus-qwen-1.5B](https://huggingface.co/Ayush-Kumar0207/panopticon-argus-qwen-1.5B)
 
@@ -69,7 +69,7 @@ So the project outcome is not a simple victory lap. It is better and more useful
 
 ---
 
-## Where judges should look
+## Where to explore
 
 1. Try the environment Space: [panopticon-protocol-v3](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
 2. Open the README's Security-First V5 benchmark and refreshed plot gallery

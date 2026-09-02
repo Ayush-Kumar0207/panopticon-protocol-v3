@@ -70,7 +70,7 @@ export default function FinaleScreen() {
           <div className={styles.teamTitle}>Team</div>
           <div className={styles.teamName}>Ayush Kumar</div>
           <div className={styles.teamName}>Ravi Prashant</div>
-          <div className={styles.teamSub}>Meta PyTorch OpenEnv Hackathon</div>
+          <div className={styles.teamSub}>Open-source AI safety research</div>
         </motion.div>
       </div>
 

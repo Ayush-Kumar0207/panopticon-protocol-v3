@@ -87,7 +87,7 @@ That distinction matters in interviews. A strong engineer does not present a roa
 
 > *"Imagine Among Us, but every player is an AI — and instead of a spaceship, you're defending a Fortune 500 corporation from sleeper agents."*
 
-The **Panopticon Protocol v3** is a turn-based, counter-espionage Reinforcement Learning environment built for the **Meta PyTorch OpenEnv Hackathon Grand Finale**. Here's the core idea in plain English:
+The **Panopticon Protocol v3** is a turn-based, counter-espionage Reinforcement Learning environment for scalable AI-oversight research. Here's the core idea in plain English:
 
 - **You are ARGUS** — an AI security chief defending a corporate network.
 - **Your enemy is HYDRA** — an adaptive adversary that infiltrates sleeper agents (spies) into your workforce.
@@ -126,15 +126,15 @@ The **Panopticon Protocol v3** is a turn-based, counter-espionage Reinforcement 
 ╚══════════════════════════════════════════════════════════════════════════════╝
 ```
 
-### Why This Environment Wins Competitions
+### Research Differentiators
 
-| DIFFERENTIATOR | WHY JUDGES CARE | HOW WE DELIVER IT |
+| DIFFERENTIATOR | WHY IT MATTERS | HOW WE DELIVER IT |
 |---|---|---|
 | **Information Asymmetry** | Tests genuine reasoning, not pattern matching | Agent NEVER sees `hidden_state` or `is_sleeper` — must infer through evidence chains |
 | **Dual-Objective Tension** | Avoids degenerate policies (fire everyone / ignore everything) | Reward = 0.45 × productivity + 0.55 × security — both MUST be optimized |
 | **Adaptive Adversary** | Prevents memorization; forces generalization | `HydraMemory` tracks agent patterns and adapts sleeper placement, leak channels, and timing |
 | **Stacking Complexity** | Shows emergent difficulty, not just "more enemies" | Each generation ADDS a mechanic (canary evasion → false flags → dead switches → Manchurian) |
-| **Narrative Arc** | Makes demos compelling for non-technical judges | 6 phases with a CRESCENDO — the Counterstrike surge where the agent flips the advantage |
+| **Narrative Arc** | Makes behavior legible to non-technical reviewers | 6 phases with a CRESCENDO — the Counterstrike surge where the agent flips the advantage |
 | **Dual Training Paths** | Shows both RL and LLM mastery | PPO (136-dim vectors) AND SFT on Qwen 2.5 (text observations → JSON actions) |
 
 ### Game Theory Classification
@@ -348,7 +348,7 @@ A **module** is one Python file that can be imported. An **export** is a name ot
 |---|---|---|
 | State Machine | `models.py` → `environment.py` | Every game state is a valid Pydantic model; transitions are method calls |
 | Strategy Pattern | `grader.py` — 5 grader subclasses | Different scoring weights per difficulty without touching base logic |
-| Singleton | `_server.py` — `get_env()` | One environment instance per server (hackathon simplicity) |
+| Singleton | `_server.py` — `get_env()` | One environment instance per server (prototype simplicity) |
 | Adapter Pattern | `gym_wrapper.py` | Translates rich JSON observations ↔ flat float32 tensors |
 | Template Method | `TaskGrader.grade()` | Base class defines grading flow; subclasses override weights/thresholds |
 | Observer/Event Log | `info["events"]` in step | Every action produces human-readable event strings for debugging |
@@ -4963,7 +4963,7 @@ Today: one API process/environment and one local model load. Proposed architectu
 
 ### Q63. Why not build the full distributed architecture immediately?
 
-The current hackathon/evaluation workload benefits from a simple deterministic in-process engine. Distributed state introduces serialization, ordering, failure, and operational complexity before it is needed. Good design keeps the engine decoupled so scale mechanisms can be added when requirements justify them, while being honest that the current API is not production multi-tenant.
+The current research/evaluation workload benefits from a simple deterministic in-process engine. Distributed state introduces serialization, ordering, failure, and operational complexity before it is needed. Good design keeps the engine decoupled so scale mechanisms can be added when requirements justify them, while being honest that the current API is not production multi-tenant.
 
 ### Q64. What would you change in the first production sprint?
 
