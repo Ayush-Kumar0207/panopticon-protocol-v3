@@ -1,14 +1,15 @@
 # Panopticon model-selection protocol
 
 V5 is a reproducible fixed-method baseline, not evidence that its hyperparameters
-are optimal. No expensive selection or training was run in this infrastructure
-PR. The preregistered design is machine-readable in
+are optimal. The separately reviewed authorization permits only the frozen
+development/model-selection campaign; it does not authorize final refit,
+canonical, or confirmation compute. The preregistered design is machine-readable in
 `training_specs/model_selection_v1.json` and is checked by
 `python tools/validate_model_selection.py`.
 
-`tools/run_model_selection.py` is the only campaign entry point. It refuses real
-execution while the committed protocol remains
-`preregistered-design-compute-not-authorized`. Its orchestration can be exercised
+`tools/run_model_selection.py` is the only campaign entry point. Real execution
+requires the exact committed status
+`preregistered-development-compute-authorized`. Its orchestration can be exercised
 without a model or GPU, and the output is permanently labelled non-evidence:
 
 ```bash
@@ -17,10 +18,11 @@ python tools/run_model_selection.py \
   --synthetic-fixture
 ```
 
-After a future reviewed commit changes the protocol to
-`preregistered-development-compute-authorized`, rerun the same command without
+For the authorized development campaign, rerun the same command without
 `--synthetic-fixture`. Contributors do not enter candidates, seeds, budgets,
-paths within the campaign, evaluator settings, or survivor choices.
+paths within the campaign, evaluator settings, or survivor choices. Canonical and
+confirmation remain sealed until a proposed selected spec is separately reviewed
+and frozen.
 
 ## Development-only selection
 
