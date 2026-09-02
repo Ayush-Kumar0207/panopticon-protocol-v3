@@ -101,6 +101,7 @@ def test_model_selection_design_is_exact_and_bounded():
     spec, _ = load_spec(SPEC_PATH)
     selection = json.loads(Path("training_specs/model_selection_v1.json").read_text(encoding="utf-8"))
     validate_model_selection(selection, spec)
+    assert selection["status"] == "preregistered-development-compute-authorized"
     assert len(selection["candidates"]) == 8
     assert sum(len(round_["optimization_seeds"]) for round_ in selection["rounds"]) == 6
     assert selection["forbidden_namespaces"] == ["canonical", "confirmation"]
@@ -108,7 +109,7 @@ def test_model_selection_design_is_exact_and_bounded():
     assert selection["finalization"]["final_refit"]["optimization_seed"] == 7200
 
 
-def test_selection_candidate_is_mechanical_but_compute_stays_unauthorized():
+def test_selection_candidate_is_mechanical_and_development_only_authorized():
     candidate = selection_candidate_spec("c02", "r2", 5200)
     identity = validate_selection_candidate_spec(candidate, require_compute_authorized=False)
     assert identity["candidate_id"] == "c02"
@@ -120,8 +121,8 @@ def test_selection_candidate_is_mechanical_but_compute_stays_unauthorized():
     altered["training"]["learning_rate"] = 0.123
     with pytest.raises(ReproducibilityError, match="mechanically derived"):
         validate_selection_candidate_spec(altered, require_compute_authorized=False)
-    with pytest.raises(ReproducibilityError, match="compute is not authorized"):
-        assert_research_stage_authorized(candidate, operation="training")
+    assert_research_stage_authorized(candidate, operation="training")
+    assert_research_stage_authorized(candidate, operation="evaluation", evaluation_split="development")
     for split in ("canonical", "confirmation"):
         with pytest.raises(ReproducibilityError, match="is sealed"):
             assert_research_stage_authorized(candidate, operation="evaluation", evaluation_split=split)
@@ -172,7 +173,7 @@ def test_selection_orchestrator_is_deterministic_resumable_and_proposal_only(tmp
     assert "training_specs/security_first_v5.json" not in proposal["required_source_files"]
 
 
-def test_selection_orchestrator_rejects_changed_resume_identity_and_real_compute(tmp_path):
+def test_selection_orchestrator_rejects_changed_resume_identity(tmp_path):
     campaign = tmp_path / "panopticon-selection-tamper"
     run_selection_campaign(campaign, synthetic_fixture=True)
     state_path = campaign / "campaign_state.json"
@@ -181,8 +182,6 @@ def test_selection_orchestrator_rejects_changed_resume_identity_and_real_compute
     state_path.write_text(json.dumps(state), encoding="utf-8")
     with pytest.raises(ReproducibilityError, match="another source/protocol identity"):
         run_selection_campaign(campaign, synthetic_fixture=True)
-    with pytest.raises(ReproducibilityError, match="compute is not authorized"):
-        run_selection_campaign(tmp_path / "panopticon-real-forbidden")
 
 
 @pytest.mark.parametrize("field,new_value", [

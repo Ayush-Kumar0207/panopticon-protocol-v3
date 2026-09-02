@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "protocol_id": "security-first-development-selection-v1",
-  "status": "preregistered-design-compute-not-authorized",
+  "status": "preregistered-development-compute-authorized",
   "baseline_spec": "training_specs/security_first_v5.json",
   "allowed_namespaces": ["training", "development"],
   "forbidden_namespaces": ["canonical", "confirmation"],
