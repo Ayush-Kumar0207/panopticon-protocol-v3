@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "experiment_id": "security-first-v5",
-  "status": "canonical",
+  "status": "provisional-fixed-method-baseline",
   "base_model": {
     "id": "Qwen/Qwen2.5-1.5B-Instruct",
     "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
@@ -103,6 +103,7 @@
   "required_tokenizer_any_of": ["tokenizer.json", "tokenizer.model", "vocab.json"],
   "required_source_files": [
     "training_specs/security_first_v5.json",
+    "training_specs/model_selection_v1.json",
     "train_trl_v2.py",
     "full_evaluation.py",
     "benchmark_acceptance.py",
@@ -121,11 +122,13 @@
     "tools/freeze_model_artifact.py",
     "requirements-training.txt",
     "KNOWN_TRAINING_FAILURE_MODES.md",
+    "MODEL_SELECTION_PROTOCOL.md",
     "TRAINING_METHODOLOGY.md",
     "training_specs/historical_attempts.json"
   ],
   "training_critical_files": [
     "training_specs/security_first_v5.json",
+    "training_specs/model_selection_v1.json",
     "train_trl_v2.py",
     "environment.py",
     "models.py",
@@ -139,9 +142,11 @@
     "tools/verify_training_artifacts.py",
     "tools/build_submission_bundle.py",
     "tools/freeze_model_artifact.py",
+    "tools/validate_model_selection.py",
     "requirements-training.txt"
   ],
   "preflight_commands": [
+    ["python", "tools/validate_model_selection.py"],
     ["python", "-m", "pytest", "-q"],
     ["python", "smoke_test.py"],
     ["python", "security_regression_test.py"]

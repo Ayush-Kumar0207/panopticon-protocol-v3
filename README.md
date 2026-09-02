@@ -611,12 +611,16 @@ The scoreboard and evaluation gallery below are regenerated from the compact V5 
 
 ### Evaluation Reproducibility
 
-New external training runs use the executable, fail-closed workflow in
+Future external training runs use the executable, fail-closed workflow in
 [`TRAINING_CONTRIBUTION_GUIDE.md`](TRAINING_CONTRIBUTION_GUIDE.md). The canonical
-machine-readable source of truth is
+V5 machine-readable method baseline is
 [`training_specs/security_first_v5.json`](training_specs/security_first_v5.json);
 the rationale and statistical protocol are in
 [`TRAINING_METHODOLOGY.md`](TRAINING_METHODOLOGY.md).
+V5 is provisional and not claimed optimal. Expensive compute is currently
+unauthorized; the bounded development-only search is in
+[`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md), and code seals
+canonical/confirmation until a reviewed selected spec is frozen.
 `python tools/run_canonical_experiment.py --help` is the single entry point for
 preflight, locked/resumable training, matched evaluation, confirmation, and
 artifact verification; `tools/build_submission_bundle.py` creates the final

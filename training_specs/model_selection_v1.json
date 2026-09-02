@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "protocol_id": "security-first-development-selection-v1",
+  "status": "preregistered-design-compute-not-authorized",
+  "baseline_spec": "training_specs/security_first_v5.json",
+  "allowed_namespaces": ["training", "development"],
+  "forbidden_namespaces": ["canonical", "confirmation"],
+  "fixed": {
+    "base_model": {
+      "id": "Qwen/Qwen2.5-1.5B-Instruct",
+      "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
+    },
+    "trajectory_schema_version": "curriculum-expert-v5-security-first",
+    "precision": "bf16",
+    "completion_only_loss": true,
+    "max_sequence_length": 512,
+    "per_device_batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "optimizer": "adamw_torch",
+    "lr_scheduler_type": "linear",
+    "warmup_ratio": 0.03,
+    "weight_decay": 0.0,
+    "max_grad_norm": 1.0,
+    "expert_policy": "security-first"
+  },
+  "factors": {
+    "learning_rate": [0.00001, 0.00002],
+    "lora": [
+      {"r": 8, "alpha": 16},
+      {"r": 16, "alpha": 32}
+    ],
+    "epochs": [2, 3],
+    "lora_dropout": [0.05]
+  },
+  "candidates": [
+    {"id": "c01", "learning_rate": 0.00001, "lora_r": 8, "lora_alpha": 16, "epochs": 2, "lora_dropout": 0.05},
+    {"id": "c02", "learning_rate": 0.00001, "lora_r": 8, "lora_alpha": 16, "epochs": 3, "lora_dropout": 0.05},
+    {"id": "c03", "learning_rate": 0.00001, "lora_r": 16, "lora_alpha": 32, "epochs": 2, "lora_dropout": 0.05},
+    {"id": "c04", "learning_rate": 0.00001, "lora_r": 16, "lora_alpha": 32, "epochs": 3, "lora_dropout": 0.05},
+    {"id": "c05", "learning_rate": 0.00002, "lora_r": 8, "lora_alpha": 16, "epochs": 2, "lora_dropout": 0.05},
+    {"id": "c06", "learning_rate": 0.00002, "lora_r": 8, "lora_alpha": 16, "epochs": 3, "lora_dropout": 0.05},
+    {"id": "c07", "learning_rate": 0.00002, "lora_r": 16, "lora_alpha": 32, "epochs": 2, "lora_dropout": 0.05},
+    {"id": "c08", "learning_rate": 0.00002, "lora_r": 16, "lora_alpha": 32, "epochs": 3, "lora_dropout": 0.05}
+  ],
+  "rounds": [
+    {"id": "r1", "input_candidates": 8, "advance": 3, "optimization_seeds": [4200], "expert_episodes_per_level": 15, "development_episodes_per_level": 5},
+    {"id": "r2", "input_candidates": 3, "advance": 2, "optimization_seeds": [4200, 5200], "expert_episodes_per_level": 30, "development_episodes_per_level": 10},
+    {"id": "r3", "input_candidates": 2, "advance": 1, "optimization_seeds": [4200, 5200, 6200], "expert_episodes_per_level": 50, "development_episodes_per_level": 20}
+  ],
+  "eligibility": {
+    "all_security_regression_tests_pass": true,
+    "all_development_episodes_complete": true,
+    "zero_token_truncated_model_turns": true,
+    "zero_sleepers_missed": true,
+    "zero_false_accusations": true,
+    "pass_rate_each_level": 1.0
+  },
+  "ranking": [
+    {"metric": "minimum_level_mean_grade", "direction": "descending"},
+    {"metric": "macro_mean_grade", "direction": "descending"},
+    {"metric": "lower_training_tokens", "direction": "ascending"},
+    {"metric": "candidate_id", "direction": "ascending"}
+  ],
+  "tie_breaking": "Apply ranking fields in listed order to exact unrounded values; candidate_id is the final deterministic tie-break.",
+  "finalization": {
+    "required_new_spec": "training_specs/security_first_v6_selected.json",
+    "required_status": "frozen-selected-canonical",
+    "requirements": [
+      "record every candidate, seed, eligibility outcome, raw development artifact identity, and survivor decision",
+      "review and commit the selected spec before any canonical or confirmation evaluation",
+      "never use canonical or confirmation outcomes for selection or reranking"
+    ]
+  }
+}

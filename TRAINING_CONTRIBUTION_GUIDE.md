@@ -1,16 +1,22 @@
 # Training and reproducibility contributions
 
-The canonical workflow is designed so that a contributor supplies compute from
+The eventual canonical workflow is designed so that a contributor supplies compute from
 their own account without receiving any maintainer credential. Trustworthy
 negative results are welcome; benchmark scores must never be selected or edited.
 
+> **Current stop condition:** `security_first_v5.json` is a provisional
+> fixed-method baseline and `model_selection_v1.json` says compute is not
+> authorized. Do not start an expensive run from this branch. The commands below
+> become valid only after development-only selection produces a reviewed new spec
+> with `status: frozen-selected-canonical`.
+
 ## Choose the contribution type
 
-- **Compute-only reproduction:** run the already-frozen experiment and return its complete evidence chain.
+- **Compute-only reproduction:** after a selected spec is frozen, run that exact experiment and return its complete evidence chain.
 - **Code contribution:** improve tests, safety, documentation, or infrastructure without claiming a new canonical result.
 - **Research/methodology change:** propose a new spec and validation protocol. Never reuse the canonical V5 run identity.
 
-## Canonical compute workflow
+## Canonical compute workflow (after a selected spec is frozen)
 
 1. Comment on [issue #1](https://github.com/Ayush-Kumar0207/panopticon-protocol-v3/issues/1) with your GPU, VRAM, platform, persistent-storage plan, and artifact host. Wait for acknowledgement to avoid duplicate compute.
 2. Fork and clone the repository, check out the exact approved commit, and create a contribution branch. Do not edit training-critical files.
@@ -29,26 +35,28 @@ negative results are welcome; benchmark scores must never be selected or edited.
    an unspecified package index can select a CPU-only PyTorch wheel. Use your own
    cloud, Drive, GitHub, and Hugging Face accounts.
 4. Put the run on persistent storage. Choose a new, empty directory; never point a new experiment at an old run.
-5. Set one persistent run directory once. Then use exactly this five-command flow;
-   do not add hyperparameter, seed, model, evaluator, or path flags:
+5. Set one persistent run directory once and pass the reviewed selected spec. Then
+   use exactly this five-command flow; do not add hyperparameter, seed, model,
+   evaluator, or path flags:
 
    ```bash
-   export PANOPTICON_RUN=/persistent/path/panopticon-security-first-v5
+   export PANOPTICON_RUN=/persistent/path/panopticon-security-first-selected
+   export PANOPTICON_SPEC=training_specs/security_first_v6_selected.json
 
    # 1. Fail before GPU expense if source, packages, security, BF16, memory, or numerics are wrong.
-   python tools/run_canonical_experiment.py --run-dir "$PANOPTICON_RUN" --stage preflight
+   python tools/run_canonical_experiment.py --spec "$PANOPTICON_SPEC" --run-dir "$PANOPTICON_RUN" --stage preflight
 
    # 2. Canonical training; rerun this unchanged after interruption for automatic safe resume.
-   python tools/run_canonical_experiment.py --run-dir "$PANOPTICON_RUN" --stage train
+   python tools/run_canonical_experiment.py --spec "$PANOPTICON_SPEC" --run-dir "$PANOPTICON_RUN" --stage train
 
    # 3. Both matched canonical and confirmation base/candidate evaluations; also resumable.
-   python tools/run_canonical_experiment.py --run-dir "$PANOPTICON_RUN" --stage evaluate
+   python tools/run_canonical_experiment.py --spec "$PANOPTICON_SPEC" --run-dir "$PANOPTICON_RUN" --stage evaluate
 
    # 4. Recompute integrity and every acceptance/security gate from raw episodes.
-   python tools/run_canonical_experiment.py --run-dir "$PANOPTICON_RUN" --stage verify
+   python tools/run_canonical_experiment.py --spec "$PANOPTICON_SPEC" --run-dir "$PANOPTICON_RUN" --stage verify
 
    # 5. Create a bounded evidence ZIP plus a hash index for separately hosted large artifacts.
-   python tools/build_submission_bundle.py "$PANOPTICON_RUN"
+   python tools/build_submission_bundle.py "$PANOPTICON_RUN" --spec "$PANOPTICON_SPEC"
    ```
 
    The training command intentionally repeats preflight before creating the run
@@ -80,9 +88,11 @@ negative results are welcome; benchmark scores must never be selected or edited.
 
 ## What must remain immutable
 
-`training_specs/security_first_v5.json` is the source of truth. The run fingerprint
-binds its complete content to the source commit. Canonical V5 is explicitly the
-`ampere-bf16-cu121` profile: Python 3.11, `torch==2.2.1+cu121`, CUDA runtime 12.1,
+The reviewed selected spec is the source of truth. V5 currently defines the
+reproducible method baseline but is not authorized as the final experiment. The
+run fingerprint binds the selected spec's complete content to the source commit.
+The frozen runtime profile is
+`ampere-bf16-cu121`: Python 3.11, `torch==2.2.1+cu121`, CUDA runtime 12.1,
 native BF16, compute capability 8.0 or newer, and at least 14 GiB VRAM. A T4 is
 not accepted. FP32-on-T4 and stabilized/scaled-FP16-on-T4 remain unvalidated
 research proposals and require separate preregistered identities plus numerical
@@ -98,6 +108,8 @@ offering compute. It explains why older completed/high-scoring artifacts are not
 canonical and maps every recoverable failure to the current fail-closed safeguard.
 Read [`TRAINING_METHODOLOGY.md`](TRAINING_METHODOLOGY.md) for the experimental
 claim, unit of analysis, paired statistics, evaluation isolation, and limitations.
+Read [`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md) for the bounded
+search, hard eligibility gates, and the rule that held-out data stays sealed.
 
 ## Held-out data rule
 

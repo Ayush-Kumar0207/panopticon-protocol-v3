@@ -133,6 +133,27 @@ SEED_NAMESPACES = {
     "confirmation": (1_500_000_000, 1_999_999_999),
 }
 
+HELDOUT_AUTHORIZED_STATUSES = {"frozen-selected-canonical"}
+
+
+def assert_research_stage_authorized(
+    spec: dict[str, Any], *, operation: str, evaluation_split: str | None = None,
+) -> None:
+    """Keep provisional methods away from training and sealed held-out splits."""
+    status = str(spec.get("status", "missing"))
+    if operation == "training" and status not in HELDOUT_AUTHORIZED_STATUSES:
+        raise ReproducibilityError(
+            "training is not authorized for this provisional specification; complete the "
+            "development-only model-selection protocol, review a versioned selected spec, "
+            "and set status=frozen-selected-canonical before spending GPU time"
+        )
+    if operation == "evaluation" and evaluation_split in {"canonical", "confirmation"}:
+        if status not in HELDOUT_AUTHORIZED_STATUSES:
+            raise ReproducibilityError(
+                f"{evaluation_split} evaluation is sealed while spec status is {status!r}; "
+                "development-only selection must finish and a selected spec must be reviewed and frozen first"
+            )
+
 
 def _partitioned_seed_plan(
     *, namespace: str, root_seed: int, levels: list[str], episodes_per_level: int,

@@ -59,6 +59,7 @@ from security_policy import (
 )
 from research_repro import (
     ReproducibilityError,
+    assert_research_stage_authorized,
     assert_metadata_compatible,
     atomic_write_json,
     canonical_json,
@@ -351,6 +352,7 @@ def configure_canonical_spec(args):
     if not args.spec:
         return args
     spec, resolved = load_spec(args.spec)
+    assert_research_stage_authorized(spec, operation="training")
     training = spec["training"]
     trajectory = spec["trajectory"]
     if args.epochs is not None and args.epochs != training["epochs"]:

@@ -143,7 +143,8 @@ def perform_preflight(spec_path: str | Path, *, allow_cpu_smoke: bool = False, r
         if not torch.cuda.is_bf16_supported() or gpu.get("bf16_supported") is not True:
             raise ReproducibilityError("canonical BF16 precision is not supported by this GPU")
     tests = run_validation_commands(spec) if run_tests else []
-    if gpu["cuda_available"] and run_tests:
+    selection_authorized = spec.get("status") == "frozen-selected-canonical"
+    if gpu["cuda_available"] and run_tests and selection_authorized:
         probe_environment = dict(os.environ)
         probe_environment.update(spec["runtime"].get("deterministic_environment", {}))
         process = subprocess.run(
@@ -171,7 +172,7 @@ def perform_preflight(spec_path: str | Path, *, allow_cpu_smoke: bool = False, r
             "report": probe_report,
         })
     cpu_smoke_only = bool(allow_cpu_smoke and not gpu["cuda_available"])
-    canonical_pass = bool(run_tests and not cpu_smoke_only)
+    canonical_pass = bool(run_tests and not cpu_smoke_only and selection_authorized)
     return {
         "passed": canonical_pass,
         "diagnostic_only": not canonical_pass,
@@ -185,6 +186,8 @@ def perform_preflight(spec_path: str | Path, *, allow_cpu_smoke: bool = False, r
         "seed_separation": seed_separation,
         "validations": tests,
         "cpu_smoke_only": cpu_smoke_only,
+        "experiment_authorized": selection_authorized,
+        "authorization_status": spec.get("status"),
         "deterministic_environment": spec["runtime"].get("deterministic_environment", {}),
     }
 
@@ -208,7 +211,8 @@ def main() -> None:
     if report["passed"]:
         print("PREFLIGHT PASS: it is safe to create the locked run directory.")
     else:
-        print("DIAGNOSTIC COMPLETE — NOT A CANONICAL PREFLIGHT PASS; training remains prohibited.")
+        print("DIAGNOSTIC COMPLETE — NOT A CANONICAL PREFLIGHT PASS; training remains prohibited. "
+              f"Spec status: {report['authorization_status']}")
 
 
 if __name__ == "__main__":

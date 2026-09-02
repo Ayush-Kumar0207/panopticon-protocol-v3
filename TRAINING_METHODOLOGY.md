@@ -8,9 +8,15 @@ the immutable base model without degrading Panopticon's security requirements.
 It does not test a repaired/controller-assisted policy and does not claim that
 more compute alone produces correctness.
 
-The machine-readable protocol is
+The machine-readable fixed-method baseline is
 [`training_specs/security_first_v5.json`](training_specs/security_first_v5.json).
 That file, the source commit, and the upstream model revision define run identity.
+Its hyperparameters have not been shown optimal, so V5 is deliberately marked
+`provisional-fixed-method-baseline`. The bounded preregistered development-only
+search and final freezing rule are in
+[`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md). Training and the
+two held-out splits remain code-sealed until a reviewed, versioned selected spec
+has status `frozen-selected-canonical`.
 
 ## Experimental unit and training data
 
@@ -104,5 +110,7 @@ seed distributions. They do not establish general safety outside Panopticon. The
 expert is programmatic and can transfer its biases. SFT behavior is not equivalent
 to online RL. Confirmation is a second frozen test, not permission for additional
 tuning. Full expensive training is intentionally not performed by infrastructure
-contributors or CI; external compute runs begin only after the version-controlled
-protocol and safeguards are reviewed.
+contributors or CI. The current selection design explicitly says compute is not
+authorized. External compute begins only after that status is changed in a
+reviewed commit, selection is completed on development data, and the winner is
+frozen in a new versioned training spec.

@@ -19,6 +19,7 @@ from training_preflight import perform_preflight  # noqa: E402
 from research_repro import (  # noqa: E402
     ReproducibilityError,
     append_event,
+    assert_research_stage_authorized,
     atomic_write_json,
     ensure_run_lock,
     git_metadata,
@@ -60,6 +61,11 @@ def main() -> None:
     parser.add_argument("--allow-cpu-smoke", action="store_true", help="Preflight only; canonical training remains GPU-only")
     args = parser.parse_args()
     spec, spec_path = load_spec(args.spec)
+    if args.stage in {"train", "all"}:
+        assert_research_stage_authorized(spec, operation="training")
+    if args.stage in {"evaluate", "all"}:
+        assert_research_stage_authorized(spec, operation="evaluation", evaluation_split="canonical")
+        assert_research_stage_authorized(spec, operation="evaluation", evaluation_split="confirmation")
     root = Path(args.run_dir).resolve()
     if args.allow_cpu_smoke and args.stage != "preflight":
         raise ReproducibilityError("--allow-cpu-smoke is permitted only with --stage preflight")

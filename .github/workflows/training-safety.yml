@@ -30,7 +30,9 @@ jobs:
       - name: Validate spec, Python, and notebooks
         run: |
           python -m json.tool training_specs/security_first_v5.json > /dev/null
+          python -m json.tool training_specs/model_selection_v1.json > /dev/null
           python -m json.tool training_specs/historical_attempts.json > /dev/null
+          python tools/validate_model_selection.py
           python -m compileall -q . -x '/(\.git|\.venv|static|ui/node_modules)/'
           python -c "import json, pathlib; [json.loads(p.read_text(encoding='utf-8-sig')) for p in pathlib.Path('.').glob('*.ipynb')]"
       - name: Run full CPU test suite

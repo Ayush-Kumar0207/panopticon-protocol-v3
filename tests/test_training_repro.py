@@ -11,6 +11,7 @@ from benchmark_acceptance import evaluate_acceptance
 from inference_local import summarize_level_results
 from research_repro import (
     ReproducibilityError,
+    assert_research_stage_authorized,
     assert_metadata_compatible,
     build_run_lock,
     capture_provenance,
@@ -23,6 +24,7 @@ from research_repro import (
     training_seed_plan,
     verify_seed_separation,
 )
+from tools.validate_model_selection import validate as validate_model_selection
 from tools.build_submission_bundle import build_bundle
 from tools.freeze_model_artifact import create_or_verify_model_manifest
 from full_evaluation import write_evidence_blob
@@ -67,6 +69,35 @@ def test_seed_partitions_are_exact_unique_and_disjoint():
     assert max(sets["canonical"]) < min(sets["confirmation"])
     assert plans["canonical"] == evaluation_seed_plan(spec, "canonical")
     assert all(len(values) == len(set(values)) for values in sets.values())
+
+
+def test_provisional_v5_seals_training_and_heldout_evaluation():
+    spec, _ = load_spec(SPEC_PATH)
+    assert spec["status"] == "provisional-fixed-method-baseline"
+    assert_research_stage_authorized(spec, operation="evaluation", evaluation_split="development")
+    with pytest.raises(ReproducibilityError, match="training is not authorized"):
+        assert_research_stage_authorized(spec, operation="training")
+    for split in ("canonical", "confirmation"):
+        with pytest.raises(ReproducibilityError, match="is sealed"):
+            assert_research_stage_authorized(spec, operation="evaluation", evaluation_split=split)
+
+
+def test_frozen_selected_status_is_the_only_heldout_authority():
+    spec, _ = load_spec(SPEC_PATH)
+    selected = json.loads(json.dumps(spec))
+    selected["status"] = "frozen-selected-canonical"
+    assert_research_stage_authorized(selected, operation="training")
+    assert_research_stage_authorized(selected, operation="evaluation", evaluation_split="canonical")
+    assert_research_stage_authorized(selected, operation="evaluation", evaluation_split="confirmation")
+
+
+def test_model_selection_design_is_exact_and_bounded():
+    spec, _ = load_spec(SPEC_PATH)
+    selection = json.loads(Path("training_specs/model_selection_v1.json").read_text(encoding="utf-8"))
+    validate_model_selection(selection, spec)
+    assert len(selection["candidates"]) == 8
+    assert sum(len(round_["optimization_seeds"]) for round_ in selection["rounds"]) == 6
+    assert selection["forbidden_namespaces"] == ["canonical", "confirmation"]
 
 
 @pytest.mark.parametrize("field,new_value", [

@@ -29,6 +29,7 @@ from inference_local import (
 )
 from research_repro import (
     ReproducibilityError,
+    assert_research_stage_authorized,
     append_event,
     canonical_json,
     compute_run_fingerprint,
@@ -558,6 +559,9 @@ def main() -> None:
     active_spec = None
     if args.spec:
         active_spec, resolved_spec = load_spec(args.spec)
+        assert_research_stage_authorized(
+            active_spec, operation="evaluation", evaluation_split=args.evaluation_split
+        )
         git = git_metadata()
         if git["dirty"]:
             raise ReproducibilityError("canonical evaluation requires a clean source checkout")
