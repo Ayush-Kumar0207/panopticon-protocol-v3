@@ -34,7 +34,7 @@ from pathlib import Path
 import torch
 from datasets import load_dataset
 from peft import LoraConfig, PeftModel, TaskType
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainerCallback
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainerCallback, set_seed
 from transformers.trainer_utils import get_last_checkpoint
 from trl import SFTConfig, SFTTrainer
 
@@ -56,6 +56,21 @@ from security_policy import (
     choose_security_first_action,
     expert_episode_meets_security_gate,
     new_security_expert_state,
+)
+from research_repro import (
+    ReproducibilityError,
+    assert_research_stage_authorized,
+    assert_metadata_compatible,
+    atomic_write_json,
+    canonical_json,
+    compute_run_fingerprint,
+    git_metadata,
+    load_spec,
+    scrub_secrets,
+    sha256_file,
+    spec_sha256,
+    training_seed_plan,
+    utc_now,
 )
 
 os.environ["PYTHONUNBUFFERED"] = "1"
@@ -139,6 +154,8 @@ GRADIENT_ACCUMULATION_STEPS = DEFAULT_GRAD_ACCUM
 SAVE_STEPS = DEFAULT_SAVE_STEPS
 GRADIENT_CHECKPOINTING = False
 CPU_BASIC_SAFE_MODE = False
+ACTIVE_SPEC = None
+RUN_CONTEXT = {}
 
 
 def _json_default(value):
@@ -156,7 +173,16 @@ def _format_log_value(value):
 
 
 def log_event(event: str, *, echo: bool = True, **fields):
-    payload = {"event": event, "time_unix": round(time.time(), 3), **fields}
+    payload = scrub_secrets({
+        "schema_version": 1,
+        "event": event,
+        "timestamp": utc_now(),
+        "time_unix": round(time.time(), 3),
+        "run_fingerprint": RUN_CONTEXT.get("run_fingerprint"),
+        "source_commit": RUN_CONTEXT.get("source_commit"),
+        "stage": fields.get("level", "run"),
+        **fields,
+    })
     line = json.dumps(payload, sort_keys=True, default=_json_default)
     if echo:
         print("[TRAIN_EVENT] " + line)
@@ -210,6 +236,20 @@ class CurriculumProgressCallback(TrainerCallback):
         sys.stdout.flush()
 
 
+class CheckpointIdentityCallback(TrainerCallback):
+    """Persist immutable run identity beside each Trainer checkpoint."""
+
+    def __init__(self, task_level: str, metadata_payload: dict):
+        self.task_level = task_level
+        self.metadata_payload = metadata_payload
+
+    def on_save(self, args, state, control, **kwargs):
+        checkpoint = Path(args.output_dir) / f"checkpoint-{int(state.global_step)}"
+        payload = {**self.metadata_payload, "global_step": int(state.global_step), "level": self.task_level}
+        atomic_write_json(checkpoint / "run_metadata.json", payload)
+        log_event("checkpoint_saved", level=self.task_level, checkpoint=str(checkpoint), global_step=int(state.global_step))
+
+
 def resolve_precision():
     if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
         return torch.bfloat16, True, False
@@ -237,6 +277,8 @@ def runtime_profile_name(running_on_cpu, low_vram_gpu):
 
 
 def current_runtime_profile_name():
+    if ACTIVE_SPEC:
+        return ACTIVE_SPEC["runtime"]["profile"]
     return runtime_profile_name(not torch.cuda.is_available(), is_low_vram_gpu())
 
 
@@ -299,6 +341,120 @@ def configure_runtime(args):
     sys.stdout.flush()
     return args
 
+
+def configure_canonical_spec(args):
+    """Apply the locked canonical values; convenience runtime profiles cannot change them."""
+    global ACTIVE_SPEC, MAX_SEQ_LENGTH, NUM_TRAIN_EPOCHS
+    global PER_DEVICE_TRAIN_BATCH_SIZE, GRADIENT_ACCUMULATION_STEPS
+    global SAVE_STEPS, GRADIENT_CHECKPOINTING
+    global TRAIN_DTYPE, USE_BF16, USE_FP16
+    global LORA_R, LORA_ALPHA
+    if not args.spec:
+        return args
+    spec, resolved = load_spec(args.spec)
+    assert_research_stage_authorized(spec, operation="training")
+    training = spec["training"]
+    trajectory = spec["trajectory"]
+    if args.epochs is not None and args.epochs != training["epochs"]:
+        raise ReproducibilityError("--epochs differs from the canonical specification")
+    if args.max_seq_length is not None and args.max_seq_length != training["max_sequence_length"]:
+        raise ReproducibilityError("--max-seq-length differs from the canonical specification")
+    if not torch.cuda.is_available():
+        raise ReproducibilityError("Canonical Security-First V5 training requires CUDA")
+    if training["precision"] != "bf16" or not torch.cuda.is_bf16_supported():
+        raise ReproducibilityError("Canonical Security-First V5 requires BF16-capable CUDA hardware")
+    args.model = spec["base_model"]["id"]
+    args.episodes = trajectory["episodes_per_level"]
+    args.seed = trajectory["training_seed"]
+    args.curriculum = True
+    args.merge = bool(training["merge_final_adapter"])
+    MAX_SEQ_LENGTH = int(training["max_sequence_length"])
+    NUM_TRAIN_EPOCHS = int(training["epochs"])
+    PER_DEVICE_TRAIN_BATCH_SIZE = int(training["per_device_batch_size"])
+    GRADIENT_ACCUMULATION_STEPS = int(training["gradient_accumulation_steps"])
+    SAVE_STEPS = int(training["checkpoint_interval_steps"])
+    GRADIENT_CHECKPOINTING = bool(training["gradient_checkpointing"])
+    LORA_R = int(training["lora_r"])
+    LORA_ALPHA = int(training["lora_alpha"])
+    TRAIN_DTYPE, USE_BF16, USE_FP16 = torch.bfloat16, True, False
+    ACTIVE_SPEC = spec
+    args.spec = str(resolved)
+    print(f"[*] Canonical spec locked: {args.spec} ({spec_sha256(spec)})")
+    return args
+
+
+def model_revision_kwargs(model_name: str) -> dict:
+    if ACTIVE_SPEC and model_name == ACTIVE_SPEC["base_model"]["id"]:
+        return {"revision": ACTIVE_SPEC["base_model"]["revision"]}
+    return {}
+
+
+def artifact_ref(value: str) -> str:
+    """Store run-internal paths as portable POSIX references."""
+    path = Path(value)
+    if path.is_absolute():
+        try:
+            return path.resolve().relative_to(RUN_ROOT.resolve()).as_posix()
+        except ValueError:
+            pass
+    return value
+
+
+def stage_metadata(task_level: str, model_name: str, episodes: int, seed: int) -> dict:
+    training = ACTIVE_SPEC["training"] if ACTIVE_SPEC else {}
+    optimizer_seed = training.get("optimization_seed_by_level", {}).get(task_level)
+    return {
+        "schema_version": 1,
+        **RUN_CONTEXT,
+        "level": task_level,
+        "input_model": artifact_ref(model_name),
+        "base_model": ACTIVE_SPEC["base_model"] if ACTIVE_SPEC else {"id": model_name, "revision": None},
+        "episodes_per_level": episodes,
+        "seed": seed,
+        "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
+        "trainer": {
+            "max_sequence_length": MAX_SEQ_LENGTH,
+            "epochs": NUM_TRAIN_EPOCHS,
+            "per_device_batch_size": PER_DEVICE_TRAIN_BATCH_SIZE,
+            "gradient_accumulation_steps": GRADIENT_ACCUMULATION_STEPS,
+            "checkpoint_interval_steps": SAVE_STEPS,
+            "checkpoint_retention": ACTIVE_SPEC["training"]["checkpoint_retention"] if ACTIVE_SPEC else 2,
+            "lora_r": LORA_R,
+            "lora_alpha": LORA_ALPHA,
+            "lora_dropout": ACTIVE_SPEC["training"]["lora_dropout"] if ACTIVE_SPEC else 0.05,
+            "learning_rate": ACTIVE_SPEC["training"]["learning_rate"] if ACTIVE_SPEC else 2e-5,
+            "warmup_ratio": ACTIVE_SPEC["training"]["warmup_ratio"] if ACTIVE_SPEC else 0.03,
+            "weight_decay": training.get("weight_decay", 0.0),
+            "max_grad_norm": training.get("max_grad_norm", 1.0),
+            "optimizer": training.get("optimizer", "adamw_torch"),
+            "lr_scheduler_type": training.get("lr_scheduler_type", "linear"),
+            "dataloader_num_workers": training.get("dataloader_num_workers", 0),
+            "full_determinism": training.get("full_determinism", False),
+            "completion_only_loss": training.get("completion_only_loss", False),
+            "optimizer_seed": optimizer_seed,
+            "gradient_checkpointing": GRADIENT_CHECKPOINTING,
+            "precision": ACTIVE_SPEC["training"]["precision"] if ACTIVE_SPEC else str(TRAIN_DTYPE),
+        },
+    }
+
+
+def validate_or_write_stage_metadata(output_dir: Path, expected: dict) -> None:
+    metadata_path = output_dir / "run_metadata.json"
+    if metadata_path.exists():
+        try:
+            actual = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ReproducibilityError(f"Unreadable stage metadata: {metadata_path}") from exc
+        assert_metadata_compatible(
+            actual, expected,
+            ["run_fingerprint", "source_commit", "spec_sha256", "level", "input_model", "base_model", "episodes_per_level", "seed", "trajectory_schema_version", "trainer"],
+        )
+    elif output_dir.exists() and any(output_dir.iterdir()):
+        raise ReproducibilityError(f"Existing stage directory has no immutable run metadata: {output_dir}")
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(metadata_path, expected)
+
 SYSTEM_PROMPT = """You are ARGUS, an AI counter-intelligence agent defending a corporate network from HYDRA infiltrators.
 
 Read the observation carefully. Output a single JSON action. Available actions:
@@ -336,6 +492,12 @@ def load_state():
             "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
             "runtime_profile": "",
             "seed": None,
+            "episodes_per_level": None,
+            "run_fingerprint": None,
+            "source_commit": None,
+            "spec_sha256": None,
+            "base_model": None,
+            "trainer": None,
         }
 
     try:
@@ -348,6 +510,12 @@ def load_state():
             "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
             "runtime_profile": "",
             "seed": None,
+            "episodes_per_level": None,
+            "run_fingerprint": None,
+            "source_commit": None,
+            "spec_sha256": None,
+            "base_model": None,
+            "trainer": None,
         }
 
     state.setdefault("completed_levels", [])
@@ -355,6 +523,12 @@ def load_state():
     state.setdefault("trajectory_schema_version", "")
     state.setdefault("runtime_profile", "")
     state.setdefault("seed", None)
+    state.setdefault("episodes_per_level", None)
+    state.setdefault("run_fingerprint", None)
+    state.setdefault("source_commit", None)
+    state.setdefault("spec_sha256", None)
+    state.setdefault("base_model", None)
+    state.setdefault("trainer", None)
     state["completed_levels"] = ordered_completed_levels(state["completed_levels"])
     return state
 
@@ -367,6 +541,12 @@ def save_state(state):
         "trajectory_schema_version": state.get("trajectory_schema_version", TRAJECTORY_SCHEMA_VERSION),
         "runtime_profile": state.get("runtime_profile", ""),
         "seed": state.get("seed"),
+        "episodes_per_level": state.get("episodes_per_level"),
+        "run_fingerprint": state.get("run_fingerprint"),
+        "source_commit": state.get("source_commit"),
+        "spec_sha256": state.get("spec_sha256"),
+        "base_model": state.get("base_model"),
+        "trainer": state.get("trainer"),
     }
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
@@ -392,6 +572,9 @@ def save_data_meta(
     num_examples: int,
     model_name: str,
     seed: int,
+    data_path: Path,
+    metrics_path: Path,
+    episode_seeds: list[int],
 ):
     tmp_path = meta_path.with_suffix(".tmp")
     payload = {
@@ -400,9 +583,16 @@ def save_data_meta(
         "num_examples": num_examples,
         "max_seq_length": MAX_SEQ_LENGTH,
         "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
-        "model_name": model_name,
+        "model_name": artifact_ref(model_name),
         "seed": seed,
         "runtime_profile": current_runtime_profile_name(),
+        "run_fingerprint": RUN_CONTEXT.get("run_fingerprint"),
+        "source_commit": RUN_CONTEXT.get("source_commit"),
+        "spec_sha256": RUN_CONTEXT.get("spec_sha256"),
+        "episode_seeds": episode_seeds,
+        "episode_seed_plan_sha256": __import__("hashlib").sha256(canonical_json(episode_seeds).encode()).hexdigest(),
+        "training_data_sha256": sha256_file(data_path),
+        "expert_metrics_sha256": sha256_file(metrics_path),
     }
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
@@ -411,16 +601,25 @@ def save_data_meta(
     os.replace(tmp_path, meta_path)
 
 
-def data_matches(meta, task_level: str, num_episodes: int, model_name: str, seed: int):
+def data_matches(meta, task_level: str, num_episodes: int, model_name: str, seed: int, data_path: Path, metrics_path: Path):
+    expected_seeds = training_seed_plan(ACTIVE_SPEC)[task_level] if ACTIVE_SPEC else meta.get("episode_seeds") if meta else None
     return (
         meta is not None
         and meta.get("task_level") == task_level
         and meta.get("num_episodes") == num_episodes
         and meta.get("max_seq_length") == MAX_SEQ_LENGTH
         and meta.get("trajectory_schema_version") == TRAJECTORY_SCHEMA_VERSION
-        and meta.get("model_name") == model_name
+        and meta.get("model_name") == artifact_ref(model_name)
         and meta.get("seed") == seed
         and meta.get("runtime_profile") == current_runtime_profile_name()
+        and meta.get("run_fingerprint") == RUN_CONTEXT.get("run_fingerprint")
+        and meta.get("source_commit") == RUN_CONTEXT.get("source_commit")
+        and meta.get("spec_sha256") == RUN_CONTEXT.get("spec_sha256")
+        and meta.get("episode_seeds") == expected_seeds
+        and data_path.is_file()
+        and metrics_path.is_file()
+        and meta.get("training_data_sha256") == sha256_file(data_path)
+        and meta.get("expert_metrics_sha256") == sha256_file(metrics_path)
     )
 
 
@@ -514,10 +713,15 @@ def _choose_curriculum_expert_action(
 def generate_expert_trajectories(task_level: str, num_episodes: int = 20, seed: int = 42):
     trajectories = []
     episode_metrics = []
-    seed_rng = random.Random(f"{seed}:{task_level}")
+    if ACTIVE_SPEC is not None:
+        planned_seeds = training_seed_plan(ACTIVE_SPEC)[task_level]
+        if num_episodes != len(planned_seeds) or seed != int(ACTIVE_SPEC["trajectory"]["training_seed"]):
+            raise ReproducibilityError("Canonical expert-data request differs from the frozen seed plan")
+    else:
+        seed_rng = random.Random(f"{seed}:{task_level}")
+        planned_seeds = seed_rng.sample(range(500_000_000), num_episodes)
 
-    for ep in range(num_episodes):
-        episode_seed = seed_rng.randint(0, 999999)
+    for ep, episode_seed in enumerate(planned_seeds):
         env = Environment(seed=episode_seed)
         obs = env.reset(task_level=task_level, seed=episode_seed)
         expert_state = new_security_expert_state()
@@ -876,17 +1080,19 @@ def load_model_and_tokenizer(model_name: str):
             torch_dtype=TRAIN_DTYPE,
             trust_remote_code=True,
             low_cpu_mem_usage=True,
+            **model_revision_kwargs(base_model_name),
         )
         model = PeftModel.from_pretrained(base_model, model_name)
         model = model.merge_and_unload()
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     else:
-        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, **model_revision_kwargs(model_name))
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=TRAIN_DTYPE,
             trust_remote_code=True,
             low_cpu_mem_usage=True,
+            **model_revision_kwargs(model_name),
         )
 
     if tokenizer.pad_token is None:
@@ -898,6 +1104,10 @@ def load_model_and_tokenizer(model_name: str):
 
 def build_completion_data_collator(tokenizer):
     if DataCollatorForCompletionOnlyLM is None:
+        if ACTIVE_SPEC and ACTIVE_SPEC["training"].get("completion_only_loss"):
+            raise ReproducibilityError(
+                "canonical assistant-only loss is unavailable in this TRL installation"
+            )
         print("  [WARN] TRL DataCollatorForCompletionOnlyLM unavailable; training full text.")
         sys.stdout.flush()
         return None
@@ -945,6 +1155,11 @@ def train_on_level(
     seed: int = 42,
 ):
     level_started_at = time.time()
+    optimizer_seed = (
+        int(ACTIVE_SPEC["training"]["optimization_seed_by_level"][task_level])
+        if ACTIVE_SPEC else int(seed)
+    )
+    set_seed(optimizer_seed)
     print("\n" + "=" * 60)
     print(f"  TRAINING: {task_level} | Episodes: {num_episodes} | Base: {model_name}")
     print("=" * 60)
@@ -962,12 +1177,14 @@ def train_on_level(
         batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,
         gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
         runtime_profile=current_runtime_profile_name(),
+        optimizer_seed=optimizer_seed,
     )
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
         trust_remote_code=True,
         model_max_length=MAX_SEQ_LENGTH,
+        **model_revision_kwargs(model_name),
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -977,7 +1194,32 @@ def train_on_level(
     data_meta_path = RUN_ROOT / f"training_data_{task_level}.meta.json"
     metrics_path = RUN_ROOT / f"expert_metrics_{task_level}.json"
 
+    identity = stage_metadata(task_level, model_name, num_episodes, seed)
+    validate_or_write_stage_metadata(output_dir, identity)
+
     last_checkpoint = get_last_checkpoint(str(output_dir)) if output_dir.is_dir() else None
+    if last_checkpoint and ACTIVE_SPEC:
+        checkpoint_metadata_path = Path(last_checkpoint) / "run_metadata.json"
+        try:
+            checkpoint_metadata = json.loads(checkpoint_metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ReproducibilityError(
+                f"this checkpoint has no valid experiment identity: {last_checkpoint}"
+            ) from exc
+        try:
+            assert_metadata_compatible(
+                checkpoint_metadata,
+                identity,
+                [
+                    "run_fingerprint", "source_commit", "spec_sha256", "level",
+                    "input_model", "base_model", "episodes_per_level", "seed",
+                    "trajectory_schema_version", "trainer",
+                ],
+            )
+        except ReproducibilityError as exc:
+            raise ReproducibilityError(
+                f"this checkpoint belongs to another experiment: {last_checkpoint}"
+            ) from exc
     data_meta = load_data_meta(data_meta_path)
     has_matching_data = data_path.exists() and data_matches(
         data_meta,
@@ -985,9 +1227,16 @@ def train_on_level(
         num_episodes,
         model_name,
         seed,
+        data_path,
+        metrics_path,
     )
 
     if last_checkpoint and not has_matching_data:
+        if ACTIVE_SPEC:
+            raise ReproducibilityError(
+                f"Checkpoint data for {task_level} does not match the locked canonical run. "
+                "Existing data was preserved; use the original configuration or a fresh run directory."
+            )
         print(
             f"\n[Phase 0] Found stale checkpoint/data for {task_level}. "
             "Resetting this level so fresh expert trajectories can be generated."
@@ -1011,7 +1260,10 @@ def train_on_level(
         trajectories, episode_metrics = generate_expert_trajectories(task_level, num_episodes, seed)
         written_examples = save_training_data_with_template(trajectories, str(data_path), tokenizer, task_level)
         save_episode_metrics(episode_metrics, str(metrics_path))
-        save_data_meta(data_meta_path, task_level, num_episodes, written_examples, model_name, seed)
+        save_data_meta(
+            data_meta_path, task_level, num_episodes, written_examples, model_name, seed,
+            data_path, metrics_path, [int(item["seed"]) for item in episode_metrics],
+        )
         log_event(
             "expert_generation_complete",
             level=task_level,
@@ -1033,7 +1285,7 @@ def train_on_level(
         task_type=TaskType.CAUSAL_LM,
         r=LORA_R,
         lora_alpha=LORA_ALPHA,
-        lora_dropout=0.05,
+        lora_dropout=float(ACTIVE_SPEC["training"]["lora_dropout"]) if ACTIVE_SPEC else 0.05,
         target_modules=[
             "q_proj",
             "k_proj",
@@ -1050,12 +1302,20 @@ def train_on_level(
         "num_train_epochs": NUM_TRAIN_EPOCHS,
         "per_device_train_batch_size": PER_DEVICE_TRAIN_BATCH_SIZE,
         "gradient_accumulation_steps": GRADIENT_ACCUMULATION_STEPS,
-        "learning_rate": 2e-5,
-        "warmup_ratio": 0.03,
+        "learning_rate": float(ACTIVE_SPEC["training"]["learning_rate"]) if ACTIVE_SPEC else 2e-5,
+        "warmup_ratio": float(ACTIVE_SPEC["training"]["warmup_ratio"]) if ACTIVE_SPEC else 0.03,
+        "weight_decay": float(ACTIVE_SPEC["training"]["weight_decay"]) if ACTIVE_SPEC else 0.0,
+        "max_grad_norm": float(ACTIVE_SPEC["training"]["max_grad_norm"]) if ACTIVE_SPEC else 1.0,
+        "optim": ACTIVE_SPEC["training"]["optimizer"] if ACTIVE_SPEC else "adamw_torch",
+        "lr_scheduler_type": ACTIVE_SPEC["training"]["lr_scheduler_type"] if ACTIVE_SPEC else "linear",
+        "dataloader_num_workers": int(ACTIVE_SPEC["training"]["dataloader_num_workers"]) if ACTIVE_SPEC else 0,
+        "full_determinism": bool(ACTIVE_SPEC["training"]["full_determinism"]) if ACTIVE_SPEC else False,
+        "seed": optimizer_seed,
+        "data_seed": optimizer_seed,
         "logging_steps": 5,
         "save_strategy": "steps",
         "save_steps": SAVE_STEPS,
-        "save_total_limit": 2,
+        "save_total_limit": int(ACTIVE_SPEC["training"]["checkpoint_retention"]) if ACTIVE_SPEC else 2,
         "bf16": USE_BF16,
         "fp16": USE_FP16,
         "gradient_checkpointing": GRADIENT_CHECKPOINTING,
@@ -1168,6 +1428,7 @@ def train_on_level(
 
     trainer = SFTTrainer(**trainer_kwargs)
     trainer.add_callback(CurriculumProgressCallback(task_level, level_index, total_levels))
+    trainer.add_callback(CheckpointIdentityCallback(task_level, identity))
 
     if hasattr(trainer.model, "enable_input_require_grads"):
         trainer.model.enable_input_require_grads()
@@ -1203,6 +1464,7 @@ def train_on_level(
     )
     trainer.save_model(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
+    atomic_write_json(output_dir / "run_metadata.json", {**identity, "status": "completed"})
 
     print(f"  [DONE] Model saved to {output_dir}/")
     log_event(
@@ -1226,12 +1488,40 @@ def merge_and_save_final_model(adapter_path: str, output_path: str):
 
     output_dir = Path(output_path)
     output_dir.parent.mkdir(parents=True, exist_ok=True)
-
+    expected_metadata = {
+        "schema_version": 1,
+        **RUN_CONTEXT,
+        "status": "merged",
+        "adapter_path": artifact_ref(adapter_path),
+        "base_model": ACTIVE_SPEC["base_model"] if ACTIVE_SPEC else None,
+    }
     if output_dir.exists():
-        if output_dir.is_dir():
-            shutil.rmtree(output_dir)
-        else:
-            output_dir.unlink()
+        metadata_path = output_dir / "run_metadata.json"
+        if metadata_path.is_file():
+            try:
+                existing = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise ReproducibilityError(f"Merged-model metadata is corrupt: {metadata_path}") from exc
+            assert_metadata_compatible(
+                existing,
+                expected_metadata,
+                ["run_fingerprint", "source_commit", "spec_sha256", "adapter_path", "base_model"],
+            )
+            weights = list(output_dir.glob("*.safetensors"))
+            if existing.get("status") == "merged" and (output_dir / "config.json").is_file() and weights:
+                print(f"  [RESUME] Reusing identity-matched merged model at {output_dir}")
+                log_event("merge_reused", adapter_path=adapter_path, output_path=str(output_dir))
+                return str(output_dir)
+        quarantine = output_dir.with_name(f"{output_dir.name}.incomplete-{int(time.time())}")
+        output_dir.rename(quarantine)
+        log_event("incomplete_merge_quarantined", source=str(output_dir), quarantine=str(quarantine))
+
+    temporary_dir = output_dir.with_name(f"{output_dir.name}.tmp-{RUN_CONTEXT.get('run_fingerprint', 'legacy')[:12]}")
+    if temporary_dir.exists():
+        quarantine = temporary_dir.with_name(f"{temporary_dir.name}.incomplete-{int(time.time())}")
+        temporary_dir.rename(quarantine)
+        log_event("incomplete_merge_quarantined", source=str(temporary_dir), quarantine=str(quarantine))
+    temporary_dir.mkdir(parents=True)
 
     adapter_cfg_path = os.path.join(adapter_path, "adapter_config.json")
     with open(adapter_cfg_path, "r", encoding="utf-8") as f:
@@ -1246,13 +1536,17 @@ def merge_and_save_final_model(adapter_path: str, output_path: str):
         device_map=device_map,
         trust_remote_code=True,
         low_cpu_mem_usage=True,
+        **model_revision_kwargs(base_model_name),
     )
     model = PeftModel.from_pretrained(base_model, adapter_path)
     model = model.merge_and_unload()
-    model.save_pretrained(str(output_dir))
+    model.save_pretrained(str(temporary_dir))
 
     tokenizer = AutoTokenizer.from_pretrained(adapter_path, trust_remote_code=True)
-    tokenizer.save_pretrained(str(output_dir))
+    tokenizer.save_pretrained(str(temporary_dir))
+    if RUN_CONTEXT:
+        atomic_write_json(temporary_dir / "run_metadata.json", expected_metadata)
+    temporary_dir.replace(output_dir)
 
     print(f"  [DONE] Merged model saved to {output_dir}/")
     log_event(
@@ -1337,6 +1631,7 @@ def evaluate_model(model_path: str, task_level: str = "level_5", num_games: int 
 
 
 def main():
+    global RUN_CONTEXT
     run_started_at = time.time()
     parser = argparse.ArgumentParser(description="Train LLM on Panopticon v3")
     parser.add_argument("--model", default=DEFAULT_MODEL)
@@ -1354,8 +1649,31 @@ def main():
     parser.add_argument("--eval", action="store_true", help="Evaluate after training")
     parser.add_argument("--eval-games", type=int, default=5)
     parser.add_argument("--merge", action="store_true", help="Merge final adapter into standalone model")
+    parser.add_argument("--spec", help="Locked canonical JSON experiment specification")
+    parser.add_argument("--run-fingerprint", help="Expected run fingerprint from preflight/run lock")
     args = parser.parse_args()
     args = configure_runtime(args)
+    args = configure_canonical_spec(args)
+    if ACTIVE_SPEC:
+        git = git_metadata()
+        expected_fingerprint = compute_run_fingerprint(ACTIVE_SPEC, git["commit"])
+        if not args.run_fingerprint or args.run_fingerprint != expected_fingerprint:
+            raise ReproducibilityError(
+                "Missing or incorrect --run-fingerprint. Start canonical training through "
+                "tools/run_canonical_experiment.py after a passing preflight."
+            )
+        lock_path = RUN_ROOT / ACTIVE_SPEC["outputs"]["run_lock"]
+        try:
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ReproducibilityError(f"Missing or invalid run lock: {lock_path}") from exc
+        if lock.get("run_fingerprint") != expected_fingerprint:
+            raise ReproducibilityError("Run lock fingerprint does not match source/spec")
+        RUN_CONTEXT = {
+            "run_fingerprint": expected_fingerprint,
+            "source_commit": git["commit"],
+            "spec_sha256": spec_sha256(ACTIVE_SPEC),
+        }
     runtime_profile = current_runtime_profile_name()
     requested_levels = LEVELS if args.curriculum else [args.level]
     print(f"[*] Structured event log: {EVENTS_PATH}")
@@ -1380,11 +1698,21 @@ def main():
 
     if args.curriculum:
         state = load_state()
-        if (
+        state_mismatch = (
             state.get("trajectory_schema_version") != TRAJECTORY_SCHEMA_VERSION
             or state.get("runtime_profile") != runtime_profile
             or state.get("seed") != args.seed
-        ):
+            or state.get("episodes_per_level") != args.episodes
+            or state.get("run_fingerprint") != RUN_CONTEXT.get("run_fingerprint")
+            or state.get("source_commit") != RUN_CONTEXT.get("source_commit")
+            or state.get("spec_sha256") != RUN_CONTEXT.get("spec_sha256")
+        )
+        if state_mismatch and ACTIVE_SPEC and STATE_PATH.exists():
+            raise ReproducibilityError(
+                "Existing curriculum state is incompatible with the locked canonical run. "
+                "Nothing was reset or deleted; resume with its original configuration or choose a fresh run directory."
+            )
+        if state_mismatch:
             print(
                 "[*] Curriculum state was produced by an older expert/runtime profile. "
                 "Resetting completed-level tracking so fresh-compatible data is regenerated."
@@ -1396,6 +1724,10 @@ def main():
                 "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
                 "runtime_profile": runtime_profile,
                 "seed": args.seed,
+                "episodes_per_level": args.episodes,
+                **RUN_CONTEXT,
+                "base_model": ACTIVE_SPEC["base_model"] if ACTIVE_SPEC else {"id": args.model, "revision": None},
+                "trainer": stage_metadata("curriculum", args.model, args.episodes, args.seed)["trainer"],
             }
             save_state(state)
 
@@ -1441,6 +1773,10 @@ def main():
             state["trajectory_schema_version"] = TRAJECTORY_SCHEMA_VERSION
             state["runtime_profile"] = runtime_profile
             state["seed"] = args.seed
+            state["episodes_per_level"] = args.episodes
+            state.update(RUN_CONTEXT)
+            state["base_model"] = ACTIVE_SPEC["base_model"] if ACTIVE_SPEC else {"id": args.model, "revision": None}
+            state["trainer"] = stage_metadata(level, current_model, args.episodes, args.seed)["trainer"]
             save_state(state)
 
             print(f"[*] Progress saved: {level} complete")
@@ -1485,4 +1821,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ReproducibilityError as exc:
+        print(f"STOP: {exc}", file=sys.stderr)
+        raise SystemExit(1)

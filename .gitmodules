@@ -1,0 +1,3 @@
+[submodule "hf-space-deploy"]
+	path = hf-space-deploy
+	url = https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3

@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "canonical_status": "registry-only; no entry below is canonical acceptance evidence",
+  "evidence_scope": "Repository files and reachable Git history. External Drive/Colab state was not assumed unless transcribed into a committed artifact.",
+  "attempts": [
+    {
+      "id": "2026-04-loss-zero-debug-series",
+      "status": "failed-or-diagnostic-noncanonical",
+      "invocations": "unknown / insufficient evidence",
+      "source_commits": [
+        "bc53d3786ca787fb5a51a4fbe848774dca5e868b",
+        "d282b3caba9aa65d9082164c766246bf5d53afdd",
+        "bbc5a7b6bd1651166d6fd6ac6e93ebfbb385bf2b"
+      ],
+      "model": "Qwen/Qwen2.5-1.5B-Instruct; immutable revision not recorded",
+      "config_and_seed": "unknown / insufficient evidence",
+      "completed": "Troubleshooting changes were committed; no complete immutable run artifact is preserved.",
+      "failed": ["Observed zero training loss in the historical workflow."],
+      "root_cause": "FP16 numeric underflow is explicitly identified by commit bbc5a7b; the contribution of earlier suspected causes is unknown / insufficient evidence.",
+      "safeguards": ["S01", "S02", "S06", "S10"]
+    },
+    {
+      "id": "2026-04-panopticon-ep50-v2-invocation-1",
+      "status": "failed-noncanonical",
+      "source_commit": "unknown / insufficient evidence",
+      "model": "Qwen/Qwen2.5-1.5B-Instruct; immutable revision not recorded",
+      "config": {"episodes_per_level": 50, "epochs": 3, "max_sequence_length": 1024, "batch_size": 2, "gradient_accumulation_steps": 4, "gradient_checkpointing": false},
+      "seed": "unknown / insufficient evidence",
+      "completed": "Easy expert data generation (3,000 examples and 50 episode records).",
+      "failed": ["CUDA OOM at the first optimizer step while requesting 898 MiB; about 102 MiB was free on a 14.74 GiB GPU."],
+      "root_cause": "Runtime memory exhaustion.",
+      "evidence": ["output_logs.txt:1-134"],
+      "safeguards": ["S03", "S05"]
+    },
+    {
+      "id": "2026-04-panopticon-ep50-v2-invocation-2",
+      "status": "failed-noncanonical",
+      "source_commit": "unknown / insufficient evidence",
+      "model": "Qwen/Qwen2.5-1.5B-Instruct; immutable revision not recorded",
+      "config": {"episodes_per_level": 50, "epochs": 3, "max_sequence_length": 1024, "batch_size": 2, "gradient_accumulation_steps": 4, "gradient_checkpointing": false},
+      "seed": "unknown / insufficient evidence",
+      "completed": "Reused easy expert data.",
+      "failed": ["CUDA OOM again at the first optimizer step while requesting 898 MiB."],
+      "root_cause": "Runtime memory exhaustion; the incompatible profile was retried unchanged.",
+      "evidence": ["output_logs.txt:140-208"],
+      "safeguards": ["S03", "S05"]
+    },
+    {
+      "id": "2026-04-panopticon-ep50-v2-invocation-3",
+      "status": "training-completed-but-noncanonical",
+      "source_commit": "unknown / insufficient evidence",
+      "model": "Qwen/Qwen2.5-1.5B-Instruct; immutable revision not recorded",
+      "config": {"episodes_per_level": 50, "epochs": 3, "max_sequence_length": 1024, "batch_size": 2, "gradient_accumulation_steps": 4, "gradient_checkpointing": false},
+      "seed": "unknown / insufficient evidence",
+      "completed": "All five curriculum levels and merged_model were logged complete.",
+      "failed": ["No immutable source/model/config/seed identity, full canonical evaluation, or acceptance evidence is preserved."],
+      "root_cause": "Training completed; research acceptance is unprovable from the retained artifacts.",
+      "evidence": ["output_logs.txt:214-20238"],
+      "safeguards": ["S01", "S04", "S07", "S08", "S09"]
+    },
+    {
+      "id": "2026-04-panopticon-ep50-v2-noop-replays",
+      "status": "non-runs-noncanonical",
+      "invocations": 12,
+      "completed": "Each invocation detected the completed curriculum and re-merged/reported completion.",
+      "failed": ["Repeated completion messages could be mistaken for twelve independent training reproductions."],
+      "root_cause": "The historical lifecycle log did not distinguish a new optimizer run from completed-state reuse.",
+      "evidence": ["output_logs.txt:20239-end; 13 total completion messages minus the one training completion"],
+      "safeguards": ["S04", "S08"]
+    },
+    {
+      "id": "2026-04-evaluation-snapshot-apr26",
+      "status": "failed-preliminary-noncanonical",
+      "source_commit": "unknown / insufficient evidence",
+      "model": "unknown / insufficient evidence; linkage to ep50-v2 cannot be proven",
+      "config": {"episodes_per_agent_level": 2, "seeds_recorded": true},
+      "completed": "Two episodes for each agent and level.",
+      "failed": ["Insufficient episode count and missing immutable run/model provenance.", "The trained policy caught zero sleepers; security was 0.3 on hard, level_4, and level_5."],
+      "root_cause": "Policy behavior was revenue-seeking and security-inadequate; artifact identity remains unknown / insufficient evidence.",
+      "evidence": ["evaluation_snapshot_apr26.json"],
+      "safeguards": ["S07", "S08", "S09"]
+    },
+    {
+      "id": "2026-06-fixed-v3-ep20-logical-run",
+      "status": "training-completed-but-mixed-history-noncanonical",
+      "invocations": 16,
+      "source_commits": "unknown / insufficient evidence; the event stream spans source changes",
+      "model": "Qwen/Qwen2.5-1.5B-Instruct; immutable revision not recorded",
+      "config": "15 curriculum invocations at 20 episodes plus one easy one-episode smoke invocation; first two used default-gpu and later invocations used low-vram-gpu-safe",
+      "seed": "not recorded in run_start events",
+      "completed": "Six train_complete and six level_complete events (including the smoke easy stage), one merge, and a final merged-model run_complete.",
+      "failed": ["Fourteen invocations lack run_complete.", "Most interruption causes are unknown / insufficient evidence.", "The same logical directory reused evolving event/data schemas and source code; repeated easy datasets had differing example counts.", "No immutable fingerprint or checkpoint lineage was recorded."],
+      "root_cause": "Runtime interruption is evident, but individual interruption causes are unknown / insufficient evidence; config/source/data drift made the aggregate run non-reproducible.",
+      "evidence": ["training_events_fixed_ep20.jsonl (16,653 records: 16 run_start, 6 train_complete, 6 level_complete, 1 merge_complete, 2 run_complete)"],
+      "safeguards": ["S01", "S04", "S05", "S06", "S08", "S10"]
+    },
+    {
+      "id": "2026-07-security-first-v5-raw-model",
+      "status": "evaluated-rejected-noncanonical",
+      "training_source_commit": "4c1f2db6a7a3d3c88136d5b51fbcdfe4058ad818",
+      "evaluation_source_commit": "58572637f2ee8bf78406380e286dd86f50455027",
+      "model": "Qwen/Qwen2.5-1.5B-Instruct; immutable upstream revision not recorded",
+      "config": {"training_seed": 42, "episodes_per_level": 50, "training_examples": 88896, "evaluation_episodes_per_agent_level": 20, "max_sequence_length": 512},
+      "completed": "All five training levels, merged model, and a 300-episode evaluation per run are transcribed as complete.",
+      "failed": ["Nine acceptance checks failed across level_4 and level_5: pass rate, security, sleepers caught, zero missed, and zero false accusations as applicable."],
+      "misleading_metric": "Macro grade improved from 0.641110 to 0.701627, but security fell from 95.960 to 89.264 and every required check did not pass.",
+      "root_cause": "Raw learned-policy behavior did not preserve advanced-level security acceptance. The exact contribution of data, optimization, and policy generalization is unknown / insufficient evidence.",
+      "evidence": ["evaluation_comparison_latest.json"],
+      "safeguards": ["S07", "S09"]
+    },
+    {
+      "id": "2026-07-security-first-v5-supervisor",
+      "status": "controller-result-not-raw-model-evidence",
+      "completed": "The deterministic supervisor passed the transcribed acceptance checks with macro grade 0.790471.",
+      "failed": ["This result does not establish that the raw fine-tuned model passed; combining the identities would be an invalid scientific claim."],
+      "root_cause": "Evaluator/policy intervention changes the evaluated system.",
+      "evidence": ["evaluation_comparison_latest.json"],
+      "safeguards": ["S07", "S09"]
+    },
+    {
+      "id": "2026-07-v6-pilot-r0-r3",
+      "status": "experimental-pilot-noncanonical",
+      "source_tags": ["research-v6-pilot-2026-07-17", "research-v6-pilot-2026-07-17-r1", "research-v6-pilot-2026-07-17-r2", "research-v6-pilot-2026-07-17-r3"],
+      "source_commits": ["8f334d2144239e0037a9fbe2d69ca5bb0944d6a0", "50df7d842f53f6bddbf612e37d06642b0f14f521", "fb681d0dc8f02b7e3151fa6aeaec7fc43f3e5348", "27e02659399f7916713c1d3c15f689a671905f6c"],
+      "config_and_seed": "See the tagged pilot artifacts; not accepted as this canonical specification.",
+      "completed": "Pilot workflow iterations and partial/model rows where retained.",
+      "failed": ["r0 required resume after NumPy serialization failure.", "r1 required inference dependency isolation.", "r2 required a fixed context contract: 512 prompt tokens, 128 new tokens, no token truncation, and exact baseline reuse.", "Earlier pilot model rows are invalid/provisional under the corrected context contract."],
+      "root_cause": "Artifact serialization, dependency coupling, and evaluation-context drift; the scientific status of missing external outputs is unknown / insufficient evidence.",
+      "safeguards": ["S02", "S04", "S07", "S08"]
+    }
+  ]
+}

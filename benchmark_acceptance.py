@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
+import statistics
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +40,12 @@ def evaluate_acceptance(base: dict[str, Any], candidate: dict[str, Any]) -> dict
             base_schema,
         )
 
-    for config_key in ("episodes_per_level", "seed", "max_steps", "deterministic_trained_eval"):
+    for config_key in (
+        "episodes_per_level", "seed", "max_steps", "deterministic_trained_eval",
+        "evaluation_split", "trained_policy", "model_precision", "model_prompt_max_tokens",
+        "model_max_new_tokens", "timeline_level", "episode_evidence_schema",
+        "source_commit", "spec_sha256", "run_fingerprint", "model_revision",
+    ):
         base_value = base.get("config", {}).get(config_key)
         candidate_value = candidate.get("config", {}).get(config_key)
         add(
@@ -57,6 +64,25 @@ def evaluate_acceptance(base: dict[str, Any], candidate: dict[str, Any]) -> dict
     base_macro_grade = sum(base_summary[level]["grade_mean"] for level in LEVELS) / len(LEVELS)
     candidate_macro_grade = sum(candidate_summary[level]["grade_mean"] for level in LEVELS) / len(LEVELS)
     add("macro_grade_improves", candidate_macro_grade > base_macro_grade, candidate_macro_grade, f"> {base_macro_grade}")
+
+    paired_differences = []
+    for level in LEVELS:
+        base_episodes = base["agents"]["trained"]["episodes"][level]
+        candidate_episodes = candidate["agents"]["trained"]["episodes"][level]
+        if len(base_episodes) != len(candidate_episodes) or not base_episodes:
+            raise ValueError(f"Cannot form complete trained-policy pairs for {level}")
+        for base_episode, candidate_episode in zip(base_episodes, candidate_episodes, strict=True):
+            if base_episode.get("seed") != candidate_episode.get("seed"):
+                raise ValueError(f"Mismatched trained-policy episode seeds for {level}")
+            paired_differences.append(float(candidate_episode["grade"]["score"]) - float(base_episode["grade"]["score"]))
+    rng = random.Random(0x50414E4F5F504149524544)
+    bootstrap_means = sorted(
+        statistics.mean(rng.choices(paired_differences, k=len(paired_differences)))
+        for _ in range(5000)
+    )
+    paired_mean = statistics.mean(paired_differences)
+    paired_ci95 = [bootstrap_means[124], bootstrap_means[4874]]
+    add("paired_grade_ci95_lower_gt_zero", paired_ci95[0] > 0.0, paired_ci95[0], "> 0.0")
 
     for level in LEVELS:
         base_level = base_summary[level]
@@ -104,6 +130,9 @@ def evaluate_acceptance(base: dict[str, Any], candidate: dict[str, Any]) -> dict
         "accepted": all(check["passed"] for check in checks),
         "base_macro_grade": base_macro_grade,
         "candidate_macro_grade": candidate_macro_grade,
+        "paired_grade_difference_mean": paired_mean,
+        "paired_grade_difference_ci95": paired_ci95,
+        "paired_bootstrap_samples": 5000,
         "checks": checks,
     }
 

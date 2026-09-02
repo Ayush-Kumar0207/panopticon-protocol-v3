@@ -34,6 +34,14 @@
 
 ## ✅ Submission Checklist
 
+> **Research-status warning:** all retained pre-infrastructure training attempts,
+> including the completed/high-scoring V5 artifacts below, are historical,
+> experimental, rejected, or otherwise noncanonical. The raw V5 model failed nine
+> required security/acceptance checks. See
+> [`KNOWN_TRAINING_FAILURE_MODES.md`](KNOWN_TRAINING_FAILURE_MODES.md) and the
+> machine-readable [`historical_attempts.json`](training_specs/historical_attempts.json)
+> before interpreting or reusing any result.
+
 - **OpenEnv environment hosted on Hugging Face Spaces:** [Demo Space](https://huggingface.co/spaces/Ayush-Kumar0207/panopticon-protocol-v3)
 - **Minimal TRL training script / Colab path:** [Panopticon_Training_FINAL.ipynb](Panopticon_Training_FINAL.ipynb)
 - **Submitted Colab link used in the form:** [Google Colab URL](https://colab.research.google.com/drive/1-MIjo3qqII3s-Y6v4xfcRN7jLS4WQ3qe?usp=sharing)
@@ -257,6 +265,12 @@ The full gauntlet. Gen-5 Manchurian candidates with active counter-intelligence.
 ## 📈 Training Results & Improvement Evidence
 
 The latest selected Drive run is **Security-First V5**, stored at `panopticon-security-v5-ep50`. It trained from `Qwen/Qwen2.5-1.5B-Instruct` with TRL SFT + LoRA, saved checkpoints and curriculum state directly to Google Drive, merged the final adapter, and completed matched base/raw/supervisor evaluations.
+
+> **Historical/non-canonical evidence:** this Drive run used the older T4 profile
+> and its raw model failed nine advanced acceptance/security checks. It is retained
+> for forensic comparison, not accepted evidence and not the executable contributor
+> protocol. New canonical V5 reproductions require the Ampere/BF16/CUDA profile in
+> [`TRAINING_CONTRIBUTION_GUIDE.md`](TRAINING_CONTRIBUTION_GUIDE.md).
 
 The full V5 optimizer event log is still in Drive as `training_events.jsonl`; the checked-in training plots below are compact diagnostics generated from Drive metadata and completed benchmark reports. This keeps the repository lightweight while avoiding stale EP20 plots.
 
@@ -597,7 +611,41 @@ The scoreboard and evaluation gallery below are regenerated from the compact V5 
 
 ### Evaluation Reproducibility
 
+Future external training runs use the executable, fail-closed workflow in
+[`TRAINING_CONTRIBUTION_GUIDE.md`](TRAINING_CONTRIBUTION_GUIDE.md). The canonical
+V5 machine-readable method baseline is
+[`training_specs/security_first_v5.json`](training_specs/security_first_v5.json);
+the rationale and statistical protocol are in
+[`TRAINING_METHODOLOGY.md`](TRAINING_METHODOLOGY.md).
+V5 is provisional and not claimed optimal. Expensive compute is currently
+unauthorized; the bounded development-only search is in
+[`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md), and code seals
+canonical/confirmation until a reviewed selected spec is frozen.
+`tools/run_model_selection.py` mechanically derives and resumes every registered
+candidate/seed when a future commit authorizes development compute; today it
+fails closed, while `--synthetic-fixture` tests orchestration as non-evidence.
+`python tools/run_canonical_experiment.py --help` is the single entry point for
+preflight, locked/resumable training, matched evaluation, confirmation, and
+artifact verification; `tools/build_submission_bundle.py` creates the final
+status-labelled evidence bundle. Older Colab instructions and notebooks are
+retained as historical/explanatory material and do not override the spec.
+
+Training, development, canonical, and confirmation episode seeds now come from
+deterministic disjoint namespaces. The verifier requires both matched base/candidate
+held-out splits, exact episode sidecars, the raw model with no controller repair,
+zero token-truncated turns, checkpoint/data/model lineage, and every security gate.
+A higher composite grade never overrides a failed gate.
+
 The full V5 Colab commands are in [`COLAB_SECURITY_V5_TRAINING.md`](COLAB_SECURITY_V5_TRAINING.md). The important rule is that base, raw trained, and supervisor diagnostics must use the same seed, reward schema, grader schema, and checkpoint-resume flags.
+
+### Training & Reproducibility Contributors
+
+Accepted independent reproductions retain Git commit/PR attribution and may be
+listed here with immutable external artifact links and research/reproduction
+credit appropriate to the work. These are unpaid open-source contributions; no
+employment relationship or GitHub achievement is promised. See
+[`TRAINING_CONTRIBUTION_GUIDE.md`](TRAINING_CONTRIBUTION_GUIDE.md) and
+[the open compute issue](https://github.com/Ayush-Kumar0207/panopticon-protocol-v3/issues/1).
 
 To regenerate the compact checked-in V5 comparison and gallery from [`evaluation_comparison_latest.json`](evaluation_comparison_latest.json):
 
@@ -721,6 +769,10 @@ curl http://localhost:8000/agent/status
 Once the backend is online, open **Command Center** and press **START MODEL** to watch the trained agent operate live.
 
 ### Option 3: Train the LLM Agent
+
+The commands below are legacy/development entry points and cannot create canonical
+research evidence. External reproducibility contributors must use the locked
+five-command flow in [`TRAINING_CONTRIBUTION_GUIDE.md`](TRAINING_CONTRIBUTION_GUIDE.md).
 
 ```bash
 # Train with HuggingFace TRL (The Official Pipeline)

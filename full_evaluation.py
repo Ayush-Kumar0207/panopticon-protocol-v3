@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import os
 import random
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +27,19 @@ from inference_local import (
     summarize_level_results,
     utc_now_iso,
 )
+from research_repro import (
+    ReproducibilityError,
+    assert_research_stage_authorized,
+    append_event,
+    canonical_json,
+    compute_run_fingerprint,
+    evaluation_seed_plan,
+    git_metadata,
+    load_spec,
+    sha256_bytes,
+    spec_sha256,
+)
+from tools.freeze_model_artifact import create_or_verify_model_manifest
 
 AGENT_ORDER = ["random", "heuristic", "trained"]
 AGENT_LABELS = {"random": "Random", "heuristic": "Heuristic", "trained": "Trained"}
@@ -37,10 +52,53 @@ def overall_summary(episodes: list[dict[str, Any]], level_label: str) -> dict[st
 
 def build_seed_plan(episodes_per_level: int, seed: int) -> dict[str, list[int]]:
     rng = random.Random(seed)
+    flat = rng.sample(range(1_000_000), len(LEVELS) * episodes_per_level)
     return {
-        level: [rng.randint(0, 999999) for _ in range(episodes_per_level)]
-        for level in LEVELS
+        level: flat[index * episodes_per_level:(index + 1) * episodes_per_level]
+        for index, level in enumerate(LEVELS)
     }
+
+
+def write_evidence_blob(root: Path, relative_dir: str, value: Any) -> dict[str, Any]:
+    """Write one deterministic, compressed, content-addressed evidence blob."""
+    encoded = canonical_json(value).encode("utf-8")
+    digest = sha256_bytes(encoded)
+    relative = Path(relative_dir) / "sha256" / digest[:2] / f"{digest}.json.gz"
+    target = root / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    compressed = gzip.compress(encoded, compresslevel=9, mtime=0)
+    if target.exists():
+        try:
+            existing = gzip.decompress(target.read_bytes())
+        except (OSError, EOFError) as exc:
+            raise ReproducibilityError(f"existing raw-evidence blob is corrupt: {relative.as_posix()}") from exc
+        if existing != encoded:
+            raise ReproducibilityError(f"content-addressed evidence collision: {relative.as_posix()}")
+    else:
+        temporary = target.with_name(target.name + f".tmp-{os.getpid()}")
+        temporary.write_bytes(compressed)
+        os.replace(temporary, target)
+    return {"sha256": digest, "bytes": len(encoded), "artifact": relative.as_posix()}
+
+
+def compact_episode_evidence(
+    episode: dict[str, Any], schema: str, *, artifact_root: Path, relative_dir: str
+) -> dict[str, Any]:
+    """Compact Git-facing traces while preserving every raw field as a replayable blob."""
+    compact = dict(episode)
+    compact["evidence_schema_version"] = schema
+    compact_timeline = []
+    large_fields = ("prompt", "messages", "observation_before", "observation_after")
+    for record in episode.get("timeline", []):
+        row = {key: value for key, value in record.items() if key not in large_fields}
+        for key in large_fields:
+            evidence = write_evidence_blob(artifact_root, relative_dir, record.get(key))
+            row[f"{key}_sha256"] = evidence["sha256"]
+            row[f"{key}_bytes"] = evidence["bytes"]
+            row[f"{key}_artifact"] = evidence["artifact"]
+        compact_timeline.append(row)
+    compact["timeline"] = compact_timeline
+    return compact
 
 
 def print_summary_table(agent_payloads: dict[str, dict[str, Any]]) -> None:
@@ -79,16 +137,32 @@ def write_showcase_payload(agent_payloads: dict[str, dict[str, Any]], output_pat
 
 
 def build_payload_config(args: argparse.Namespace) -> dict[str, Any]:
+    model_ref = args.model
+    if getattr(args, "run_fingerprint", None) and Path(args.model).is_absolute():
+        try:
+            model_ref = Path(args.model).resolve().relative_to(Path(args.output).resolve().parent).as_posix()
+        except ValueError:
+            pass
     return {
-        "model": args.model,
+        "model": model_ref,
         "episodes_per_level": args.episodes,
         "seed": args.seed,
         "timeline_level": args.timeline_level,
         "deterministic_trained_eval": not args.sampled,
         "max_steps": args.max_steps,
         "trained_policy": args.trained_policy,
+        "model_revision": args.model_revision or None,
+        "model_precision": args.model_precision,
+        "model_prompt_max_tokens": args.model_prompt_max_tokens,
+        "model_max_new_tokens": args.model_max_new_tokens,
+        "episode_evidence_schema": getattr(args, "episode_evidence_schema", None),
+        "model_artifact_identity": getattr(args, "model_artifact_identity", None),
         "reward_schema_version": REWARD_SCHEMA_VERSION,
         "grader_schema_version": GRADER_SCHEMA_VERSION,
+        "evaluation_split": getattr(args, "evaluation_split", "development"),
+        "run_fingerprint": getattr(args, "run_fingerprint", None),
+        "source_commit": getattr(args, "source_commit", None),
+        "spec_sha256": getattr(args, "spec_sha256", None),
     }
 
 
@@ -130,7 +204,9 @@ def checkpoint_config_matches(record_config: dict[str, Any], expected_config: di
     return all(record_config.get(key) == value for key, value in expected_config.items())
 
 
-def load_episode_checkpoints(checkpoint_path: Path, expected_config: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def load_episode_checkpoints(
+    checkpoint_path: Path, expected_config: dict[str, Any], *, strict: bool = False,
+) -> dict[str, dict[str, Any]]:
     records: dict[str, dict[str, Any]] = {}
     if not checkpoint_path.exists():
         return records
@@ -165,17 +241,23 @@ def load_episode_checkpoints(checkpoint_path: Path, expected_config: dict[str, A
                 continue
 
             key = episode_key(agent_key, level, episode_idx, int(episode_seed))
+            if key in records:
+                bad_lines.append(line_no)
+                continue
             records[key] = record
 
     if mismatched_lines:
-        raise RuntimeError(
+        raise ReproducibilityError(
             "Existing evaluation checkpoint was created with a different configuration. "
-            "Use the original model/episodes/seed/max-steps values, choose a new output path, "
-            "or rerun with --restart to intentionally start over. "
+            "Use the original source/spec/model/run directory or choose a fresh experiment. "
             f"Mismatched lines: {mismatched_lines[:8]}"
         )
 
     if bad_lines:
+        if strict:
+            raise ReproducibilityError(
+                f"canonical evaluation checkpoint contains corrupt/duplicate records: {bad_lines[:8]}"
+            )
         print(f"[WARN] Ignored incomplete or invalid checkpoint lines: {bad_lines[:8]}")
 
     return records
@@ -215,6 +297,54 @@ def load_completed_output_as_checkpoints(
         }
         records[episode_key(agent_key, level, episode_idx, episode_seed)] = record
     return records
+
+
+def reconcile_canonical_evaluation_events(
+    *, records: dict[str, dict[str, Any]], seed_plan: dict[str, list[int]],
+    events_path: Path, output_name: str, model_artifact_identity: str,
+    run_fingerprint: str, source_commit: str, split: str,
+) -> None:
+    """Repair only the checkpoint-written/event-not-written crash window; reject reruns."""
+    try:
+        existing_events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+    except FileNotFoundError:
+        existing_events = []
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReproducibilityError("canonical event log is unreadable during evaluation resume") from exc
+    relevant = [
+        event for event in existing_events
+        if event.get("event") == "evaluation_episode_completed"
+        and event.get("output") == output_name
+        and event.get("model_artifact_identity") == model_artifact_identity
+    ]
+    event_keys = [
+        episode_key(event.get("agent"), event.get("level"), event.get("episode_idx"), event.get("seed"))
+        for event in relevant
+    ]
+    if len(event_keys) != len(set(event_keys)):
+        raise ReproducibilityError("canonical evaluation event history contains a rerun/duplicate episode")
+    record_keys = set(records)
+    if not set(event_keys) <= record_keys:
+        raise ReproducibilityError("canonical evaluation history contains an episode without a durable checkpoint")
+    seen = set(event_keys)
+    for agent, level, episode_idx, episode_seed in iter_episode_plan(seed_plan):
+        key = episode_key(agent, level, episode_idx, episode_seed)
+        if key in record_keys and key not in seen:
+            append_event(
+                events_path,
+                "evaluation_episode_completed",
+                run_fingerprint=run_fingerprint,
+                source_commit=source_commit,
+                stage=split,
+                output=output_name,
+                model_artifact_identity=model_artifact_identity,
+                agent=agent,
+                level=level,
+                episode_idx=episode_idx,
+                seed=episode_seed,
+                reconstructed_from_checkpoint=True,
+            )
+            seen.add(key)
 
 
 def build_agent_payloads_from_checkpoints(
@@ -378,7 +508,15 @@ def write_final_payload(
         },
     }
     payload = to_builtin(payload)
-    payload["plots"] = render_evaluation_plots(payload, plot_dir, args.timeline_level)
+    rendered_plots = render_evaluation_plots(payload, plot_dir, args.timeline_level)
+    if getattr(args, "run_fingerprint", None):
+        run_root = output_path.parent.resolve()
+        payload["plots"] = {
+            name: Path(value).resolve().relative_to(run_root).as_posix()
+            for name, value in rendered_plots.items()
+        }
+    else:
+        payload["plots"] = rendered_plots
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -389,6 +527,10 @@ def write_final_payload(
 def build_cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Full Panopticon evaluation for random, heuristic, and trained agents")
     parser.add_argument("--model", default=DEFAULT_MODEL, help="HF repo, local merged model, or adapter directory")
+    parser.add_argument("--model-revision", default="", help="Immutable remote model revision")
+    parser.add_argument("--model-precision", choices=["auto", "bf16", "fp16", "fp32"], default="auto")
+    parser.add_argument("--model-prompt-max-tokens", type=int, default=512)
+    parser.add_argument("--model-max-new-tokens", type=int, default=128)
     parser.add_argument("--episodes", type=int, default=5, help="Episodes per level and per agent")
     parser.add_argument("--seed", type=int, default=42, help="Base seed used to create the fair comparison schedule")
     parser.add_argument("--output", default="evaluation_results.json", help="JSON output path")
@@ -402,12 +544,84 @@ def build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint-file", default="", help="Optional episode JSONL checkpoint path")
     parser.add_argument("--progress-file", default="", help="Optional lightweight progress JSON path")
     parser.add_argument("--restart", action="store_true", help="Delete existing evaluation sidecars and start this output from scratch")
+    parser.add_argument("--spec", help="Locked canonical JSON experiment specification")
+    parser.add_argument("--run-fingerprint", help="Expected fingerprint from the run lock")
+    parser.add_argument("--evaluation-split", choices=["development", "canonical", "confirmation"], default="development")
     return parser
 
 
 def main() -> None:
     args = build_cli().parse_args()
-    seed_plan = build_seed_plan(args.episodes, args.seed)
+    args.source_commit = None
+    args.spec_sha256 = None
+    args.episode_evidence_schema = None
+    args.model_artifact_identity = None
+    active_spec = None
+    if args.spec:
+        active_spec, resolved_spec = load_spec(args.spec)
+        assert_research_stage_authorized(
+            active_spec, operation="evaluation", evaluation_split=args.evaluation_split
+        )
+        git = git_metadata()
+        if git["dirty"]:
+            raise ReproducibilityError("canonical evaluation requires a clean source checkout")
+        expected_fingerprint = compute_run_fingerprint(active_spec, git["commit"])
+        if args.run_fingerprint != expected_fingerprint:
+            raise ReproducibilityError("Evaluation fingerprint does not match the current source/spec")
+        if args.restart:
+            raise ReproducibilityError("canonical evaluation sidecars cannot be deleted with --restart")
+        args.source_commit = git["commit"]
+        args.spec_sha256 = spec_sha256(active_spec)
+        args.episode_evidence_schema = active_spec["evaluation"]["episode_evidence_schema"]
+        expected_seed = active_spec["evaluation"][f"{args.evaluation_split}_seed"]
+        if args.seed != expected_seed:
+            raise ReproducibilityError(f"{args.evaluation_split} evaluation requires seed {expected_seed}")
+        for name, actual, expected in (
+            ("episodes", args.episodes, active_spec["evaluation"]["episodes_per_level"]),
+            ("max_steps", args.max_steps, active_spec["evaluation"]["max_steps"]),
+            ("trained_policy", args.trained_policy, active_spec["evaluation"]["trained_policy"]),
+            ("model_precision", args.model_precision, active_spec["evaluation"]["model_precision"]),
+            ("model_prompt_max_tokens", args.model_prompt_max_tokens, active_spec["evaluation"]["model_prompt_max_tokens"]),
+            ("model_max_new_tokens", args.model_max_new_tokens, active_spec["evaluation"]["model_max_new_tokens"]),
+            ("timeline_level", args.timeline_level, active_spec["evaluation"]["timeline_level"]),
+        ):
+            if actual != expected:
+                raise ReproducibilityError(f"Evaluation {name} differs from the locked specification")
+        output_name = Path(args.output).name
+        outputs = active_spec["outputs"]
+        if args.evaluation_split == "confirmation":
+            required_name = (
+                outputs["confirmation_base_evaluation"]
+                if args.model == active_spec["base_model"]["id"]
+                else outputs["confirmation_evaluation"]
+            )
+        elif args.model == active_spec["base_model"]["id"]:
+            required_name = outputs["canonical_base_evaluation"]
+        else:
+            required_name = outputs["canonical_candidate_evaluation"]
+        if args.model == active_spec["base_model"]["id"]:
+            args.model_artifact_identity = (
+                f"hf:{active_spec['base_model']['id']}@{active_spec['base_model']['revision']}"
+            )
+        else:
+            metadata_path = Path(args.model) / "run_metadata.json"
+            try:
+                model_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ReproducibilityError(f"Candidate model lacks valid run metadata: {metadata_path}") from exc
+            if model_metadata.get("run_fingerprint") != expected_fingerprint:
+                raise ReproducibilityError("Candidate model belongs to a different run")
+            frozen, _ = create_or_verify_model_manifest(Path(args.model).resolve().parent, resolved_spec, create=False)
+            args.model_artifact_identity = f"sha256:{frozen['aggregate_sha256']}"
+        if args.evaluation_split != "development" and output_name != required_name:
+            raise ReproducibilityError(f"Locked {args.evaluation_split} output must be named {required_name}")
+        if args.model_revision != active_spec["base_model"]["revision"]:
+            raise ReproducibilityError("Evaluation model revision differs from the locked base-model revision")
+        args.spec = str(resolved_spec)
+    seed_plan = (
+        evaluation_seed_plan(active_spec, args.evaluation_split)
+        if active_spec else build_seed_plan(args.episodes, args.seed)
+    )
     output_path = Path(args.output)
     plot_dir = Path(args.plot_dir)
     checkpoint_path = Path(args.checkpoint_file) if args.checkpoint_file else sidecar_path(output_path, ".episodes.jsonl")
@@ -425,9 +639,27 @@ def main() -> None:
             existing_records: dict[str, dict[str, Any]] = {}
             print("[*] Restart requested: existing evaluation sidecars were cleared.")
         else:
-            existing_records = load_episode_checkpoints(checkpoint_path, expected_config)
-            if not existing_records:
+            existing_records = load_episode_checkpoints(
+                checkpoint_path, expected_config, strict=bool(active_spec)
+            )
+            if active_spec and output_path.exists() and not checkpoint_path.exists():
+                raise ReproducibilityError(
+                    "canonical final evaluation exists without its episode checkpoint sidecar"
+                )
+            if not existing_records and not active_spec:
                 existing_records = load_completed_output_as_checkpoints(output_path, expected_config, seed_plan)
+
+        if active_spec:
+            reconcile_canonical_evaluation_events(
+                records=existing_records,
+                seed_plan=seed_plan,
+                events_path=output_path.parent / active_spec["outputs"]["events"],
+                output_name=output_path.name,
+                model_artifact_identity=args.model_artifact_identity,
+                run_fingerprint=args.run_fingerprint,
+                source_commit=args.source_commit,
+                split=args.evaluation_split,
+            )
 
         total = total_planned_episodes(args.episodes)
         print(f"[*] Evaluation checkpoint file: {checkpoint_path}")
@@ -462,6 +694,18 @@ def main() -> None:
                 showcase_path = Path(args.showcase_output)
                 write_showcase_payload(payload["agents"], showcase_path, args.model)
                 print(f"[*] Wrote showcase payload to {showcase_path}")
+            if active_spec:
+                append_event(
+                    output_path.parent / active_spec["outputs"]["events"],
+                    "evaluation_completed",
+                    run_fingerprint=args.run_fingerprint,
+                    source_commit=args.source_commit,
+                    stage=args.evaluation_split,
+                    output=output_path.name,
+                    model_artifact_identity=args.model_artifact_identity,
+                    completed_episodes=len(existing_records),
+                    resumed_from_complete_checkpoint=True,
+                )
             return
 
         records = dict(existing_records)
@@ -488,6 +732,10 @@ def main() -> None:
                         args.model,
                         deterministic=not args.sampled,
                         intervention_mode=intervention_mode,
+                        max_seq_length=args.model_prompt_max_tokens,
+                        max_new_tokens=args.model_max_new_tokens,
+                        revision=args.model_revision or None,
+                        precision=args.model_precision,
                     )
             return trained_policy
 
@@ -515,6 +763,13 @@ def main() -> None:
                         max_steps=args.max_steps,
                         verbose=args.verbose,
                     )
+                    if active_spec:
+                        episode = compact_episode_evidence(
+                            episode,
+                            active_spec["evaluation"]["episode_evidence_schema"],
+                            artifact_root=output_path.parent,
+                            relative_dir=active_spec["outputs"]["raw_evidence_dir"],
+                        )
                     episode["agent"] = agent_key
                     record = {
                         "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
@@ -527,6 +782,20 @@ def main() -> None:
                         "episode": episode,
                     }
                     append_episode_checkpoint(checkpoint_path, record)
+                    if active_spec:
+                        append_event(
+                            output_path.parent / active_spec["outputs"]["events"],
+                            "evaluation_episode_completed",
+                            run_fingerprint=args.run_fingerprint,
+                            source_commit=args.source_commit,
+                            stage=args.evaluation_split,
+                            output=output_path.name,
+                            model_artifact_identity=args.model_artifact_identity,
+                            agent=agent_key,
+                            level=level,
+                            episode_idx=episode_idx,
+                            seed=episode_seed,
+                        )
                     records[key] = record
                     last_completed = {
                         "agent": agent_key,
@@ -557,6 +826,17 @@ def main() -> None:
                     )
 
         payload = write_final_payload(args, seed_plan, records, output_path, plot_dir)
+        if active_spec:
+            append_event(
+                output_path.parent / active_spec["outputs"]["events"],
+                "evaluation_completed",
+                run_fingerprint=args.run_fingerprint,
+                source_commit=args.source_commit,
+                stage=args.evaluation_split,
+                output=output_path.name,
+                model_artifact_identity=args.model_artifact_identity,
+                completed_episodes=len(records),
+            )
         write_progress(
             records,
             seed_plan,
@@ -578,4 +858,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ReproducibilityError as exc:
+        print(f"STOP: {exc}", file=sys.stderr)
+        raise SystemExit(1)
