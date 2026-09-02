@@ -41,6 +41,11 @@ jobs:
         run: |
           python smoke_test.py
           python security_regression_test.py
+      - name: Synthetic model-selection orchestration fixture
+        run: >-
+          python tools/run_model_selection.py
+          --campaign-dir /tmp/panopticon-selection-${{ github.run_id }}-${{ github.run_attempt }}
+          --synthetic-fixture
       - name: Scan text artifacts for credential signatures
         run: |
           python -c "from pathlib import Path; from tools.training_preflight import scan_secrets; findings=scan_secrets(Path('.').resolve()); assert not findings, findings"

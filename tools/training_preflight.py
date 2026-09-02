@@ -17,6 +17,9 @@ if str(ROOT) not in sys.path:
 
 from research_repro import (  # noqa: E402
     ReproducibilityError,
+    HELDOUT_AUTHORIZED_STATUSES,
+    SELECTION_CANDIDATE_STATUS,
+    assert_research_stage_authorized,
     compute_run_fingerprint,
     git_metadata,
     package_versions,
@@ -143,8 +146,13 @@ def perform_preflight(spec_path: str | Path, *, allow_cpu_smoke: bool = False, r
         if not torch.cuda.is_bf16_supported() or gpu.get("bf16_supported") is not True:
             raise ReproducibilityError("canonical BF16 precision is not supported by this GPU")
     tests = run_validation_commands(spec) if run_tests else []
-    selection_authorized = spec.get("status") == "frozen-selected-canonical"
-    if gpu["cuda_available"] and run_tests and selection_authorized:
+    heldout_authorized = spec.get("status") in HELDOUT_AUTHORIZED_STATUSES
+    selection_candidate = spec.get("status") == SELECTION_CANDIDATE_STATUS
+    training_authorized = heldout_authorized
+    if selection_candidate:
+        assert_research_stage_authorized(spec, operation="training")
+        training_authorized = True
+    if gpu["cuda_available"] and run_tests and training_authorized:
         probe_environment = dict(os.environ)
         probe_environment.update(spec["runtime"].get("deterministic_environment", {}))
         process = subprocess.run(
@@ -172,10 +180,12 @@ def perform_preflight(spec_path: str | Path, *, allow_cpu_smoke: bool = False, r
             "report": probe_report,
         })
     cpu_smoke_only = bool(allow_cpu_smoke and not gpu["cuda_available"])
-    canonical_pass = bool(run_tests and not cpu_smoke_only and selection_authorized)
+    training_pass = bool(run_tests and not cpu_smoke_only and training_authorized)
+    canonical_pass = bool(training_pass and heldout_authorized)
     return {
-        "passed": canonical_pass,
-        "diagnostic_only": not canonical_pass,
+        "passed": training_pass,
+        "diagnostic_only": not training_pass,
+        "canonical_passed": canonical_pass,
         "spec_path": str(resolved_spec),
         "spec_sha256": spec_sha256(spec),
         "source_commit": git["commit"],
@@ -186,7 +196,9 @@ def perform_preflight(spec_path: str | Path, *, allow_cpu_smoke: bool = False, r
         "seed_separation": seed_separation,
         "validations": tests,
         "cpu_smoke_only": cpu_smoke_only,
-        "experiment_authorized": selection_authorized,
+        "experiment_authorized": training_authorized,
+        "selection_candidate_authorized": selection_candidate and training_authorized,
+        "heldout_authorized": heldout_authorized,
         "authorization_status": spec.get("status"),
         "deterministic_environment": spec["runtime"].get("deterministic_environment", {}),
     }

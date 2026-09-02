@@ -6,6 +6,7 @@ preflight can explain a broken ML environment instead of failing to import it.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -134,6 +135,96 @@ SEED_NAMESPACES = {
 }
 
 HELDOUT_AUTHORIZED_STATUSES = {"frozen-selected-canonical"}
+SELECTION_CANDIDATE_STATUS = "development-selection-candidate"
+SELECTION_PROTOCOL_PATH = REPO_ROOT / "training_specs" / "model_selection_v1.json"
+
+
+def _selection_protocol() -> dict[str, Any]:
+    try:
+        protocol = json.loads(SELECTION_PROTOCOL_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReproducibilityError(f"Committed model-selection protocol is unreadable: {exc}") from exc
+    return protocol
+
+
+def expected_selection_candidate_spec(
+    candidate_id: str, round_id: str, optimization_seed: int,
+) -> dict[str, Any]:
+    """Mechanically derive one development-only spec from the committed protocol."""
+    protocol = _selection_protocol()
+    baseline_path = (REPO_ROOT / str(protocol.get("baseline_spec", ""))).resolve()
+    try:
+        baseline_path.relative_to(REPO_ROOT)
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise ReproducibilityError("Model-selection baseline path is invalid or unreadable") from exc
+    candidate = next((row for row in protocol.get("candidates", []) if row.get("id") == candidate_id), None)
+    round_ = next((row for row in protocol.get("rounds", []) if row.get("id") == round_id), None)
+    if candidate is None or round_ is None:
+        raise ReproducibilityError("Selection candidate or round is not preregistered")
+    if int(optimization_seed) not in [int(value) for value in round_.get("optimization_seeds", [])]:
+        raise ReproducibilityError("Optimization seed is not preregistered for this selection round")
+    spec = copy.deepcopy(baseline)
+    spec["experiment_id"] = (
+        f"{protocol['protocol_id']}-{round_id}-{candidate_id}-seed{int(optimization_seed)}"
+    )
+    spec["status"] = SELECTION_CANDIDATE_STATUS
+    spec["trajectory"]["episodes_per_level"] = int(round_["expert_episodes_per_level"])
+    spec["trajectory"]["training_seed"] = int(protocol["fixed"]["training_data_seed"])
+    spec["training"].update({
+        "learning_rate": candidate["learning_rate"],
+        "lora_r": candidate["lora_r"],
+        "lora_alpha": candidate["lora_alpha"],
+        "lora_dropout": candidate["lora_dropout"],
+        "epochs": candidate["epochs"],
+        "optimization_seed_by_level": {
+            level: int(optimization_seed) + index
+            for index, level in enumerate(spec["trajectory"]["levels"], start=1)
+        },
+    })
+    spec["evaluation"]["development_seed"] = int(protocol["fixed"]["development_seed"])
+    spec["evaluation"]["episodes_per_level"] = int(round_["development_episodes_per_level"])
+    spec["selection_identity"] = {
+        "protocol_id": protocol["protocol_id"],
+        "round_id": round_id,
+        "candidate_id": candidate_id,
+        "optimization_seed": int(optimization_seed),
+        "protocol_sha256": sha256_file(SELECTION_PROTOCOL_PATH),
+        "allowed_namespaces": list(protocol["allowed_namespaces"]),
+        "forbidden_namespaces": list(protocol["forbidden_namespaces"]),
+    }
+    return spec
+
+
+def validate_selection_candidate_spec(
+    spec: dict[str, Any], *, require_compute_authorized: bool = True,
+) -> dict[str, Any]:
+    """Reject contributor-edited selection specs and unauthorized campaign execution."""
+    if spec.get("status") != SELECTION_CANDIDATE_STATUS:
+        raise ReproducibilityError("Spec is not a development selection candidate")
+    identity = spec.get("selection_identity")
+    if not isinstance(identity, dict):
+        raise ReproducibilityError("Selection candidate lacks a campaign identity")
+    protocol = _selection_protocol()
+    required_status = protocol.get("orchestration", {}).get("real_execution_requires_status")
+    if require_compute_authorized and protocol.get("status") != required_status:
+        raise ReproducibilityError(
+            "development model-selection compute is not authorized by the committed protocol"
+        )
+    try:
+        optimization_seed = int(identity.get("optimization_seed", -1))
+    except (TypeError, ValueError) as exc:
+        raise ReproducibilityError("Selection candidate optimization seed is invalid") from exc
+    expected = expected_selection_candidate_spec(
+        str(identity.get("candidate_id")),
+        str(identity.get("round_id")),
+        optimization_seed,
+    )
+    if canonical_json(spec) != canonical_json(expected):
+        raise ReproducibilityError(
+            "selection candidate differs from the mechanically derived committed protocol"
+        )
+    return identity
 
 
 def assert_research_stage_authorized(
@@ -141,12 +232,17 @@ def assert_research_stage_authorized(
 ) -> None:
     """Keep provisional methods away from training and sealed held-out splits."""
     status = str(spec.get("status", "missing"))
-    if operation == "training" and status not in HELDOUT_AUTHORIZED_STATUSES:
-        raise ReproducibilityError(
-            "training is not authorized for this provisional specification; complete the "
-            "development-only model-selection protocol, review a versioned selected spec, "
-            "and set status=frozen-selected-canonical before spending GPU time"
-        )
+    if operation == "training":
+        if status == SELECTION_CANDIDATE_STATUS:
+            validate_selection_candidate_spec(spec, require_compute_authorized=True)
+        elif status not in HELDOUT_AUTHORIZED_STATUSES:
+            raise ReproducibilityError(
+                "training is not authorized for this provisional specification; authorize and use "
+                "the committed development-only selection orchestrator, or review and freeze a "
+                "versioned selected spec before canonical training"
+            )
+    if operation == "evaluation" and evaluation_split == "development" and status == SELECTION_CANDIDATE_STATUS:
+        validate_selection_candidate_spec(spec, require_compute_authorized=True)
     if operation == "evaluation" and evaluation_split in {"canonical", "confirmation"}:
         if status not in HELDOUT_AUTHORIZED_STATUSES:
             raise ReproducibilityError(

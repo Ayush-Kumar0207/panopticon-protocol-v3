@@ -21,7 +21,10 @@
     "warmup_ratio": 0.03,
     "weight_decay": 0.0,
     "max_grad_norm": 1.0,
-    "expert_policy": "security-first"
+    "expert_policy": "security-first",
+    "training_data_seed": 42,
+    "development_seed": 41,
+    "optimization_seed_by_level_rule": "optimization_seed + one_based_level_index"
   },
   "factors": {
     "learning_rate": [0.00001, 0.00002],
@@ -47,6 +50,21 @@
     {"id": "r2", "input_candidates": 3, "advance": 2, "optimization_seeds": [4200, 5200], "expert_episodes_per_level": 30, "development_episodes_per_level": 10},
     {"id": "r3", "input_candidates": 2, "advance": 1, "optimization_seeds": [4200, 5200, 6200], "expert_episodes_per_level": 50, "development_episodes_per_level": 20}
   ],
+  "multi_seed_aggregation": {
+    "eligibility": "every optimization-seed run must independently pass every eligibility gate",
+    "minimum_level_mean_grade": "minimum level mean grade across every level and every optimization-seed run",
+    "macro_mean_grade": "arithmetic mean of the per-run macro mean grades across all registered optimization seeds",
+    "registered_training_budget": "sum of expert_episodes_per_level * epochs * number_of_levels across all registered optimization seeds",
+    "seed_shopping_prohibited": true,
+    "paired_development_design": "within a round, every candidate and optimization-seed run uses the identical development seed plan",
+    "uncertainty_aware_ranking": {
+      "field": "macro_mean_grade_bootstrap_ci95_low",
+      "method": "stratified paired bootstrap over identical optimization-seed, level, and development-episode positions",
+      "samples": 5000,
+      "seed": 5785238022979748179
+    },
+    "missing_seed_policy": "ineligible-stop"
+  },
   "eligibility": {
     "all_security_regression_tests_pass": true,
     "all_development_episodes_complete": true,
@@ -57,18 +75,38 @@
   },
   "ranking": [
     {"metric": "minimum_level_mean_grade", "direction": "descending"},
+    {"metric": "macro_mean_grade_bootstrap_ci95_low", "direction": "descending"},
     {"metric": "macro_mean_grade", "direction": "descending"},
-    {"metric": "lower_training_tokens", "direction": "ascending"},
+    {"metric": "registered_training_budget", "direction": "ascending"},
     {"metric": "candidate_id", "direction": "ascending"}
   ],
   "tie_breaking": "Apply ranking fields in listed order to exact unrounded values; candidate_id is the final deterministic tie-break.",
   "finalization": {
     "required_new_spec": "training_specs/security_first_v6_selected.json",
     "required_status": "frozen-selected-canonical",
+    "proposal_status": "proposed-selected-review-required",
+    "final_refit": {
+      "optimization_seed": 7200,
+      "optimization_seed_by_level_rule": "7200 + one_based_level_index",
+      "training_data_seed": 42,
+      "expert_episodes_per_level": 50,
+      "development_episodes_per_level": 20,
+      "reason": "A fresh preregistered seed is used for the selected configuration; no favorable search seed may become the final model."
+    },
     "requirements": [
       "record every candidate, seed, eligibility outcome, raw development artifact identity, and survivor decision",
       "review and commit the selected spec before any canonical or confirmation evaluation",
       "never use canonical or confirmation outcomes for selection or reranking"
     ]
+  },
+  "orchestration": {
+    "entrypoint": "tools/run_model_selection.py",
+    "real_execution_requires_status": "preregistered-development-compute-authorized",
+    "selection_candidate_status": "development-selection-candidate",
+    "campaign_lock": "campaign_lock.json",
+    "resume_state": "campaign_state.json",
+    "decision": "selection_decision.json",
+    "proposed_spec": "security_first_v6_selected.json",
+    "synthetic_fixture_is_never_evidence": true
   }
 }

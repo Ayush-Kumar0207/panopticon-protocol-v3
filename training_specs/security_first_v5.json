@@ -118,6 +118,7 @@
     "tools/gpu_training_probe.py",
     "tools/install_canonical_training_env.py",
     "tools/verify_training_artifacts.py",
+    "tools/run_model_selection.py",
     "tools/build_submission_bundle.py",
     "tools/freeze_model_artifact.py",
     "requirements-training.txt",
@@ -143,6 +144,7 @@
     "tools/build_submission_bundle.py",
     "tools/freeze_model_artifact.py",
     "tools/validate_model_selection.py",
+    "tools/run_model_selection.py",
     "requirements-training.txt"
   ],
   "preflight_commands": [

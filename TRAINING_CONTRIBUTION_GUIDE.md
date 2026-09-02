@@ -7,8 +7,28 @@ negative results are welcome; benchmark scores must never be selected or edited.
 > **Current stop condition:** `security_first_v5.json` is a provisional
 > fixed-method baseline and `model_selection_v1.json` says compute is not
 > authorized. Do not start an expensive run from this branch. The commands below
-> become valid only after development-only selection produces a reviewed new spec
-> with `status: frozen-selected-canonical`.
+> become valid only after an explicit reviewed compute-authorization commit,
+> development-only selection, and a reviewed new spec with
+> `status: frozen-selected-canonical`.
+
+## Development-only selection (only after explicit authorization)
+
+The current committed protocol intentionally makes this real command stop before
+training. After maintainers explicitly authorize development compute in the
+version-controlled protocol, contributors use one unchanged command:
+
+```bash
+python tools/run_model_selection.py \
+  --campaign-dir /persistent/path/panopticon-development-selection
+```
+
+The runner derives the exact 8→3→2→1 candidates, per-round data budgets,
+optimization seeds and per-level seed mapping, shared development episode plans,
+security gates, multi-seed aggregation, ranking, resume identities, and survivor
+decisions. It can train only mechanically derived
+`development-selection-candidate` specs. Those specs cannot open canonical or
+confirmation. The output V6 spec is proposal-only and uses the preregistered fresh
+final-refit seed; a reviewer must commit and freeze it before held-out access.
 
 ## Choose the contribution type
 
@@ -109,7 +129,8 @@ canonical and maps every recoverable failure to the current fail-closed safeguar
 Read [`TRAINING_METHODOLOGY.md`](TRAINING_METHODOLOGY.md) for the experimental
 claim, unit of analysis, paired statistics, evaluation isolation, and limitations.
 Read [`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md) for the bounded
-search, hard eligibility gates, and the rule that held-out data stays sealed.
+search, mechanical runner, multi-seed no-shopping rule, hard eligibility gates,
+and the rule that held-out data stays sealed.
 
 ## Held-out data rule
 

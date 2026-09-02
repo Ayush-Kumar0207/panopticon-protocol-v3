@@ -621,6 +621,9 @@ V5 is provisional and not claimed optimal. Expensive compute is currently
 unauthorized; the bounded development-only search is in
 [`MODEL_SELECTION_PROTOCOL.md`](MODEL_SELECTION_PROTOCOL.md), and code seals
 canonical/confirmation until a reviewed selected spec is frozen.
+`tools/run_model_selection.py` mechanically derives and resumes every registered
+candidate/seed when a future commit authorizes development compute; today it
+fails closed, while `--synthetic-fixture` tests orchestration as non-evidence.
 `python tools/run_canonical_experiment.py --help` is the single entry point for
 preflight, locked/resumable training, matched evaluation, confirmation, and
 artifact verification; `tools/build_submission_bundle.py` creates the final

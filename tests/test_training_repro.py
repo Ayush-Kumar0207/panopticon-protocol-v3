@@ -22,9 +22,15 @@ from research_repro import (
     sha256_file,
     spec_sha256,
     training_seed_plan,
+    validate_selection_candidate_spec,
     verify_seed_separation,
 )
 from tools.validate_model_selection import validate as validate_model_selection
+from tools.run_model_selection import (
+    aggregate_candidate as aggregate_selection_candidate,
+    candidate_spec as selection_candidate_spec,
+    orchestrate as run_selection_campaign,
+)
 from tools.build_submission_bundle import build_bundle
 from tools.freeze_model_artifact import create_or_verify_model_manifest
 from full_evaluation import write_evidence_blob
@@ -98,6 +104,85 @@ def test_model_selection_design_is_exact_and_bounded():
     assert len(selection["candidates"]) == 8
     assert sum(len(round_["optimization_seeds"]) for round_ in selection["rounds"]) == 6
     assert selection["forbidden_namespaces"] == ["canonical", "confirmation"]
+    assert selection["multi_seed_aggregation"]["seed_shopping_prohibited"] is True
+    assert selection["finalization"]["final_refit"]["optimization_seed"] == 7200
+
+
+def test_selection_candidate_is_mechanical_but_compute_stays_unauthorized():
+    candidate = selection_candidate_spec("c02", "r2", 5200)
+    identity = validate_selection_candidate_spec(candidate, require_compute_authorized=False)
+    assert identity["candidate_id"] == "c02"
+    assert candidate["status"] == "development-selection-candidate"
+    assert candidate["training"]["optimization_seed_by_level"] == {
+        "easy": 5201, "medium": 5202, "hard": 5203, "level_4": 5204, "level_5": 5205,
+    }
+    altered = json.loads(json.dumps(candidate))
+    altered["training"]["learning_rate"] = 0.123
+    with pytest.raises(ReproducibilityError, match="mechanically derived"):
+        validate_selection_candidate_spec(altered, require_compute_authorized=False)
+    with pytest.raises(ReproducibilityError, match="compute is not authorized"):
+        assert_research_stage_authorized(candidate, operation="training")
+    for split in ("canonical", "confirmation"):
+        with pytest.raises(ReproducibilityError, match="is sealed"):
+            assert_research_stage_authorized(candidate, operation="evaluation", evaluation_split=split)
+
+
+def test_selection_aggregation_uses_every_seed_without_seed_shopping():
+    protocol = json.loads(Path("training_specs/model_selection_v1.json").read_text(encoding="utf-8"))
+    candidate = next(row for row in protocol["candidates"] if row["id"] == "c02")
+    round_ = protocol["rounds"][1]
+    records = []
+    for seed, grade in ((4200, 0.99), (5200, 0.51)):
+        records.append({
+            "optimization_seed": seed,
+            "metrics": {
+                "eligible": True,
+                "minimum_level_mean_grade": grade,
+                "macro_mean_grade": grade,
+                "grade_scores_by_level": {
+                    level: [grade] * round_["development_episodes_per_level"]
+                    for level in ("easy", "medium", "hard", "level_4", "level_5")
+                },
+                "registered_training_budget": 10,
+            },
+            "evidence": {"seed": seed},
+        })
+    aggregate = aggregate_selection_candidate(
+        candidate, records, round_, protocol["multi_seed_aggregation"],
+    )
+    assert aggregate["minimum_level_mean_grade"] == 0.51
+    assert aggregate["macro_mean_grade"] == pytest.approx(0.75)
+    assert 0.51 <= aggregate["macro_mean_grade_bootstrap_ci95_low"] <= 0.99
+    assert aggregate["registered_training_budget"] == 20
+
+
+def test_selection_orchestrator_is_deterministic_resumable_and_proposal_only(tmp_path):
+    campaign = tmp_path / "panopticon-selection-fixture"
+    first = run_selection_campaign(campaign, synthetic_fixture=True)
+    second = run_selection_campaign(campaign, synthetic_fixture=True)
+    assert first == second
+    assert first["status"] == "synthetic-fixture-complete"
+    assert first["heldout_namespaces_used"] is False
+    assert "c01" not in first["rounds"][0]["advanced"]
+    proposal = json.loads((campaign / "security_first_v6_selected.json").read_text(encoding="utf-8"))
+    assert proposal["status"] == "synthetic-fixture-not-evidence"
+    assert proposal["selection_evidence"]["review_and_commit_required_before_frozen_status"] is True
+    assert proposal["selection_evidence"]["final_refit_optimization_seed"] == 7200
+    assert "training_specs/security_first_v6_selected.json" in proposal["required_source_files"]
+    assert "training_specs/security_first_v5.json" not in proposal["required_source_files"]
+
+
+def test_selection_orchestrator_rejects_changed_resume_identity_and_real_compute(tmp_path):
+    campaign = tmp_path / "panopticon-selection-tamper"
+    run_selection_campaign(campaign, synthetic_fixture=True)
+    state_path = campaign / "campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["campaign_fingerprint"] = "altered"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    with pytest.raises(ReproducibilityError, match="another source/protocol identity"):
+        run_selection_campaign(campaign, synthetic_fixture=True)
+    with pytest.raises(ReproducibilityError, match="compute is not authorized"):
+        run_selection_campaign(tmp_path / "panopticon-real-forbidden")
 
 
 @pytest.mark.parametrize("field,new_value", [
