@@ -31,6 +31,7 @@
 
 The frozen development/model-selection protocol is authorized for independent
 external execution. [Claim a Panopticon compute run](https://github.com/Ayush-Kumar0207/panopticon-protocol-v3/issues/1)
+· [Start with contributor onboarding](CONTRIBUTOR_ONBOARDING.md)
 · [Read the contributor guide](TRAINING_CONTRIBUTION_GUIDE.md)
 · [Read the frozen protocol](MODEL_SELECTION_PROTOCOL.md)
 
