@@ -499,3 +499,317 @@ def test_self_consistent_wrong_size_rejected(tmp_path):
         value, expected, root
     )
     assert result["reason"] == "synthetic_file_size_mismatch"
+
+
+
+# Synthetic row-mapping correspondence tests.
+import json
+
+from research_paper.stage1_state_coverage.synthetic_mapping import (
+    LEDGER_VERSION,
+    ROW_MAP_VERSION,
+    verify_synthetic_row_mapping,
+)
+
+
+def _write_row_document(root, value, expected, kind, rows=None, raw=None):
+    fields = {
+        "mapping_file": (
+            ROW_MAP_VERSION,
+            "mapping_file_sha256",
+            "mapping_file_bytes",
+        ),
+        "independent_evidence": (
+            LEDGER_VERSION,
+            "mapping_evidence_sha256",
+            "mapping_evidence_bytes",
+        ),
+    }
+    version, hash_field, size_field = fields[kind]
+
+    if raw is None:
+        raw = json.dumps(
+            {
+                "schema_version": version,
+                "synthetic": True,
+                "rows": rows,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8") + b"\n"
+
+    entry = value["mapping"][kind]
+    (root / entry["path"]).write_bytes(raw)
+
+    digest = hashlib.sha256(raw).hexdigest()
+    entry["sha256"] = digest
+    entry["bytes"] = len(raw)
+
+    expected[hash_field] = digest
+    expected[size_field] = len(raw)
+
+
+def _mapped_tree(tmp_path):
+    root, value, expected = synthetic_tree(tmp_path)
+
+    # Six persisted row occurrences, including weighted duplicates.
+    identities = [
+        ("episode-a", 11, "easy"),
+        ("episode-a", 11, "easy"),
+        ("episode-a", 11, "easy"),
+        ("episode-b", 12, "easy"),
+        ("episode-b", 12, "easy"),
+        ("episode-c", 13, "level_4"),
+    ]
+
+    row_digest = hashlib.sha256(
+        b'{"text":"synthetic"}'
+    ).hexdigest()
+
+    rows = [
+        {
+            "dataset_path": "training/synthetic.jsonl",
+            "row_index": index,
+            "row_sha256": row_digest,
+            "episode_id": episode,
+            "seed": seed,
+            "level": level,
+            "turn": 0,
+        }
+        for index, (episode, seed, level)
+        in enumerate(identities)
+    ]
+
+    mapping_rows = [dict(row) for row in rows]
+    ledger_rows = [dict(row) for row in rows]
+
+    value["mapping"]["episode_groups"] = 3
+    expected["episode_groups"] = 3
+
+    _write_row_document(
+        root, value, expected, "mapping_file", mapping_rows
+    )
+    _write_row_document(
+        root, value, expected, "independent_evidence", ledger_rows
+    )
+
+    return root, value, expected, mapping_rows, ledger_rows
+
+
+def test_mapping_occurrences_remain_unverified(tmp_path):
+    root, value, expected, _, _ = _mapped_tree(tmp_path)
+
+    assert verify_synthetic_row_mapping(
+        value, expected, root
+    ) == {
+        "status": "unverified",
+        "reason": (
+            "synthetic_rows_correspond_but_"
+            "independence_not_authenticated"
+        ),
+        "checked_row_occurrences": 6,
+        "declared_episode_seed_groups": 3,
+        "weighted_duplicate_occurrences": 3,
+    }
+
+
+def test_mapping_missing_persisted_row_rejected(tmp_path):
+    root, value, expected, rows, _ = _mapped_tree(tmp_path)
+    rows.pop()
+
+    _write_row_document(
+        root, value, expected, "mapping_file", rows
+    )
+
+    result = verify_synthetic_row_mapping(
+        value, expected, root
+    )
+    assert result["reason"] == "map_incomplete_row_coverage"
+
+
+def test_mapping_duplicate_row_index_rejected(tmp_path):
+    root, value, expected, rows, _ = _mapped_tree(tmp_path)
+    rows.append(dict(rows[0]))
+
+    _write_row_document(
+        root, value, expected, "mapping_file", rows
+    )
+
+    result = verify_synthetic_row_mapping(
+        value, expected, root
+    )
+    assert result["reason"] == "map_duplicate_row_index"
+
+
+@pytest.mark.parametrize("field,wrong,reason", [
+    ("row_index", 99, "map_unknown_dataset_row"),
+    ("row_sha256", "f" * 64, "map_row_hash_mismatch"),
+    ("level", "unsupported", "invalid_synthetic_row_map"),
+    ("episode_id", "", "invalid_synthetic_row_map"),
+])
+def test_mapping_invalid_row_rejected(
+    tmp_path, field, wrong, reason
+):
+    root, value, expected, rows, _ = _mapped_tree(tmp_path)
+    rows[0][field] = wrong
+
+    _write_row_document(
+        root, value, expected, "mapping_file", rows
+    )
+
+    result = verify_synthetic_row_mapping(
+        value, expected, root
+    )
+    assert result["reason"] == reason
+
+
+def test_mapping_contradictory_episode_seed_rejected(tmp_path):
+    root, value, expected, rows, _ = _mapped_tree(tmp_path)
+    rows[1]["seed"] = 999
+
+    _write_row_document(
+        root, value, expected, "mapping_file", rows
+    )
+
+    result = verify_synthetic_row_mapping(
+        value, expected, root
+    )
+    assert result["reason"] == "map_contradictory_episode_identity"
+
+
+def test_mapping_same_seed_assigned_two_episodes_rejected(tmp_path):
+    root, value, expected, rows, _ = _mapped_tree(tmp_path)
+
+    rows[5]["seed"] = 11
+    rows[5]["level"] = "easy"
+
+    _write_row_document(
+        root, value, expected, "mapping_file", rows
+    )
+
+    result = verify_synthetic_row_mapping(
+        value, expected, root
+    )
+    assert result["reason"] == "map_contradictory_seed_episode"
+
+
+def test_mapping_ledger_disagreement_rejected(tmp_path):
+    root, value, expected, _, ledger = _mapped_tree(tmp_path)
+
+    for row in ledger[:3]:
+        row["episode_id"] = "episode-alternative"
+
+    _write_row_document(
+        root, value, expected, "independent_evidence", ledger
+    )
+
+    result = verify_synthetic_row_mapping(
+        value, expected, root
+    )
+    assert result["reason"] == "synthetic_ledger_disagreement"
+
+
+def test_mapping_incomplete_ledger_rejected(tmp_path):
+    root, value, expected, _, ledger = _mapped_tree(tmp_path)
+    ledger.pop()
+
+    _write_row_document(
+        root, value, expected, "independent_evidence", ledger
+    )
+
+    result = verify_synthetic_row_mapping(
+        value, expected, root
+    )
+    assert result["reason"] == "ledger_incomplete_row_coverage"
+
+
+def test_mapping_episode_group_count_checked(tmp_path):
+    root, value, expected, _, _ = _mapped_tree(tmp_path)
+
+    value["mapping"]["episode_groups"] = 4
+    expected["episode_groups"] = 4
+
+    result = verify_synthetic_row_mapping(
+        value, expected, root
+    )
+    assert result["reason"] == "synthetic_episode_group_mismatch"
+
+
+def test_mapping_conflicting_weighted_duplicate_rejected(tmp_path):
+    root, value, expected, rows, _ = _mapped_tree(tmp_path)
+
+    dataset = root / "training/synthetic.jsonl"
+    lines = dataset.read_bytes().splitlines()
+    lines[1] = b'{"text":"different"}'
+
+    content = b"\n".join(lines) + b"\n"
+    dataset.write_bytes(content)
+
+    entry = value["dataset_files"][0]
+    entry["sha256"] = hashlib.sha256(content).hexdigest()
+    entry["bytes"] = len(content)
+
+    expected["dataset_sha256_by_path"][
+        entry["path"]
+    ] = entry["sha256"]
+    expected["dataset_bytes_by_path"][
+        entry["path"]
+    ] = len(content)
+
+    rows[1]["row_sha256"] = hashlib.sha256(
+        lines[1]
+    ).hexdigest()
+
+    _write_row_document(
+        root, value, expected, "mapping_file", rows
+    )
+
+    result = verify_synthetic_row_mapping(
+        value, expected, root
+    )
+    assert result["reason"] == "map_contradictory_duplicate_turn"
+
+
+def test_mapping_duplicate_json_keys_rejected(tmp_path):
+    root, value, expected, _, _ = _mapped_tree(tmp_path)
+
+    raw = (
+        b'{"schema_version":'
+        b'"panopticon-stage1-synthetic-row-map-v1",'
+        b'"synthetic":true,"synthetic":true,"rows":[]}'
+    )
+
+    _write_row_document(
+        root, value, expected, "mapping_file", raw=raw
+    )
+
+    result = verify_synthetic_row_mapping(
+        value, expected, root
+    )
+    assert result["reason"] == "invalid_synthetic_row_map"
+
+
+def test_mapping_real_data_remains_unavailable(tmp_path):
+    root, value, expected, _, _ = _mapped_tree(tmp_path)
+    value["synthetic"] = False
+
+    result = verify_synthetic_row_mapping(
+        value, expected, root / "nonexistent"
+    )
+    assert result == {
+        "status": "unavailable",
+        "reason": "real_requires_integrated_gate",
+    }
+
+
+def test_mapping_identity_mismatch_precedes_io(tmp_path):
+    root, value, expected, _, _ = _mapped_tree(tmp_path)
+    expected["checkpoint_sha256"] = "9" * 64
+
+    result = verify_synthetic_row_mapping(
+        value, expected, root / "nonexistent"
+    )
+    assert result == {
+        "status": "rejected",
+        "reasons": ["checkpoint_sha256_mismatch"],
+    }
