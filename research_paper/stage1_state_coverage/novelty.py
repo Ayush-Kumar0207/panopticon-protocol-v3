@@ -1,69 +1,175 @@
-﻿import numpy as np
+﻿"""Synthetic Stage 1 novelty scoring and episode-held-out calibration.
+
+This module assumes upstream, versioned observation features have ALREADY been
+extracted with a fixed, reviewed feature schema. It never reads real artifacts.
+"""
+
+from collections import defaultdict
+from statistics import median
+import math
+
+import numpy as np
+
+
+def _feature_schema(features: dict) -> dict[str, str] | None:
+    if not isinstance(features, dict) or not features:
+        return None
+    schema = {}
+    for name, value in features.items():
+        if not isinstance(name, str) or not name:
+            return None
+        if type(value) in (int, float) and math.isfinite(value):
+            schema[name] = "numeric"
+        elif type(value) in (str, bool):
+            schema[name] = "categorical"
+        else:
+            return None
+    return schema
+
 
 def fit_reference_scaler(expert_features: list[dict]) -> dict:
-    """Fit median and IQR on the reference set for numeric standardization."""
-    scaler = {}
+    """Fit robust numeric scaling using expert-reference features only."""
     if not expert_features:
-        return scaler
-        
-    keys = expert_features[0].keys()
-    for key in keys:
-        vals = [f[key] for f in expert_features if isinstance(f.get(key), (int, float)) and not isinstance(f.get(key), bool)]
-        if vals:
+        return {}
+    schema = _feature_schema(expert_features[0])
+    if schema is None or any(_feature_schema(f) != schema for f in expert_features):
+        raise ValueError("expert reference has missing or inconsistent features")
+    scaler = {}
+    for name, kind in schema.items():
+        if kind == "numeric":
+            vals = [float(f[name]) for f in expert_features]
             iqr = float(np.percentile(vals, 75) - np.percentile(vals, 25))
-            # Guide specifies robust fallback when IQR == 0
-            if iqr == 0.0:
-                iqr = 1.0 
-                
-            scaler[key] = {
+            scaler[name] = {
                 "median": float(np.median(vals)),
-                "iqr": iqr
+                "iqr": iqr if iqr > 0 else 1.0,
             }
     return scaler
 
-def calculate_distance(query_features: dict, ref_features: dict, scaler: dict) -> float:
-    """Mixed-type Gower-style average distance with clipped standardized numeric differences."""
-    distances = []
-    for key, val in query_features.items():
-        ref_val = ref_features.get(key)
-        if ref_val is None:
-            continue
-            
-        if isinstance(val, (int, float)) and not isinstance(val, bool):
-            median = scaler.get(key, {}).get("median", 0.0)
-            iqr = scaler.get(key, {}).get("iqr", 1.0)
-            
-            std_diff = (val - ref_val) / iqr
-            clipped = max(-5.0, min(5.0, std_diff))
-            distances.append(abs(clipped))
-        else:
-            # Categorical: 0 if equal, 1 if unequal
-            distances.append(0.0 if val == ref_val else 1.0)
-            
-    return sum(distances) / len(distances) if distances else 0.0
 
-def score_learner_novelty(learner_features: dict, reference_episodes: list[dict], query_episode_id: str, k: int = 5) -> dict:
-    """Score novelty against k nearest neighbors, excluding the query's own episode."""
-    # Filter out the query episode to ensure no self-neighbors
-    eligible_refs = [r for r in reference_episodes if r.get("episode_id") != query_episode_id]
-    
-    # Require at least k eligible neighbors
-    if len(eligible_refs) < k:
-        return {"status": "unavailable", "reason": "insufficient_reference_episodes"}
-        
-    scaler = fit_reference_scaler([r["features"] for r in eligible_refs])
-    
+def calculate_distance(query_features: dict, ref_features: dict, scaler: dict) -> float | None:
+    """Return mixed numeric/categorical distance, or None if incomparable."""
+    schema = _feature_schema(query_features)
+    if schema is None or _feature_schema(ref_features) != schema:
+        return None
     distances = []
-    for ref in eligible_refs:
-        dist = calculate_distance(learner_features, ref["features"], scaler)
-        distances.append(dist)
-        
-    distances.sort()
-    nearest = distances[:k]
-    score = sum(nearest) / k
-    
+    for name, kind in schema.items():
+        if kind == "numeric":
+            if name not in scaler or scaler[name]["iqr"] <= 0:
+                return None
+            delta = (float(query_features[name]) - float(ref_features[name])) / scaler[name]["iqr"]
+            distances.append(min(5.0, abs(delta)))
+        else:
+            distances.append(float(query_features[name] != ref_features[name]))
+    return sum(distances) / len(distances) if distances else None
+
+
+def _episode_key(row: dict) -> tuple | None:
+    episode_id = row.get("episode_id")
+    if not isinstance(episode_id, str) or not episode_id:
+        return None
+    if "seed" in row:
+        seed = row["seed"]
+        level = row.get("level")
+        if type(seed) is not int or not isinstance(level, str) or not level:
+            return None
+        return ("seed", level, seed)
+    return ("episode_id", episode_id)  # synthetic fixtures without seed
+
+
+def _group_references(reference_episodes: list[dict], expected_level: str | None):
+    groups = defaultdict(list)
+    for row in reference_episodes:
+        if not isinstance(row, dict):
+            return None
+        if expected_level is not None and row.get("level") != expected_level:
+            continue
+        key = _episode_key(row)
+        if key is None or _feature_schema(row.get("features")) is None:
+            return None
+        groups[key].append(row)
+    return groups
+
+
+def score_learner_novelty(
+    learner_features: dict,
+    reference_episodes: list[dict],
+    query_episode_id: str,
+    k: int = 5,
+    *,
+    expected_level: str | None = None,
+) -> dict:
+    """Average the closest observation from each of k distinct expert episodes."""
+    schema = _feature_schema(learner_features)
+    if schema is None:
+        return {"status": "unavailable", "reason": "invalid_query_features"}
+    if type(k) is not int or k < 1:
+        return {"status": "unavailable", "reason": "invalid_k"}
+    if not isinstance(reference_episodes, list):
+        return {"status": "unavailable", "reason": "invalid_reference"}
+    groups = _group_references(reference_episodes, expected_level)
+    if groups is None:
+        return {"status": "unavailable", "reason": "invalid_reference"}
+    groups = {
+        key: rows for key, rows in groups.items()
+        if all(row["episode_id"] != query_episode_id for row in rows)
+    }
+    if len(groups) < k:
+        return {"status": "unavailable", "reason": "insufficient_reference_episodes"}
+    refs = [r for rows in groups.values() for r in rows]
+    if any(_feature_schema(r["features"]) != schema for r in refs):
+        return {"status": "unavailable", "reason": "incomparable_features"}
+    scaler = fit_reference_scaler([r["features"] for r in refs])
+    per_episode = []
+    for rows in groups.values():
+        dists = [calculate_distance(learner_features, row["features"], scaler) for row in rows]
+        if any(d is None for d in dists):
+            return {"status": "unavailable", "reason": "incomparable_features"}
+        per_episode.append(min(dists))
+    nearest = sorted(per_episode)[:k]
     return {
         "status": "available",
-        "novelty_score": score,
-        "neighbors_used": k
+        "novelty_score": float(sum(nearest) / k),
+        "neighbors_used": k,
+        "independent_reference_episodes": len(groups),
+    }
+
+
+def calibrate_expert_threshold(
+    reference_episodes: list[dict],
+    *,
+    k: int = 5,
+    percentile: float = 95.0,
+    expected_level: str | None = None,
+) -> dict:
+    """Calibrate using leave-one-expert-episode/seed-out novelty scores.
+
+    Aggregate within an episode before taking a percentile so long episodes
+    do not contribute more independent calibration samples.
+    """
+    if not isinstance(reference_episodes, list) or not 0 < percentile < 100:
+        return {"status": "unavailable", "reason": "invalid_calibration_input"}
+    groups = _group_references(reference_episodes, expected_level)
+    if groups is None:
+        return {"status": "unavailable", "reason": "invalid_reference"}
+    if type(k) is not int or k < 1 or len(groups) < k + 1:
+        return {"status": "unavailable", "reason": "insufficient_calibration_episodes"}
+    episode_scores = []
+    for held_out_key, held_out_rows in groups.items():
+        training_refs = [r for group_key, rows in groups.items() if group_key != held_out_key for r in rows]
+        turn_scores = []
+        for held_out in held_out_rows:
+            result = score_learner_novelty(
+                held_out["features"], training_refs, held_out["episode_id"], k,
+                expected_level=expected_level,
+            )
+            if result["status"] != "available":
+                return {"status": "unavailable", "reason": f"calibration_{result['reason']}"}
+            turn_scores.append(result["novelty_score"])
+        episode_scores.append(float(median(turn_scores)))
+    return {
+        "status": "available",
+        "threshold": float(np.percentile(episode_scores, percentile)),
+        "percentile": float(percentile),
+        "calibration_episodes": len(episode_scores),
+        "held_out_episode_scores": episode_scores,
     }
