@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 from research_paper.stage1_state_coverage.validation import validate_episode_header, validate_episode_turns
 
 def test_seed_pairing_identity():
@@ -25,6 +25,8 @@ def test_synthetic_label_mandatory():
     # Verifies the required flag exists in the schema module
     from research_paper.stage1_state_coverage.schemas import TurnMetric
     metric = TurnMetric(
+        schema_version="panopticon-stage1-turn-metrics-v1",
+        synthetic=True,
         episode_id="ep1", level="level_4", turn=1, parse_success=True,
         raw_semantic_valid=True, executed_semantic_valid=True, intervention_applied=False
     )
