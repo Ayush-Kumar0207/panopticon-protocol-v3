@@ -519,3 +519,51 @@ def test_later_turn_is_not_silently_supported(tmp_path):
     assert _run(case)["reason"] == (
         "noninitial_turn_not_yet_supported"
     )
+
+
+def test_direct_formatter_generated_first_turn(tmp_path):
+    """Pin turn-zero parity to the actual checked-in formatter."""
+    import runpy
+
+    helpers = runpy.run_path(
+        str(
+            Path(__file__).with_name(
+                "test_stage1_feature_parity.py"
+            )
+        )
+    )
+
+    formatter, source_hash = helpers["load_formatter"]()
+    observation = helpers["synthetic_observation"]()
+    observation.turn = 0
+
+    generated = formatter["format_observation"](observation)
+    fixture = json.loads(
+        FEATURE_FIXTURE.read_text(encoding="utf-8")
+    )
+
+    assert (
+        source_hash
+        == fixture["formatter_functions_sha256"]
+    )
+
+    case = _case(tmp_path)
+
+    assert generated == case["persisted"]["text"]
+    assert (
+        observation.model_dump()
+        == case["current"]["observation_before"]
+    )
+
+    # Persist the directly generated text, then exercise the gate.
+    case["persisted"]["text"] = generated
+    _write_case(case)
+
+    result = _run(case)
+
+    assert result["status"] == "unverified"
+    assert result["reason"] == (
+        "synthetic_first_turn_checks_passed_"
+        "independence_unverified"
+    )
+    assert result["feature_count"] == 14
