@@ -1,4 +1,4 @@
-﻿"""Synthetic tests for observable-history expert labeling."""
+"""Synthetic tests for observable-history expert labeling."""
 
 import pytest
 
@@ -210,3 +210,22 @@ def test_illegal_expert_recommendation_is_rejected(monkeypatch):
             "level_4",
             [],
         )
+
+
+
+@pytest.mark.parametrize(
+    "level",
+    ["", "level_6", "amateur", None, 42],
+)
+def test_unsupported_task_level_is_unavailable(level):
+    with pytest.raises(OracleUnavailable, match="unsupported task level"):
+        label_learner_turn(make_observation(0), level, [])
+
+
+@pytest.mark.parametrize(
+    "level",
+    ["easy", "medium", "hard", "level_4", "level_5"],
+)
+def test_supported_task_level_can_be_labeled(level):
+    result = label_learner_turn(make_observation(0), level, [])
+    assert result == ("canary", "engineering", "none")

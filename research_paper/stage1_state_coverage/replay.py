@@ -1,4 +1,4 @@
-﻿
+
 """Observable learner-history replay for the Stage 1 expert oracle."""
 
 from copy import deepcopy
@@ -10,6 +10,9 @@ from security_policy import (
 )
 
 from .canonical import canonicalize_action
+
+
+SUPPORTED_LEVELS = frozenset({"easy", "medium", "hard", "level_4", "level_5"})
 
 
 class OracleUnavailable(Exception):
@@ -131,8 +134,8 @@ def label_learner_turn(
         "observation",
     )
 
-    if not isinstance(task_level, str) or not task_level:
-        raise OracleUnavailable("missing task level")
+    if type(task_level) is not str or task_level not in SUPPORTED_LEVELS:
+        raise OracleUnavailable("unsupported task level")
 
     current_turn = observation_before["turn"]
 
