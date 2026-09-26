@@ -161,3 +161,54 @@ def test_calibration_uses_same_episode_median():
         manual.append(result["episode_novelty_score"])
 
     assert calibration["held_out_episode_scores"] == pytest.approx(manual)
+
+
+
+@pytest.mark.parametrize("operation", ["turn", "calibration"])
+@pytest.mark.parametrize("mixed", [False, True])
+def test_levelled_references_require_explicit_level(
+    operation, mixed
+):
+    refs = [
+        reference(
+            i, i,
+            "level_5" if mixed and i % 2 else "level_4"
+        )
+        for i in range(6)
+    ]
+
+    if operation == "turn":
+        result = score_learner_novelty(
+            {"val": 3.0}, refs, "query"
+        )
+    else:
+        result = calibrate_expert_threshold(refs)
+
+    assert result == {
+        "status": "unavailable",
+        "reason": "missing_expected_level",
+    }
+
+
+@pytest.mark.parametrize("operation", ["turn", "calibration"])
+@pytest.mark.parametrize(
+    "bad_level",
+    ["", "unknown", "level_3", True, " level_4 "],
+)
+def test_invalid_expected_level_rejected(operation, bad_level):
+    refs = [reference(i, i) for i in range(6)]
+
+    if operation == "turn":
+        result = score_learner_novelty(
+            {"val": 3.0}, refs, "query",
+            expected_level=bad_level,
+        )
+    else:
+        result = calibrate_expert_threshold(
+            refs, expected_level=bad_level
+        )
+
+    assert result == {
+        "status": "unavailable",
+        "reason": "invalid_expected_level",
+    }

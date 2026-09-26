@@ -10,6 +10,8 @@ import math
 
 import numpy as np
 
+from .replay import SUPPORTED_LEVELS
+
 
 def _feature_schema(features: dict) -> dict[str, str] | None:
     if not isinstance(features, dict) or not features:
@@ -25,6 +27,28 @@ def _feature_schema(features: dict) -> dict[str, str] | None:
         else:
             return None
     return schema
+
+
+
+def _level_contract_error(reference_episodes, expected_level):
+    """Fail closed on missing or unsupported level stratification."""
+    if expected_level is None:
+        if any(
+            type(row) is dict
+            and ("level" in row or "seed" in row)
+            for row in reference_episodes
+        ):
+            return "missing_expected_level"
+        # Legacy, level-free synthetic fixtures only.
+        return None
+
+    if (
+        type(expected_level) is not str
+        or expected_level not in SUPPORTED_LEVELS
+    ):
+        return "invalid_expected_level"
+
+    return None
 
 
 def fit_reference_scaler(expert_features: list[dict]) -> dict:
@@ -114,6 +138,11 @@ def score_learner_novelty(
         return {"status": "unavailable", "reason": "invalid_query_seed"}
     if not isinstance(reference_episodes, list):
         return {"status": "unavailable", "reason": "invalid_reference"}
+    level_error = _level_contract_error(
+        reference_episodes, expected_level
+    )
+    if level_error is not None:
+        return {"status": "unavailable", "reason": level_error}
     groups = _group_references(reference_episodes, expected_level)
     if groups is None:
         return {"status": "unavailable", "reason": "invalid_reference"}
@@ -231,6 +260,11 @@ def calibrate_expert_threshold(
     """
     if not isinstance(reference_episodes, list) or not 0 < percentile < 100:
         return {"status": "unavailable", "reason": "invalid_calibration_input"}
+    level_error = _level_contract_error(
+        reference_episodes, expected_level
+    )
+    if level_error is not None:
+        return {"status": "unavailable", "reason": level_error}
     groups = _group_references(reference_episodes, expected_level)
     if groups is None:
         return {"status": "unavailable", "reason": "invalid_reference"}
