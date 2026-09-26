@@ -639,3 +639,239 @@ def test_hidden_worker_attributes_are_not_required():
             worker.pop(field, None)
 
     assert candidate_learner_features(record) == expected
+
+
+
+def candidate_text_leak_asset_features(text):
+    """Synthetic candidate; the feature allowlist is not yet approved."""
+    if type(text) is not str:
+        return {"status": "unavailable", "reason": "invalid_text"}
+
+    if TRUNCATION_MARKER in text:
+        return {"status": "unavailable", "reason": "token_truncated"}
+
+    lines = text.splitlines()
+
+    def section(title):
+        matches = [
+            (index, re.fullmatch(
+                rf"{re.escape(title)} \((\d+)\):", line
+            ))
+            for index, line in enumerate(lines)
+            if re.fullmatch(
+                rf"{re.escape(title)} \((\d+)\):", line
+            )
+        ]
+
+        if len(matches) != 1:
+            return None
+
+        start, heading = matches[0]
+        declared = int(heading.group(1))
+        rows = []
+
+        for line in lines[start + 1:]:
+            if not line.startswith("  "):
+                break
+
+            # Compaction appends this worker summary after the
+            # original final section, which is double agents.
+            if (
+                title == "Active Double Agents"
+                and re.fullmatch(
+                    r"  clean loyal workers omitted: \d+", line
+                )
+            ):
+                continue
+
+            rows.append(line)
+
+        if declared == 0:
+            return [] if rows == ["  (none)"] else None
+
+        return rows if len(rows) == declared else None
+
+    leak_rows = section("Active Leaks")
+    asset_rows = section("Active Double Agents")
+
+    if leak_rows is None or asset_rows is None:
+        return {
+            "status": "unavailable",
+            "reason": "incomplete_leak_or_asset_section",
+        }
+
+    leak_pattern = re.compile(
+        r"  \S+ dept=\S+ channel=\S+"
+        r"( \[CANARY MATCH\])?"
+    )
+    asset_pattern = re.compile(
+        r"  \S+ active=(True|False)"
+        r" trust=\d+% eff=\d+% disinfo=\d+"
+    )
+
+    leaks = [leak_pattern.fullmatch(row) for row in leak_rows]
+    assets = [asset_pattern.fullmatch(row) for row in asset_rows]
+
+    if any(match is None for match in leaks + assets):
+        return {
+            "status": "unavailable",
+            "reason": "malformed_leak_or_asset_row",
+        }
+
+    return {
+        "status": "available",
+        "features": {
+            "active_leak_count": len(leaks),
+            "displayed_canary_match_count": sum(
+                match.group(1) is not None for match in leaks
+            ),
+            "displayed_double_agent_count": len(assets),
+            "operational_double_agent_count": sum(
+                match.group(1) == "True" for match in assets
+            ),
+        },
+    }
+
+
+def candidate_learner_leak_asset_features(observation_before):
+    unavailable = {
+        "status": "unavailable",
+        "reason": "invalid_learner_leak_or_asset_fields",
+    }
+
+    if type(observation_before) is not dict:
+        return unavailable
+
+    leaks = observation_before.get("active_leaks")
+    assets = observation_before.get("double_agents")
+
+    if type(leaks) is not list or type(assets) is not list:
+        return unavailable
+
+    if any(
+        type(row) is not dict
+        or type(row.get("is_canary")) is not bool
+        for row in leaks
+    ):
+        return unavailable
+
+    if any(
+        type(row) is not dict
+        or type(row.get("active")) is not bool
+        for row in assets
+    ):
+        return unavailable
+
+    return {
+        "status": "available",
+        "features": {
+            "active_leak_count": len(leaks),
+            "displayed_canary_match_count": sum(
+                row["is_canary"] for row in leaks
+            ),
+            "displayed_double_agent_count": len(assets),
+            "operational_double_agent_count": sum(
+                row["active"] for row in assets
+            ),
+        },
+    }
+
+
+@pytest.mark.parametrize("variant", ["original", "compacted"])
+def test_leak_asset_parity_with_learner(variant):
+    learner = candidate_learner_leak_asset_features(
+        synthetic_observation().model_dump()
+    )
+    rendered = candidate_text_leak_asset_features(
+        fixture()["text"][variant]
+    )
+
+    assert learner["status"] == "available"
+    assert rendered == learner
+    assert rendered["features"] == {
+        "active_leak_count": 1,
+        "displayed_canary_match_count": 1,
+        "displayed_double_agent_count": 1,
+        "operational_double_agent_count": 1,
+    }
+
+
+def test_truncated_leak_asset_features_unavailable():
+    result = candidate_text_leak_asset_features(
+        fixture()["text"]["character_token_truncated"]
+    )
+    assert result == {
+        "status": "unavailable",
+        "reason": "token_truncated",
+    }
+
+
+def test_missing_leak_row_is_rejected():
+    text = fixture()["text"]["original"]
+    corrupted = text.replace(
+        "  leak-001 dept=engineering channel=dark_web"
+        " [CANARY MATCH]\n",
+        "",
+        1,
+    )
+
+    assert corrupted != text
+    assert candidate_text_leak_asset_features(
+        corrupted
+    )["status"] == "unavailable"
+
+
+def test_duplicate_leak_row_is_rejected():
+    text = fixture()["text"]["original"]
+    leak_line = (
+        "  leak-001 dept=engineering channel=dark_web"
+        " [CANARY MATCH]\n"
+    )
+    corrupted = text.replace(leak_line, leak_line * 2, 1)
+
+    assert corrupted != text
+    assert candidate_text_leak_asset_features(
+        corrupted
+    )["status"] == "unavailable"
+
+
+def test_inactive_agent_is_not_operational():
+    formatter, _ = load_formatter()
+    observation = synthetic_observation()
+    observation.double_agents[0].active = False
+
+    text_result = candidate_text_leak_asset_features(
+        formatter["format_observation"](observation)
+    )
+    learner_result = candidate_learner_leak_asset_features(
+        observation.model_dump()
+    )
+
+    assert text_result == learner_result
+    assert text_result["features"]["displayed_double_agent_count"] == 1
+    assert text_result["features"]["operational_double_agent_count"] == 0
+
+
+@pytest.mark.parametrize("field", ["active_leaks", "double_agents"])
+def test_missing_learner_leak_asset_field_rejected(field):
+    record = synthetic_observation().model_dump()
+    del record[field]
+
+    assert candidate_learner_leak_asset_features(
+        record
+    )["status"] == "unavailable"
+
+
+@pytest.mark.parametrize("field,bad_value", [
+    ("active_leaks", "is_canary"),
+    ("double_agents", "active"),
+])
+def test_malformed_learner_leak_asset_flag_rejected(
+    field, bad_value
+):
+    record = synthetic_observation().model_dump()
+    record[field][0][bad_value] = "true"
+
+    assert candidate_learner_leak_asset_features(
+        record
+    )["status"] == "unavailable"
