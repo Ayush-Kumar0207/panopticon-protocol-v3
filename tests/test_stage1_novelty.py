@@ -12,7 +12,7 @@ def test_no_self_neighbor():
     # 5 distinct out-of-group episodes, plus 1 in-group episode
     refs = [{"episode_id": f"ep{i}", "features": {"val": 10.0}} for i in range(5)]
     refs.append({"episode_id": "query_ep", "features": {"val": 99.0}})
-    
+
     res = score_learner_novelty({"val": 99.0}, refs, "query_ep")
     assert res["status"] == "available"
     # The distance should be calculated against the 10.0 values, ignoring the 99.0 self-neighbor

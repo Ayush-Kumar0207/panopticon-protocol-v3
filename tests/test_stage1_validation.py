@@ -5,7 +5,7 @@ def test_seed_pairing_identity():
     header = {"level": "level_4", "seed": 42, "hydra_policy": "v2"}
     expected = {"level": "level_4", "seed": 42, "hydra_policy": "v2"}
     assert validate_episode_header(header, expected)["status"] == "accepted"
-    
+
     bad_header = {"level": "level_4", "seed": 99, "hydra_policy": "v2"}
     res = validate_episode_header(bad_header, expected)
     assert res["status"] == "rejected"
@@ -20,7 +20,7 @@ def test_duplicate_out_of_order_truncated():
     assert validate_episode_turns([{"turn": 1}, {"turn": 1}])["status"] == "rejected"
     assert validate_episode_turns([{"turn": 2}, {"turn": 1}])["status"] == "rejected"
     assert validate_episode_turns([{"step": 1}])["status"] == "rejected"
-    
+
 def test_synthetic_label_mandatory():
     # Verifies the required flag exists in the schema module
     from research_paper.stage1_state_coverage.schemas import TurnMetric

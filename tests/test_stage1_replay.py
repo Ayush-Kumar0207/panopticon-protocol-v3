@@ -25,7 +25,7 @@ def test_missing_validity_unavailable():
     }]
     with pytest.raises(OracleUnavailable):
         reconstruct_expert_state(prior_turns)
-        
+
 def test_prior_invalid_action_does_not_advance():
     prior_turns = [{
         "executed_action": {"action_type": "monitor", "target": "IT", "sub_action": "none"},
