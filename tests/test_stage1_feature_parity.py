@@ -508,3 +508,34 @@ def test_malformed_learner_leak_asset_flag_rejected(
     assert candidate_learner_leak_asset_features(
         record
     )["status"] == "unavailable"
+
+
+
+@pytest.mark.parametrize("bad", [None, 42, [], {}])
+def test_canary_extractor_rejects_invalid_text(bad):
+    assert candidate_triggered_canaries(bad) == {
+        "status": "unavailable",
+        "reason": "invalid_text",
+    }
+
+
+@pytest.mark.parametrize("bad", [None, 42, [], {}])
+def test_workforce_extractor_rejects_invalid_text(bad):
+    assert candidate_workforce_summary(bad) == {
+        "status": "unavailable",
+        "reason": "invalid_text",
+    }
+
+
+def test_duplicate_canary_heading_fails_closed():
+    text = fixture()["text"]["original"]
+    corrupted = text.replace(
+        "Canary Traps (8):",
+        "Canary Traps (8):\nCanary Traps (8):",
+        1,
+    )
+    assert corrupted != text
+    assert candidate_triggered_canaries(corrupted) == {
+        "status": "unavailable",
+        "reason": "duplicate_canary_section",
+    }

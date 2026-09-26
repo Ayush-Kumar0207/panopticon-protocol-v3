@@ -7,7 +7,7 @@ is required before any future real-data entry point.
 
 import re
 
-CANDIDATE_FEATURE_VERSION = "stage1-synthetic-feature-candidates-v1"
+CANDIDATE_FEATURE_VERSION = "stage1-synthetic-feature-candidates-v2"
 TRUNCATION_MARKER = "[... compacted for training context ...]"
 
 
@@ -45,6 +45,8 @@ def candidate_header(text):
 
 
 def candidate_triggered_canaries(text):
+    if not isinstance(text, str):
+        return {"status": "unavailable", "reason": "invalid_text"}
     if TRUNCATION_MARKER in text:
         return {"status": "unavailable", "reason": "token_truncated"}
 
@@ -57,6 +59,14 @@ def candidate_triggered_canaries(text):
         return {
             "status": "unavailable",
             "reason": "missing_canary_section",
+        }
+
+    if len(re.findall(
+        r"^Canary Traps \(\d+\):$", text, re.MULTILINE
+    )) != 1:
+        return {
+            "status": "unavailable",
+            "reason": "duplicate_canary_section",
         }
 
     declared_count = int(match.group(1))
@@ -80,6 +90,8 @@ def candidate_triggered_canaries(text):
 
 def candidate_workforce_summary(text):
     """Conservative synthetic candidate; not the approved extractor."""
+    if not isinstance(text, str):
+        return {"status": "unavailable", "reason": "invalid_text"}
     if TRUNCATION_MARKER in text:
         return {"status": "unavailable", "reason": "token_truncated"}
 
