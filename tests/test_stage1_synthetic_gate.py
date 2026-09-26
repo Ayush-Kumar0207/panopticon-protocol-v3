@@ -6,6 +6,7 @@ purportedly independent row ledger or any historical artifacts.
 
 import hashlib
 import json
+import pytest
 from pathlib import Path
 
 from models import (
@@ -567,3 +568,171 @@ def test_direct_formatter_generated_first_turn(tmp_path):
         "independence_unverified"
     )
     assert result["feature_count"] == 14
+
+
+# Two-turn synthetic fixture. The map and ledger are both
+# manufactured here; their agreement does not establish independence.
+import copy
+import runpy
+
+from research_paper.stage1_state_coverage.feature_eligibility import (
+    screen_synthetic_feature_parity,
+)
+from research_paper.stage1_state_coverage.replay import (
+    OracleUnavailable,
+    label_learner_turn,
+    reconstruct_expert_state,
+)
+from research_paper.stage1_state_coverage.synthetic_mapping import (
+    verify_synthetic_row_mapping,
+)
+
+
+def _two_turn_case(tmp_path):
+    case = _case(tmp_path)
+
+    helpers = runpy.run_path(
+        str(Path(__file__).with_name(
+            "test_stage1_feature_parity.py"
+        ))
+    )
+    formatter, source_hash = helpers["load_formatter"]()
+    fixture = json.loads(
+        FEATURE_FIXTURE.read_text(encoding="utf-8")
+    )
+    assert source_hash == fixture["formatter_functions_sha256"]
+
+    first = helpers["synthetic_observation"]()
+    first.turn = 0
+    second = first.model_copy(deep=True)
+    second.turn = 1
+
+    texts = [
+        formatter["format_observation"](first),
+        formatter["format_observation"](second),
+    ]
+    encoded = [_encode({"text": text}) for text in texts]
+
+    prior = copy.deepcopy(case["current"])
+    prior["observation_before"] = first.model_dump()
+    prior["executed_action"] = {
+        "action_type": "canary",
+        "target": "engineering",
+        "sub_action": "none",
+    }
+    prior["executed_semantic_valid"] = True
+    prior["info"] = {"valid": True}
+
+    current = copy.deepcopy(case["current"])
+    current["turn"] = 1
+    current["observation_before"] = second.model_dump()
+
+    manifest = case["manifest"]
+    dataset = manifest["dataset_files"][0]
+    content = b"".join(encoded)
+
+    (case["root"] / dataset["path"]).write_bytes(content)
+    dataset["sha256"] = _sha256(content)
+    dataset["bytes"] = len(content)
+    dataset["rows"] = 2
+
+    rows = [
+        {
+            **case["map_row"],
+            "row_index": index,
+            "turn": index,
+            "row_sha256": _sha256(raw[:-1]),
+        }
+        for index, raw in enumerate(encoded)
+    ]
+
+    manifest["mapping"]["mapped_rows"] = 2
+
+    for field, version in (
+        ("mapping_file", ROW_MAP_VERSION),
+        ("independent_evidence", LEDGER_VERSION),
+    ):
+        entry = manifest["mapping"][field]
+        data = _encode({
+            "schema_version": version,
+            "synthetic": True,
+            "rows": rows,
+        })
+        (case["root"] / entry["path"]).write_bytes(data)
+        entry["sha256"] = _sha256(data)
+        entry["bytes"] = len(data)
+
+    case["expected"] = _expectations(manifest)
+    case["prior"] = prior
+    case["current"] = current
+    case["training_texts"] = texts
+    return case
+
+
+def test_two_turn_formatter_and_row_correspondence(tmp_path):
+    case = _two_turn_case(tmp_path)
+
+    mapping = verify_synthetic_row_mapping(
+        case["manifest"], case["expected"], case["root"]
+    )
+    assert mapping["status"] == "unverified"
+    assert mapping["checked_row_occurrences"] == 2
+    assert mapping["declared_episode_seed_groups"] == 1
+
+    for text, row in zip(
+        case["training_texts"],
+        [case["prior"], case["current"]],
+    ):
+        result = screen_synthetic_feature_parity(
+            text,
+            row["observation_before"],
+            synthetic=True,
+            expected_feature_version=CANDIDATE_FEATURE_VERSION,
+        )
+        assert result["status"] == "unverified"
+        assert len(result["features"]) == 14
+
+
+def test_two_turn_bound_executed_history(tmp_path):
+    case = _two_turn_case(tmp_path)
+    prior = case["prior"]
+    current = case["current"]
+    identity = case["header"]
+
+    state = reconstruct_expert_state([prior])
+    assert "engineering" in state["canaried_departments"]
+
+    label = label_learner_turn(
+        current,
+        identity["level"],
+        [prior],
+        episode_header=identity,
+        expected_identity=identity,
+    )
+    assert isinstance(label, tuple)
+    assert len(label) == 3
+
+    with pytest.raises(
+        OracleUnavailable, match="incomplete learner history"
+    ):
+        label_learner_turn(
+            current,
+            identity["level"],
+            [],
+            episode_header=identity,
+            expected_identity=identity,
+        )
+
+    wrong_prior = copy.deepcopy(prior)
+    wrong_prior["episode_id"] = "different-episode"
+
+    with pytest.raises(
+        OracleUnavailable, match="row identity mismatch"
+    ):
+        label_learner_turn(
+            current,
+            identity["level"],
+            [wrong_prior],
+            episode_header=identity,
+            expected_identity=identity,
+        )
