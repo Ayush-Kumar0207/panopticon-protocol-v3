@@ -1,4 +1,4 @@
-﻿"""Synthetic Stage 1 novelty scoring and episode-held-out calibration.
+"""Synthetic Stage 1 novelty scoring and episode-held-out calibration.
 
 This module assumes upstream, versioned observation features have ALREADY been
 extracted with a fixed, reviewed feature schema. It never reads real artifacts.
@@ -97,6 +97,7 @@ def score_learner_novelty(
     k: int = 5,
     *,
     expected_level: str | None = None,
+    query_seed: int | None = None,
 ) -> dict:
     """Average the closest observation from each of k distinct expert episodes."""
     schema = _feature_schema(learner_features)
@@ -104,6 +105,13 @@ def score_learner_novelty(
         return {"status": "unavailable", "reason": "invalid_query_features"}
     if type(k) is not int or k < 1:
         return {"status": "unavailable", "reason": "invalid_k"}
+    if query_seed is not None and (
+        type(query_seed) is not int
+        or query_seed < 0
+        or type(expected_level) is not str
+        or not expected_level
+    ):
+        return {"status": "unavailable", "reason": "invalid_query_seed"}
     if not isinstance(reference_episodes, list):
         return {"status": "unavailable", "reason": "invalid_reference"}
     groups = _group_references(reference_episodes, expected_level)
@@ -112,6 +120,10 @@ def score_learner_novelty(
     groups = {
         key: rows for key, rows in groups.items()
         if all(row["episode_id"] != query_episode_id for row in rows)
+        and (
+            query_seed is None
+            or key != ("seed", expected_level, query_seed)
+        )
     }
     if len(groups) < k:
         return {"status": "unavailable", "reason": "insufficient_reference_episodes"}
@@ -133,6 +145,77 @@ def score_learner_novelty(
         "independent_reference_episodes": len(groups),
     }
 
+
+
+def score_learner_episode_novelty(
+    learner_turn_features: list[dict],
+    reference_episodes: list[dict],
+    query_episode_id: str,
+    *,
+    query_seed: int,
+    expected_level: str,
+    threshold: float | None = None,
+    k: int = 5,
+) -> dict:
+    """Synthetic episode-median novelty; no provenance verification."""
+    if not isinstance(learner_turn_features, list) or not learner_turn_features:
+        return {"status": "unavailable", "reason": "invalid_learner_episode"}
+
+    if type(query_episode_id) is not str or not query_episode_id.strip():
+        return {"status": "unavailable", "reason": "invalid_query_episode"}
+
+    if type(query_seed) is not int or query_seed < 0:
+        return {"status": "unavailable", "reason": "invalid_query_seed"}
+
+    if type(expected_level) is not str or not expected_level.strip():
+        return {"status": "unavailable", "reason": "invalid_level"}
+
+    if type(k) is not int or k != 5:
+        return {"status": "unavailable", "reason": "invalid_k"}
+
+    if threshold is not None and (
+        type(threshold) not in (int, float)
+        or not math.isfinite(threshold)
+    ):
+        return {"status": "unavailable", "reason": "invalid_threshold"}
+
+    scores = []
+    independent_groups = None
+
+    for features in learner_turn_features:
+        result = score_learner_novelty(
+            features,
+            reference_episodes,
+            query_episode_id,
+            k,
+            expected_level=expected_level,
+            query_seed=query_seed,
+        )
+        if result["status"] != "available":
+            return {
+                "status": "unavailable",
+                "reason": result["reason"],
+            }
+
+        scores.append(result["novelty_score"])
+        independent_groups = result["independent_reference_episodes"]
+
+    episode_score = float(median(scores))
+    result = {
+        "status": "available",
+        "episode_novelty_score": episode_score,
+        "unit": "episode",
+        "aggregation": "median",
+        "turn_scores": scores,
+        "turn_count": len(scores),
+        "neighbors_used": k,
+        "independent_reference_episodes": independent_groups,
+    }
+
+    if threshold is not None:
+        result["low_coverage"] = episode_score > threshold
+
+    return result
 
 def calibrate_expert_threshold(
     reference_episodes: list[dict],
@@ -161,6 +244,12 @@ def calibrate_expert_threshold(
             result = score_learner_novelty(
                 held_out["features"], training_refs, held_out["episode_id"], k,
                 expected_level=expected_level,
+                query_seed=(
+                    held_out_key[2]
+                    if held_out_key[0] == "seed"
+                    and expected_level is not None
+                    else None
+                ),
             )
             if result["status"] != "available":
                 return {"status": "unavailable", "reason": f"calibration_{result['reason']}"}
@@ -169,6 +258,8 @@ def calibrate_expert_threshold(
     return {
         "status": "available",
         "threshold": float(np.percentile(episode_scores, percentile)),
+        "threshold_unit": "episode_median",
+        "threshold_comparator": ">",
         "percentile": float(percentile),
         "calibration_episodes": len(episode_scores),
         "held_out_episode_scores": episode_scores,

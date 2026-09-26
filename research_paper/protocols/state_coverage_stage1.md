@@ -1,4 +1,4 @@
-﻿# Stage 1 State-Coverage Protocol
+# Stage 1 State-Coverage Protocol
 
 **Status:** Proposed choices for maintainer review (Issue #1).
 
@@ -24,10 +24,10 @@ To compute coverage, we propose a compact intersection of recoverable numeric an
 
 ## 4. Novelty and Calibration Proposal
 *   **Stratification:** Estimate reference neighborhoods within the same game level (if enough Reference T samples exist).
-*   **Neighbors:** k = 5 distinct eligible expert reference observations.
-*   **Distance:** A mixed-type Gower-style average. Numeric differences are standardized (`(x - expert_median) / expert_IQR`) and clipped `[-5, 5]`. Categorical differences are `0` if equal, `1` if unequal.
-*   **Calibration:** Leave one expert episode/seed group out during fitting to prevent a query state from being its own neighbor.
-*   **Threshold:** The proposed low-coverage threshold is the 95th percentile of expert held-out novelty scores.
+*   **Neighbors:** k = 5 independent eligible expert episode/seed groups. For each group, use its closest eligible reference turn, then average the five smallest group distances.
+*   **Distance:** A mixed-type arithmetic mean with equal weight per included feature. Each numeric feature contributes `min(5, abs(query - reference) / expert_reference_IQR)`, with zero IQR replaced by 1. Numeric clipping applies to the pairwise standardized difference, not to separately clipped coordinates. Each categorical feature contributes 0 when equal and 1 when unequal. Fit scaling using eligible reference turns only.
+*   **Calibration:** Within the same game level, leave one expert episode/seed group out. Score its turns against the other independent groups, then take the median turn novelty within the held-out episode. Every eligible episode contributes one calibration value.
+*   **Threshold:** The proposed threshold is the 95th percentile of held-out expert episode medians. Compare it only against the median of a learner episode's valid turn novelty scores, using a strict `>` comparison. Individual turn scores remain diagnostics and are not compared directly against this episode-level threshold. Missing or incomparable turns make the proposed complete-episode score unavailable.
 
 ## 5. Action Canonicalization
 *   **Canonical Tuple:** `(action_type, target, sub_action)`.
