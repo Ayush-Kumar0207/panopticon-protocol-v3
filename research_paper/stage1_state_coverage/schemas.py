@@ -3,7 +3,7 @@ from typing import Literal, Optional
 
 # Version strings required by section 8.1
 INPUT_VERSION = "panopticon-stage1-synthetic-input-v1"
-TURN_METRICS_VERSION = "panopticon-stage1-turn-metrics-v1"
+TURN_METRICS_VERSION = "panopticon-stage1-turn-metrics-v2"
 REPRO_MANIFEST_VERSION = "panopticon-stage1-repro-manifest-v1"
 
 class TurnMetric(BaseModel):
@@ -15,6 +15,23 @@ class TurnMetric(BaseModel):
 
     schema_version: Literal[TURN_METRICS_VERSION]
     synthetic: bool
+
+    experiment_id: str = Field(min_length=1)
+    run_fingerprint: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    checkpoint_sha256: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    source_commit: str = Field(
+        min_length=40, max_length=40, pattern=r"^[0-9a-f]{40}$"
+    )
+    feature_extractor_version: str = Field(min_length=1)
+    seed: int = Field(ge=0)
+    evidence_sha256: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    evidence_bytes: int = Field(gt=0)
     episode_id: str = Field(min_length=1)
     level: Literal["easy", "medium", "hard", "level_4", "level_5"]
     turn: int = Field(ge=0)
@@ -24,11 +41,13 @@ class TurnMetric(BaseModel):
     oracle_legal: Optional[bool] = None
     intervention_applied: bool
 
-    @field_validator("episode_id")
+    @field_validator(
+        "experiment_id", "feature_extractor_version", "episode_id"
+    )
     @classmethod
-    def validate_episode_id(cls, value: str) -> str:
+    def validate_nonblank_id(cls, value: str) -> str:
         if not value.strip() or value != value.strip():
-            raise ValueError("episode_id must be nonblank and unpadded")
+            raise ValueError("identity must be nonblank and unpadded")
         return value
 
     @model_validator(mode="after")
