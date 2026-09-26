@@ -14,7 +14,7 @@ from research_paper.stage1_state_coverage.canonical import (
 )
 from research_paper.stage1_state_coverage.replay import (
     OracleUnavailable,
-    label_learner_turn,
+    _label_observation_from_history as label_learner_turn,
     reconstruct_expert_state,
 )
 

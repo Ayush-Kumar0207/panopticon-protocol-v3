@@ -2,6 +2,7 @@
 """Observable learner-history replay for the Stage 1 expert oracle."""
 
 from copy import deepcopy
+import re
 
 from models import ActionType, EnvironmentObservation, validate_action
 from security_policy import (
@@ -10,6 +11,7 @@ from security_policy import (
 )
 
 from .canonical import canonicalize_action
+from .validation import validate_episode_header, validate_episode_turns
 
 
 SUPPORTED_LEVELS = frozenset({"easy", "medium", "hard", "level_4", "level_5"})
@@ -108,7 +110,7 @@ def _require_fields(record: dict, fields: set[str], label: str) -> None:
         )
 
 
-def label_learner_turn(
+def _label_observation_from_history(
     observation_before: dict,
     task_level: str,
     prior_turns: list[dict],
@@ -239,3 +241,150 @@ def label_learner_turn(
         )
 
     return canonicalize_action(proposed_action.model_dump())
+
+
+_REPLAY_IDENTITY_FIELDS = (
+    "synthetic",
+    "experiment_id",
+    "run_fingerprint",
+    "checkpoint_sha256",
+    "source_commit",
+    "feature_extractor_version",
+    "episode_id",
+    "seed",
+    "level",
+)
+
+
+def label_learner_turn(
+    current_row: dict,
+    task_level: str,
+    prior_turns: list[dict],
+    *,
+    episode_header: dict | None = None,
+    expected_identity: dict | None = None,
+) -> tuple[str, str, str]:
+    """Identity-checked replay entry point.
+
+    expected_identity must eventually come from independently verified
+    provenance. Equality checks alone do not authenticate artifact bytes.
+    Real-data replay stays disabled until the integrated gate exists.
+    """
+    if type(expected_identity) is not dict:
+        raise OracleUnavailable("missing independent replay identity")
+
+    missing = set(_REPLAY_IDENTITY_FIELDS) - expected_identity.keys()
+    if missing:
+        raise OracleUnavailable(
+            f"incomplete replay identity: {sorted(missing)}"
+        )
+
+    identity = {
+        key: expected_identity[key]
+        for key in _REPLAY_IDENTITY_FIELDS
+    }
+
+    for key in (
+        "experiment_id",
+        "feature_extractor_version",
+        "episode_id",
+    ):
+        value = identity[key]
+        if (
+            type(value) is not str
+            or not value.strip()
+            or value != value.strip()
+        ):
+            raise OracleUnavailable(f"invalid replay identity: {key}")
+
+    for key in ("run_fingerprint", "checkpoint_sha256"):
+        value = identity[key]
+        if (
+            type(value) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", value) is None
+        ):
+            raise OracleUnavailable(f"invalid replay identity: {key}")
+
+    source = identity["source_commit"]
+    if (
+        type(source) is not str
+        or re.fullmatch(r"[0-9a-f]{40}", source) is None
+    ):
+        raise OracleUnavailable("invalid replay identity: source_commit")
+
+    if type(identity["seed"]) is not int or identity["seed"] < 0:
+        raise OracleUnavailable("invalid replay identity: seed")
+
+    if type(identity["level"]) is not str or identity["level"] not in SUPPORTED_LEVELS:
+        raise OracleUnavailable("unsupported replay level")
+
+    if type(identity["synthetic"]) is not bool:
+        raise OracleUnavailable("invalid synthetic classification")
+
+    if identity["synthetic"] is not True:
+        raise OracleUnavailable(
+            "real replay requires the integrated provenance gate"
+        )
+
+    if task_level != identity["level"]:
+        raise OracleUnavailable("task-level identity mismatch")
+
+    header_result = validate_episode_header(
+        episode_header, identity
+    )
+    if header_result["status"] != "accepted":
+        raise OracleUnavailable(
+            f"episode-header identity mismatch: {header_result['reasons']}"
+        )
+
+    if type(current_row) is not dict or type(prior_turns) is not list:
+        raise OracleUnavailable("missing or malformed replay records")
+
+    observation = current_row.get("observation_before")
+    if type(observation) is not dict:
+        raise OracleUnavailable("missing current observation_before")
+
+    current_turn = observation.get("turn")
+    if type(current_turn) is not int or current_turn < 0:
+        raise OracleUnavailable("invalid current observation turn")
+
+    if current_turn != len(prior_turns):
+        raise OracleUnavailable("incomplete learner history")
+
+    all_rows = [*prior_turns, current_row]
+
+    for index, row in enumerate(all_rows):
+        if type(row) is not dict:
+            raise OracleUnavailable(
+                f"malformed replay row at index {index}"
+            )
+
+        result = validate_episode_header(row, identity)
+        if result["status"] != "accepted":
+            raise OracleUnavailable(
+                f"row identity mismatch at index {index}: "
+                f"{result['reasons']}"
+            )
+
+        before = row.get("observation_before")
+        if (
+            type(before) is not dict
+            or type(before.get("turn")) is not int
+            or before["turn"] != index
+        ):
+            raise OracleUnavailable(
+                f"unverifiable observation at index {index}"
+            )
+
+    continuity = validate_episode_turns(
+        all_rows,
+        expected_turn_count=current_turn + 1,
+    )
+    if continuity["status"] != "accepted":
+        raise OracleUnavailable(
+            f"invalid replay sequence: {continuity['reason']}"
+        )
+
+    return _label_observation_from_history(
+        observation, task_level, prior_turns
+    )
