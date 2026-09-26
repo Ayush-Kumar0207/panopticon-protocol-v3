@@ -301,3 +301,134 @@ def test_compaction_removes_old_canaries_and_clean_workers():
     assert "canary-001" not in compacted
     assert "canary-002" not in compacted
     assert "canary-008" in compacted
+
+
+
+def candidate_workforce_summary(text):
+    """Conservative synthetic candidate; not the approved extractor."""
+    if TRUNCATION_MARKER in text:
+        return {"status": "unavailable", "reason": "token_truncated"}
+
+    lines = text.splitlines()
+    workers = [
+        (i, re.fullmatch(r"Workers \((\d+)\):", line))
+        for i, line in enumerate(lines)
+        if re.fullmatch(r"Workers \((\d+)\):", line)
+    ]
+    leaks = [
+        i for i, line in enumerate(lines)
+        if re.fullmatch(r"Active Leaks \(\d+\):", line)
+    ]
+
+    if len(workers) != 1 or len(leaks) != 1:
+        return {"status": "unavailable", "reason": "missing_sections"}
+
+    start, heading = workers[0]
+    end = leaks[0]
+
+    if end <= start:
+        return {"status": "unavailable", "reason": "section_order"}
+
+    declared = int(heading.group(1))
+    worker_lines = lines[start + 1:end]
+
+    omitted_matches = re.findall(
+        r"^  clean loyal workers omitted: (\d+)$",
+        text,
+        re.MULTILINE,
+    )
+    if len(omitted_matches) > 1:
+        return {"status": "unavailable", "reason": "invalid_omissions"}
+
+    omitted = int(omitted_matches[0]) if omitted_matches else 0
+
+    if worker_lines == ["  (none)"] and declared == 0:
+        worker_lines = []
+
+    pattern = re.compile(
+        r"^  w-[0-9]+ .+? dept=(\S+) state=\S+ "
+        r"(?:clean|suspicion=(\d+)%)(?: turning=\d+/4)?$"
+    )
+    parsed = [pattern.fullmatch(line) for line in worker_lines]
+
+    if any(match is None for match in parsed):
+        return {"status": "unavailable", "reason": "invalid_worker_rows"}
+
+    if len(parsed) + omitted != declared:
+        return {"status": "unavailable", "reason": "incomplete_worker_rows"}
+
+    features = {
+        "worker_count": declared,
+        "displayed_high_suspicion_count": sum(
+            match.group(2) is not None
+            and int(match.group(2)) > 50
+            for match in parsed
+        ),
+    }
+
+    result = {"status": "available", "features": features}
+
+    if omitted:
+        result["unavailable_fields"] = ["unique_worker_departments"]
+    else:
+        features["unique_worker_departments"] = len({
+            match.group(1) for match in parsed
+        })
+
+    return result
+
+
+def test_original_workforce_parity():
+    result = candidate_workforce_summary(fixture()["text"]["original"])
+    assert result == {
+        "status": "available",
+        "features": {
+            "worker_count": 3,
+            "displayed_high_suspicion_count": 1,
+            "unique_worker_departments": 3,
+        },
+    }
+
+
+def test_compacted_workforce_has_partial_recoverability():
+    result = candidate_workforce_summary(fixture()["text"]["compacted"])
+    assert result["status"] == "available"
+    assert result["features"] == {
+        "worker_count": 3,
+        "displayed_high_suspicion_count": 1,
+    }
+    assert result["unavailable_fields"] == [
+        "unique_worker_departments"
+    ]
+
+
+def test_truncated_workforce_is_unavailable():
+    assert candidate_workforce_summary(
+        fixture()["text"]["character_token_truncated"]
+    ) == {
+        "status": "unavailable",
+        "reason": "token_truncated",
+    }
+
+
+def test_missing_omission_summary_is_rejected():
+    compacted = fixture()["text"]["compacted"]
+    corrupted = compacted.replace(
+        "  clean loyal workers omitted: 2", "", 1
+    )
+    assert candidate_workforce_summary(corrupted) == {
+        "status": "unavailable",
+        "reason": "incomplete_worker_rows",
+    }
+
+
+def test_displayed_suspicion_threshold_uses_rounded_value():
+    formatter, _ = load_formatter()
+    observation = synthetic_observation()
+    observation.workers[0].suspicion_level = 0.504
+
+    rendered = formatter["format_observation"](observation)
+    assert "suspicion=50%" in rendered
+
+    result = candidate_workforce_summary(rendered)
+    assert result["features"]["displayed_high_suspicion_count"] == 0
