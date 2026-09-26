@@ -736,3 +736,121 @@ def test_two_turn_bound_executed_history(tmp_path):
             episode_header=identity,
             expected_identity=identity,
         )
+
+
+from research_paper.stage1_state_coverage.synthetic_gate import (
+    screen_synthetic_two_turn,
+)
+
+
+def _run_two_turn_gate(case, **overrides):
+    arguments = {
+        "dataset_path": DATASET_PATH,
+        "prior_row_index": 0,
+        "row_index": 1,
+        "episode_header": case["header"],
+        "prior_row": case["prior"],
+        "current_row": case["current"],
+    }
+    arguments.update(overrides)
+
+    return screen_synthetic_two_turn(
+        case["manifest"],
+        case["expected"],
+        case["root"],
+        **arguments,
+    )
+
+
+def test_integrated_two_turn_gate(tmp_path):
+    case = _two_turn_case(tmp_path)
+
+    result = _run_two_turn_gate(case)
+
+    assert result["status"] == "unverified"
+    assert result["reason"] == (
+        "synthetic_two_turn_checks_passed_"
+        "independence_unverified"
+    )
+    assert result["checked_turns"] == 2
+    assert result["feature_count"] == 14
+    assert result["oracle_label"] == label_learner_turn(
+        case["current"],
+        case["header"]["level"],
+        [case["prior"]],
+        episode_header=case["header"],
+        expected_identity=case["header"],
+    )
+
+
+def test_integrated_gate_rejects_prior_feature_drift(tmp_path):
+    case = _two_turn_case(tmp_path)
+    prior = copy.deepcopy(case["prior"])
+    prior["observation_before"]["enterprise_revenue"] = 105.0
+
+    result = _run_two_turn_gate(case, prior_row=prior)
+
+    assert result["status"] == "unavailable"
+    assert result["reason"] == "feature_screen_unavailable"
+    assert result["failed_turn"] == 0
+
+
+@pytest.mark.parametrize(
+    "missing", ["semantic", "environment"]
+)
+def test_integrated_gate_requires_prior_validity(tmp_path, missing):
+    case = _two_turn_case(tmp_path)
+    prior = copy.deepcopy(case["prior"])
+
+    if missing == "semantic":
+        del prior["executed_semantic_valid"]
+    else:
+        del prior["info"]["valid"]
+
+    result = _run_two_turn_gate(case, prior_row=prior)
+
+    assert result["status"] == "unavailable"
+    assert result["reason"] == "replay_unavailable"
+    assert "valid" in result["detail"]
+
+
+def test_integrated_gate_rejects_changed_dataset(tmp_path):
+    case = _two_turn_case(tmp_path)
+    path = case["root"] / DATASET_PATH
+    path.write_bytes(
+        path.read_bytes().replace(
+            b"Turn 0/150", b"Turn 9/150", 1
+        )
+    )
+
+    result = _run_two_turn_gate(case)
+
+    assert result["status"] == "rejected"
+    assert result["reason"] == (
+        "synthetic_file_sha256_mismatch"
+    )
+
+
+def test_integrated_gate_rejects_cross_episode_row(tmp_path):
+    case = _two_turn_case(tmp_path)
+    current = copy.deepcopy(case["current"])
+    current["episode_id"] = "another-episode"
+
+    result = _run_two_turn_gate(
+        case, current_row=current
+    )
+
+    assert result["status"] == "unavailable"
+    assert result["reason"] == "current_identity_mismatch"
+
+
+def test_integrated_gate_blocks_real_manifest(tmp_path):
+    case = _two_turn_case(tmp_path)
+    case["manifest"]["synthetic"] = False
+
+    result = _run_two_turn_gate(case)
+
+    assert result["status"] == "unavailable"
+    assert result["reason"] == (
+        "real_requires_integrated_gate"
+    )
