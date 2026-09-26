@@ -13,6 +13,13 @@ import stat
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
+from .persisted_text import (
+    CHAT_TEMPLATE_SHA256,
+    MODEL_ID,
+    MODEL_REVISION,
+)
+from .production_identity import PINNED_PIPELINE
+
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 
@@ -73,6 +80,19 @@ class FormatterIdentity(_StrictRecord):
     function: Literal["train_trl_v2.format_observation"]
 
 
+class ProductionPipelineIdentity(_StrictRecord):
+    source_commit: str = _COMMIT
+    source_sha256: str = _HASH
+    formatter_function: Literal["train_trl_v2.format_observation"]
+    formatter_sha256: str = _HASH
+    renderer_function: Literal["train_trl_v2.render_training_text"]
+    renderer_sha256: str = _HASH
+    writer_function: Literal[
+        "train_trl_v2.save_training_data_with_template"
+    ]
+    writer_sha256: str = _HASH
+
+
 class TextTransform(_StrictRecord):
     compaction: Literal["none", "present", "unknown"]
     token_truncation: Literal["none", "present", "unknown"]
@@ -101,9 +121,45 @@ class TrainingManifest(_StrictRecord):
     formatter: FormatterIdentity
     transforms: TextTransform
     mapping: RowMappingEvidence
+    production_pipeline: ProductionPipelineIdentity | None = None
 
     @model_validator(mode="after")
     def check_consistency(self):
+        # The production-format synthetic fixture is tied to one
+        # checked-in implementation and one tokenizer/template.
+        if self.tokenizer.identifier == MODEL_ID:
+            if (
+                self.tokenizer.revision != MODEL_REVISION
+                or self.tokenizer.chat_template_sha256
+                != CHAT_TEMPLATE_SHA256
+            ):
+                raise ValueError("unsupported_pinned_tokenizer_identity")
+
+            if self.production_pipeline is None:
+                raise ValueError("production_pipeline_required")
+
+            if self.production_pipeline.model_dump() != PINNED_PIPELINE:
+                raise ValueError(
+                    "unsupported_production_pipeline_identity"
+                )
+
+            if (
+                self.source_commit
+                != PINNED_PIPELINE["source_commit"]
+                or self.formatter.source_commit
+                != PINNED_PIPELINE["source_commit"]
+                or self.formatter.function
+                != PINNED_PIPELINE["formatter_function"]
+            ):
+                raise ValueError(
+                    "inconsistent_production_pipeline_source"
+                )
+
+        elif self.production_pipeline is not None:
+            raise ValueError(
+                "production_pipeline_without_pinned_tokenizer"
+            )
+
         total_rows = sum(item.rows for item in self.dataset_files)
         if self.mapping.mapped_rows != total_rows:
             raise ValueError("mapping_must_cover_every_persisted_row")

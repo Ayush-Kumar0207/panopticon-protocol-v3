@@ -41,8 +41,19 @@ corpus associated with the evaluated checkpoint. A newly generated
 expert corpus is not an acceptable substitute for the primary
 training-support analysis.
 
-Upstream training code writes formatted observation text and action
-JSON. Episode and seed information must therefore be recovered from
+The production writer persists JSONL rows whose `text` field contains
+a system/user/assistant chat template enclosing the observation and action.
+`format_observation` produces the initial observation text;
+`fit_training_text` may compact or token-truncate it before
+`render_training_text` applies the chat template.
+
+The synthetic production-format fixture pins the tokenizer identifier,
+revision and chat-template hash, together with the source commit and
+SHA-256 identities of the formatter, renderer and persistence writer.
+These identities describe the synthetic fixture's checked-in production
+implementation. They do not authenticate the historical training corpus.
+
+Episode and seed information must therefore be recovered from
 verified training metadata or another trustworthy original record;
 it must not be inferred from row ordering alone.
 
@@ -68,8 +79,13 @@ The primary coverage feature set must be a versioned intersection
 of information recoverable from both Reference T and the learner's
 recorded observation_before.
 
-Check proposed features against the actual training text generated
-by train_trl_v2.format_observation. A feature is eligible only when
+Check proposed features against observations extracted from exact
+persisted JSONL text through a uniquely recognized, pinned chat-template
+boundary. Raw text, unsupported templates and ambiguous boundaries must
+fail closed. Compaction and token truncation must remain explicit, and
+incomplete required features make the affected record unavailable.
+
+A feature is eligible only when
 its extraction can be demonstrated with synthetic parity fixtures
 and its semantics agree across both sources.
 

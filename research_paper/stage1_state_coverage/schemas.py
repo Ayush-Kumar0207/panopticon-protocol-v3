@@ -52,6 +52,10 @@ class TurnMetric(BaseModel):
 
     @model_validator(mode="after")
     def validate_flags(self):
+        if not self.parse_success and self.raw_semantic_valid:
+            raise ValueError(
+                "parse_failed_raw_cannot_be_semantically_valid"
+            )
         if (
             not self.intervention_applied
             and self.raw_semantic_valid != self.executed_semantic_valid

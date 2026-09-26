@@ -91,11 +91,42 @@ def test_validity_repair_with_intervention_is_allowed():
     assert TurnMetric(**record).intervention_applied is True
 
 
-def test_parse_failure_does_not_imply_semantic_invalidity():
-    # A fallback NOOP can be semantically legal even after parse failure.
+@pytest.mark.parametrize("intervened", [False, True])
+def test_parse_failure_rejects_raw_validity(intervened):
     record = valid_record()
     record["parse_success"] = False
-    assert TurnMetric(**record).raw_semantic_valid is True
+    record["intervention_applied"] = intervened
+
+    with pytest.raises(
+        ValidationError,
+        match="parse_failed_raw_cannot_be_semantically_valid",
+    ):
+        TurnMetric(**record)
+
+
+def test_parse_failure_without_valid_fallback():
+    record = valid_record()
+    record["parse_success"] = False
+    record["raw_semantic_valid"] = False
+    record["executed_semantic_valid"] = False
+
+    metric = TurnMetric(**record)
+    assert metric.raw_semantic_valid is False
+    assert metric.executed_semantic_valid is False
+    assert metric.intervention_applied is False
+
+
+def test_parse_failure_with_valid_executed_fallback():
+    record = valid_record()
+    record["parse_success"] = False
+    record["raw_semantic_valid"] = False
+    record["executed_semantic_valid"] = True
+    record["intervention_applied"] = True
+
+    metric = TurnMetric(**record)
+    assert metric.raw_semantic_valid is False
+    assert metric.executed_semantic_valid is True
+    assert metric.intervention_applied is True
 
 
 

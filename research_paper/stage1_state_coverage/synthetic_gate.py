@@ -10,6 +10,10 @@ from pathlib import Path
 
 from ._synthetic_features import CANDIDATE_FEATURE_VERSION
 from .feature_eligibility import screen_synthetic_feature_parity
+from .persisted_text import (
+    MODEL_ID,
+    extract_pinned_observation,
+)
 from .provenance import TrainingManifest, _read_synthetic_file
 from .replay import (
     OracleUnavailable,
@@ -27,6 +31,41 @@ from .validation import validate_episode_header
 
 def _unavailable(reason):
     return {"status": "unavailable", "reason": reason}
+
+
+def _extract_selected_observation(record, text):
+    """Extract the authenticated representation of a synthetic row."""
+    tokenizer = record.tokenizer
+
+    if tokenizer.identifier == MODEL_ID:
+        result = extract_pinned_observation(
+            text,
+            tokenizer_identifier=tokenizer.identifier,
+            tokenizer_revision=tokenizer.revision,
+            chat_template_sha256=tokenizer.chat_template_sha256,
+        )
+        if result["status"] == "available":
+            result["representation"] = "pinned_qwen_chat"
+        return result
+
+    # Support the pre-existing manufactured fixtures only under
+    # their exact synthetic tokenizer identity.
+    if (
+        tokenizer.identifier == "synthetic-tokenizer"
+        and tokenizer.revision == "synthetic-revision"
+        and tokenizer.chat_template_sha256 == "d" * 64
+        and type(text) is str
+    ):
+        return {
+            "status": "available",
+            "representation": "legacy_synthetic_raw_fixture",
+            "observation": text,
+        }
+
+    return {
+        "status": "unavailable",
+        "reason": "unsupported_template_identity",
+    }
 
 
 def screen_synthetic_first_turn(
@@ -185,8 +224,18 @@ def screen_synthetic_first_turn(
     ):
         return _unavailable("selected_turn_mismatch")
 
+    extracted = _extract_selected_observation(
+        record, persisted["text"]
+    )
+    if extracted["status"] != "available":
+        return {
+            "status": "unavailable",
+            "reason": "training_text_representation_unavailable",
+            "detail": extracted,
+        }
+
     parity = screen_synthetic_feature_parity(
-        persisted["text"],
+        extracted["observation"],
         observation,
         synthetic=True,
         expected_feature_version=(
@@ -226,6 +275,7 @@ def screen_synthetic_first_turn(
         "row_index": row_index,
         "feature_version": record.feature_extractor_version,
         "feature_count": len(parity["features"]),
+        "representation": extracted["representation"],
         "oracle_label": oracle_label,
     }
 
@@ -409,8 +459,19 @@ def screen_synthetic_two_turn(
     )["status"] != "accepted":
         return _unavailable("current_identity_mismatch")
 
+    extracted = _extract_selected_observation(
+        record, persisted["text"]
+    )
+    if extracted["status"] != "available":
+        return {
+            "status": "unavailable",
+            "reason": "training_text_representation_unavailable",
+            "failed_turn": 1,
+            "detail": extracted,
+        }
+
     parity = screen_synthetic_feature_parity(
-        persisted["text"],
+        extracted["observation"],
         observation,
         synthetic=True,
         expected_feature_version=(
@@ -452,5 +513,6 @@ def screen_synthetic_two_turn(
         "checked_turns": 2,
         "feature_version": record.feature_extractor_version,
         "feature_count": len(parity["features"]),
+        "representation": extracted["representation"],
         "oracle_label": oracle_label,
     }
