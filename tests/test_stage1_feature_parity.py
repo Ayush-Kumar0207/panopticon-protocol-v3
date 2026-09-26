@@ -539,3 +539,141 @@ def test_duplicate_canary_heading_fails_closed():
         "status": "unavailable",
         "reason": "duplicate_canary_section",
     }
+
+
+
+# Complete-record synthetic candidate screen.
+from research_paper.stage1_state_coverage._synthetic_features import (
+    CANDIDATE_FEATURE_VERSION,
+)
+
+from research_paper.stage1_state_coverage.feature_eligibility import (
+    screen_synthetic_feature_parity,
+)
+
+
+def _screen(variant="original", observation=None, **overrides):
+    data = fixture()
+    arguments = {
+        "synthetic": True,
+        "expected_feature_version": CANDIDATE_FEATURE_VERSION,
+    }
+    arguments.update(overrides)
+
+    return screen_synthetic_feature_parity(
+        data["text"][variant],
+        (
+            synthetic_observation().model_dump()
+            if observation is None else observation
+        ),
+        **arguments,
+    )
+
+
+def test_complete_synthetic_feature_screen():
+    result = _screen()
+
+    assert result["status"] == "unverified"
+    assert result["reason"] == "synthetic_feature_parity_only"
+    assert result["features"]["turn"] == 7
+    assert result["features"]["unique_worker_departments"] == 3
+    assert result["features"]["triggered_canary_count"] == 2
+    assert result["features"]["active_leak_count"] == 1
+    assert len(result["features"]) == 14
+
+
+def test_compacted_record_has_explicit_exclusion():
+    assert _screen("compacted") == {
+        "status": "unavailable",
+        "reason": "partial_training_features",
+        "section": "workforce",
+        "fields": ["unique_worker_departments"],
+    }
+
+
+def test_truncated_record_is_unavailable():
+    assert _screen("character_token_truncated") == {
+        "status": "unavailable",
+        "reason": "token_truncated",
+    }
+
+
+def test_real_record_is_not_authorized():
+    assert _screen(synthetic=False) == {
+        "status": "unavailable",
+        "reason": "real_requires_integrated_gate",
+    }
+
+
+def test_feature_version_must_match():
+    assert _screen(expected_feature_version="other-version") == {
+        "status": "unavailable",
+        "reason": "feature_version_mismatch",
+    }
+
+
+def test_mismatched_displayed_revenue_is_unavailable():
+    observation = synthetic_observation().model_dump()
+    observation["enterprise_revenue"] = 105.0
+
+    assert _screen(observation=observation) == {
+        "status": "unavailable",
+        "reason": "feature_parity_mismatch",
+        "section": "header",
+    }
+
+
+def test_mismatched_triggered_canary_is_unavailable():
+    observation = synthetic_observation().model_dump()
+    observation["canary_traps"][0]["triggered"] = False
+
+    assert _screen(observation=observation) == {
+        "status": "unavailable",
+        "reason": "feature_parity_mismatch",
+        "section": "triggered_canaries",
+    }
+
+
+def test_mismatched_canary_leak_is_unavailable():
+    observation = synthetic_observation().model_dump()
+    observation["active_leaks"][0]["is_canary"] = False
+
+    assert _screen(observation=observation) == {
+        "status": "unavailable",
+        "reason": "feature_parity_mismatch",
+        "section": "leak_assets",
+    }
+
+
+def test_missing_learner_workers_is_unavailable():
+    observation = synthetic_observation().model_dump()
+    del observation["workers"]
+
+    assert _screen(observation=observation) == {
+        "status": "unavailable",
+        "reason": "missing_or_invalid_learner_features",
+    }
+
+
+def test_incomplete_training_canaries_are_unavailable():
+    text = fixture()["text"]["original"]
+    text = text.replace(
+        "  canary-001 dept=engineering triggered=True\n",
+        "",
+        1,
+    )
+
+    assert text != fixture()["text"]["original"]
+
+    result = screen_synthetic_feature_parity(
+        text,
+        synthetic_observation().model_dump(),
+        synthetic=True,
+        expected_feature_version=CANDIDATE_FEATURE_VERSION,
+    )
+
+    assert result == {
+        "status": "unavailable",
+        "reason": "incomplete_canary_rows",
+        "section": "triggered_canaries",
+    }
