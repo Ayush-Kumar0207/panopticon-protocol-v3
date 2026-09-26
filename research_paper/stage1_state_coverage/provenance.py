@@ -3,10 +3,14 @@
 
 Structural validation and comparison with caller-supplied expectations
 cannot authenticate provenance or establish an episode/seed mapping.
-This module performs no file I/O and never authorizes real-data analysis.
+Structural validation performs no I/O. Synthetic fixture checks below
+never authorize real-data analysis.
 """
 
-from pathlib import PurePosixPath
+import hashlib
+import json
+import stat
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -221,4 +225,195 @@ def validate_training_manifest(manifest: object, expected_identity: object) -> d
         "reason": "structure_only_bytes_and_mapping_not_verified",
         "declared_dataset_rows": sum(file.rows for file in record.dataset_files),
         "declared_episode_groups": record.mapping.episode_groups,
+    }
+
+
+
+# Synthetic fixture reader only; not a real-artifact security gate.
+_MAX_SYNTHETIC_BYTES = 64 * 1024 * 1024
+
+
+def _is_link_or_reparse(info):
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0)
+        & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    )
+
+
+def _read_synthetic_file(root, entry):
+    """Read a bounded synthetic fixture, rejecting links and escaping paths.
+
+    These checks are not race-proof on all platforms. Never use this reader
+    as an authorization boundary for untrusted or real artifacts.
+    """
+    if entry.bytes > _MAX_SYNTHETIC_BYTES:
+        return None, "oversize_synthetic_file"
+
+    target = root
+    parts = PurePosixPath(entry.path).parts
+
+    try:
+        for index, piece in enumerate(parts):
+            target = target / piece
+            info = target.lstat()
+
+            if _is_link_or_reparse(info):
+                return None, "unsafe_synthetic_path"
+
+            if index < len(parts) - 1 and not stat.S_ISDIR(info.st_mode):
+                return None, "unsafe_synthetic_path"
+
+        if not stat.S_ISREG(info.st_mode):
+            return None, "nonregular_synthetic_file"
+
+        if not target.resolve(strict=True).is_relative_to(root):
+            return None, "unsafe_synthetic_path"
+
+        with target.open("rb") as stream:
+            content = stream.read(_MAX_SYNTHETIC_BYTES + 1)
+
+        after = target.lstat()
+
+    except FileNotFoundError:
+        return None, "missing_synthetic_file"
+    except (OSError, ValueError):
+        return None, "unreadable_synthetic_file"
+
+    if _is_link_or_reparse(after) or not stat.S_ISREG(after.st_mode):
+        return None, "unsafe_synthetic_path"
+
+    if (info.st_size, info.st_mtime_ns, info.st_ino) != (
+        after.st_size, after.st_mtime_ns, after.st_ino
+    ):
+        return None, "synthetic_file_changed_during_read"
+
+    if len(content) > _MAX_SYNTHETIC_BYTES:
+        return None, "oversize_synthetic_file"
+
+    if len(content) != entry.bytes:
+        return None, "synthetic_file_size_mismatch"
+
+    if hashlib.sha256(content).hexdigest() != entry.sha256:
+        return None, "synthetic_file_sha256_mismatch"
+
+    return content, None
+
+
+def _jsonl_row_count(content):
+    lines = content.split(b"\n")
+
+    if lines and lines[-1] == b"":
+        lines.pop()
+
+    if not lines:
+        return None
+
+    for line in lines:
+        if not line.strip():
+            return None
+
+        try:
+            obj = json.loads(
+                line.decode("utf-8"),
+                parse_constant=lambda x: (
+                    _ for _ in ()
+                ).throw(ValueError(x)),
+            )
+        except (UnicodeError, ValueError):
+            return None
+
+        if type(obj) is not dict:
+            return None
+
+    return len(lines)
+
+
+def verify_synthetic_artifact_bytes(
+    manifest, expected_identity, artifact_root
+):
+    """Check synthetic file bytes and persisted rows, not provenance.
+
+    Independent expectations must be authenticated separately.
+    This function never permits real-artifact analysis.
+    """
+    structural = validate_training_manifest(
+        manifest, expected_identity
+    )
+
+    if structural["status"] != "unverified":
+        return structural
+
+    if not isinstance(artifact_root, (str, Path)):
+        return {
+            "status": "rejected",
+            "reason": "invalid_artifact_root",
+        }
+
+    root = Path(artifact_root)
+
+    try:
+        root_info = root.lstat()
+
+        if (
+            _is_link_or_reparse(root_info)
+            or not stat.S_ISDIR(root_info.st_mode)
+        ):
+            return {
+                "status": "rejected",
+                "reason": "invalid_artifact_root",
+            }
+
+        root = root.resolve(strict=True)
+
+    except (OSError, ValueError):
+        return {
+            "status": "rejected",
+            "reason": "invalid_artifact_root",
+        }
+
+    record = TrainingManifest.model_validate(manifest)
+
+    files = (
+        [(item, True) for item in record.dataset_files]
+        + [(item, False) for item in record.metadata_files]
+        + [(record.mapping.mapping_file, False)]
+        + [(record.mapping.independent_evidence, False)]
+    )
+
+    actual_rows = 0
+
+    for item, is_dataset in files:
+        content, error = _read_synthetic_file(root, item)
+
+        if error is not None:
+            return {
+                "status": "rejected",
+                "reason": error,
+                "artifact": item.path,
+            }
+
+        if is_dataset:
+            count = _jsonl_row_count(content)
+
+            if count is None:
+                return {
+                    "status": "rejected",
+                    "reason": "invalid_synthetic_jsonl",
+                    "artifact": item.path,
+                }
+
+            if count != item.rows:
+                return {
+                    "status": "rejected",
+                    "reason": "synthetic_row_count_mismatch",
+                    "artifact": item.path,
+                }
+
+            actual_rows += count
+
+    return {
+        "status": "unverified",
+        "reason": "synthetic_bytes_verified_mapping_not_authenticated",
+        "byte_verified_files": len(files),
+        "byte_verified_dataset_rows": actual_rows,
     }

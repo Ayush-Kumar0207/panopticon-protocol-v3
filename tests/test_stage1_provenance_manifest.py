@@ -250,3 +250,252 @@ def test_matching_updated_row_totals_are_still_independently_checked():
             "mapped_rows_mismatch",
         ],
     }
+
+
+
+# Actual-file tests use temporary synthetic fixtures only.
+import hashlib
+
+from research_paper.stage1_state_coverage.provenance import (
+    verify_synthetic_artifact_bytes,
+)
+
+
+def synthetic_tree(tmp_path):
+    root = tmp_path / "synthetic-root"
+    root.mkdir()
+
+    value = manifest()
+    expected = separate_expectations()
+
+    payloads = {
+        "training/synthetic.jsonl":
+            b'{"text":"synthetic"}\n' * 6,
+        "training/synthetic-metadata.json":
+            b'{"synthetic":true}\n',
+        "training/synthetic-row-map.json":
+            b'{"mapping":"fixture-only"}\n',
+        "evidence/synthetic-independent-ledger.json":
+            b'{"independent":"claimed"}\n',
+    }
+
+    for relative, content in payloads.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
+    for entry in value["dataset_files"]:
+        raw = payloads[entry["path"]]
+        entry["sha256"] = hashlib.sha256(raw).hexdigest()
+        entry["bytes"] = len(raw)
+
+        expected["dataset_sha256_by_path"][entry["path"]] = (
+            entry["sha256"]
+        )
+        expected["dataset_bytes_by_path"][entry["path"]] = len(raw)
+
+    for entry in value["metadata_files"]:
+        raw = payloads[entry["path"]]
+        entry["sha256"] = hashlib.sha256(raw).hexdigest()
+        entry["bytes"] = len(raw)
+
+        expected["metadata_sha256_by_path"][entry["path"]] = (
+            entry["sha256"]
+        )
+        expected["metadata_bytes_by_path"][entry["path"]] = len(raw)
+
+    for kind, sha_field, size_field in (
+        ("mapping_file", "mapping_file_sha256", "mapping_file_bytes"),
+        (
+            "independent_evidence",
+            "mapping_evidence_sha256",
+            "mapping_evidence_bytes",
+        ),
+    ):
+        entry = value["mapping"][kind]
+        raw = payloads[entry["path"]]
+
+        entry["sha256"] = hashlib.sha256(raw).hexdigest()
+        entry["bytes"] = len(raw)
+
+        expected[sha_field] = entry["sha256"]
+        expected[size_field] = len(raw)
+
+    return root, value, expected
+
+
+def test_synthetic_byte_checks_remain_unverified(tmp_path):
+    root, value, expected = synthetic_tree(tmp_path)
+
+    assert verify_synthetic_artifact_bytes(value, expected, root) == {
+        "status": "unverified",
+        "reason": "synthetic_bytes_verified_mapping_not_authenticated",
+        "byte_verified_files": 4,
+        "byte_verified_dataset_rows": 6,
+    }
+
+
+def test_same_size_mutation_rejected(tmp_path):
+    root, value, expected = synthetic_tree(tmp_path)
+    path = root / "training/synthetic.jsonl"
+
+    path.write_bytes(
+        path.read_bytes().replace(b"synthetic", b"altered__")
+    )
+
+    result = verify_synthetic_artifact_bytes(
+        value, expected, root
+    )
+    assert result["reason"] == "synthetic_file_sha256_mismatch"
+
+
+def test_matching_forged_declarations_fail_against_bytes(tmp_path):
+    root, value, expected = synthetic_tree(tmp_path)
+
+    value["dataset_files"][0]["sha256"] = "f" * 64
+    expected["dataset_sha256_by_path"][
+        "training/synthetic.jsonl"
+    ] = "f" * 64
+
+    result = verify_synthetic_artifact_bytes(
+        value, expected, root
+    )
+    assert result["reason"] == "synthetic_file_sha256_mismatch"
+
+
+def test_row_count_even_if_declarations_agree(tmp_path):
+    root, value, expected = synthetic_tree(tmp_path)
+
+    value["dataset_files"][0]["rows"] = 5
+    value["mapping"]["mapped_rows"] = 5
+    value["mapping"]["episode_groups"] = 5
+
+    expected["dataset_rows_by_path"][
+        "training/synthetic.jsonl"
+    ] = 5
+    expected["mapped_rows"] = 5
+    expected["episode_groups"] = 5
+
+    result = verify_synthetic_artifact_bytes(
+        value, expected, root
+    )
+    assert result["reason"] == "synthetic_row_count_mismatch"
+
+
+@pytest.mark.parametrize("bad", [b"not-json", b"[]", b""])
+def test_invalid_jsonl_rejected_even_with_correct_hash(tmp_path, bad):
+    root, value, expected = synthetic_tree(tmp_path)
+
+    content = b'{"text":"synthetic"}\n' * 5 + bad + b"\n"
+    path = root / "training/synthetic.jsonl"
+    path.write_bytes(content)
+
+    value["dataset_files"][0]["sha256"] = (
+        hashlib.sha256(content).hexdigest()
+    )
+    value["dataset_files"][0]["bytes"] = len(content)
+
+    expected["dataset_sha256_by_path"][
+        "training/synthetic.jsonl"
+    ] = value["dataset_files"][0]["sha256"]
+
+    expected["dataset_bytes_by_path"][
+        "training/synthetic.jsonl"
+    ] = len(content)
+
+    result = verify_synthetic_artifact_bytes(
+        value, expected, root
+    )
+    assert result["reason"] == "invalid_synthetic_jsonl"
+
+
+def test_missing_synthetic_file_rejected(tmp_path):
+    root, value, expected = synthetic_tree(tmp_path)
+    (root / "training/synthetic-metadata.json").unlink()
+
+    result = verify_synthetic_artifact_bytes(
+        value, expected, root
+    )
+    assert result["reason"] == "missing_synthetic_file"
+
+
+def test_synthetic_file_symlink_rejected(tmp_path):
+    root, value, expected = synthetic_tree(tmp_path)
+
+    target = root / "training/synthetic-metadata.json"
+    target.unlink()
+
+    outside = tmp_path / "outside.json"
+    outside.write_bytes(b"{}")
+
+    try:
+        target.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is restricted on this machine")
+
+    result = verify_synthetic_artifact_bytes(
+        value, expected, root
+    )
+    assert result["reason"] == "unsafe_synthetic_path"
+
+
+def test_synthetic_root_symlink_rejected(tmp_path):
+    root, value, expected = synthetic_tree(tmp_path)
+    link = tmp_path / "root-link"
+
+    try:
+        link.symlink_to(root, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is restricted on this machine")
+
+    result = verify_synthetic_artifact_bytes(
+        value, expected, link
+    )
+    assert result["reason"] == "invalid_artifact_root"
+
+
+def test_invalid_synthetic_root_rejected(tmp_path):
+    _, value, expected = synthetic_tree(tmp_path)
+
+    result = verify_synthetic_artifact_bytes(
+        value, expected, tmp_path / "missing"
+    )
+    assert result["reason"] == "invalid_artifact_root"
+
+
+def test_real_manifest_does_not_open_fixture_path(tmp_path):
+    _, value, expected = synthetic_tree(tmp_path)
+    value["synthetic"] = False
+
+    assert verify_synthetic_artifact_bytes(
+        value, expected, tmp_path / "missing"
+    ) == {
+        "status": "unavailable",
+        "reason": "real_requires_integrated_gate",
+    }
+
+
+def test_expectation_mismatch_precedes_io(tmp_path):
+    _, value, expected = synthetic_tree(tmp_path)
+    expected["checkpoint_sha256"] = "9" * 64
+
+    assert verify_synthetic_artifact_bytes(
+        value, expected, tmp_path / "missing"
+    ) == {
+        "status": "rejected",
+        "reasons": ["checkpoint_sha256_mismatch"],
+    }
+
+
+def test_self_consistent_wrong_size_rejected(tmp_path):
+    root, value, expected = synthetic_tree(tmp_path)
+
+    value["metadata_files"][0]["bytes"] += 1
+    expected["metadata_bytes_by_path"][
+        "training/synthetic-metadata.json"
+    ] += 1
+
+    result = verify_synthetic_artifact_bytes(
+        value, expected, root
+    )
+    assert result["reason"] == "synthetic_file_size_mismatch"
