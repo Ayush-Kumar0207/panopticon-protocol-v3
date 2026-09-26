@@ -5,6 +5,7 @@ It does not establish parity with the historical model tokenizer.
 """
 
 import ast
+import pytest
 import hashlib
 import json
 import re
@@ -432,3 +433,209 @@ def test_displayed_suspicion_threshold_uses_rounded_value():
 
     result = candidate_workforce_summary(rendered)
     assert result["features"]["displayed_high_suspicion_count"] == 0
+
+
+
+def candidate_learner_features(observation_before):
+    """Synthetic candidate using only explicitly observable fields."""
+    import math
+
+    unavailable = {
+        "status": "unavailable",
+        "reason": "missing_or_invalid_learner_fields",
+    }
+
+    if type(observation_before) is not dict:
+        return unavailable
+
+    required = {
+        "turn", "max_turns", "phase", "phase_number",
+        "enterprise_revenue", "security_score",
+        "workers", "canary_traps",
+    }
+
+    if not required.issubset(observation_before):
+        return unavailable
+
+    record = observation_before
+
+    for name in ("turn", "max_turns", "phase_number"):
+        if type(record[name]) is not int or record[name] < 0:
+            return unavailable
+
+    if type(record["phase"]) is not str or not record["phase"]:
+        return unavailable
+
+    for name in ("enterprise_revenue", "security_score"):
+        value = record[name]
+        if type(value) not in (int, float) or not math.isfinite(value):
+            return unavailable
+
+    if type(record["workers"]) is not list:
+        return unavailable
+
+    if type(record["canary_traps"]) is not list:
+        return unavailable
+
+    departments = set()
+    high_suspicion = 0
+
+    for worker in record["workers"]:
+        if type(worker) is not dict:
+            return unavailable
+
+        fields = {
+            "id", "name", "department", "state",
+            "suspicion_level", "turning_in_progress",
+        }
+        if not fields.issubset(worker):
+            return unavailable
+
+        for name in ("id", "name", "department", "state"):
+            if type(worker[name]) is not str or not worker[name]:
+                return unavailable
+
+        if type(worker["turning_in_progress"]) is not bool:
+            return unavailable
+
+        suspicion = worker["suspicion_level"]
+        if (
+            type(suspicion) not in (int, float)
+            or not math.isfinite(suspicion)
+            or not 0 <= suspicion <= 1
+        ):
+            return unavailable
+
+        departments.add(worker["department"])
+
+        # Match the existing formatter's displayed percentage.
+        if suspicion > 0.05:
+            displayed = int(f"{suspicion:.0%}"[:-1])
+            high_suspicion += displayed > 50
+
+    triggered = 0
+
+    for trap in record["canary_traps"]:
+        if type(trap) is not dict:
+            return unavailable
+
+        if type(trap.get("triggered")) is not bool:
+            return unavailable
+
+        triggered += trap["triggered"] is True
+
+    return {
+        "status": "available",
+        "header": {
+            "turn": record["turn"],
+            "max_turns": record["max_turns"],
+            "phase": record["phase"],
+            "phase_number": record["phase_number"],
+            "displayed_revenue": int(
+                f"{record['enterprise_revenue']:.0f}"
+            ),
+            "displayed_security": int(
+                f"{record['security_score']:.0f}"
+            ),
+        },
+        "workforce": {
+            "worker_count": len(record["workers"]),
+            "displayed_high_suspicion_count": high_suspicion,
+            "unique_worker_departments": len(departments),
+        },
+        "triggered_canaries": triggered,
+    }
+
+
+def test_learner_and_original_training_text_match():
+    learner = candidate_learner_features(
+        synthetic_observation().model_dump()
+    )
+    text = fixture()["text"]["original"]
+
+    assert learner["status"] == "available"
+    assert learner["header"] == candidate_header(text)["features"]
+    assert learner["workforce"] == (
+        candidate_workforce_summary(text)["features"]
+    )
+    assert learner["triggered_canaries"] == (
+        candidate_triggered_canaries(text)["triggered_count"]
+    )
+
+
+def test_learner_and_compacted_text_match_where_recoverable():
+    learner = candidate_learner_features(
+        synthetic_observation().model_dump()
+    )
+    text = fixture()["text"]["compacted"]
+
+    assert learner["header"] == candidate_header(text)["features"]
+
+    recovered = candidate_workforce_summary(text)
+    assert recovered["status"] == "available"
+
+    for name, value in recovered["features"].items():
+        assert learner["workforce"][name] == value
+
+    assert "unique_worker_departments" in (
+        recovered["unavailable_fields"]
+    )
+    assert candidate_triggered_canaries(text)["status"] == "unavailable"
+
+
+def test_learner_uses_displayed_suspicion_precision():
+    observation = synthetic_observation()
+    observation.workers[0].suspicion_level = 0.504
+
+    learner = candidate_learner_features(
+        observation.model_dump()
+    )
+
+    assert (
+        learner["workforce"]["displayed_high_suspicion_count"]
+        == 0
+    )
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["workers", "canary_traps", "enterprise_revenue", "turn"],
+)
+def test_missing_learner_field_fails_closed(missing):
+    record = synthetic_observation().model_dump()
+    del record[missing]
+
+    assert candidate_learner_features(record)["status"] == "unavailable"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("workers", "invalid"),
+        ("enterprise_revenue", True),
+        ("turn", False),
+    ],
+)
+def test_malformed_learner_field_fails_closed(field, value):
+    record = synthetic_observation().model_dump()
+    record[field] = value
+
+    assert candidate_learner_features(record)["status"] == "unavailable"
+
+
+def test_hidden_worker_attributes_are_not_required():
+    record = synthetic_observation().model_dump()
+
+    hidden = (
+        "hidden_state", "is_sleeper", "generation",
+        "cover_integrity", "leak_cooldown", "activation_turn",
+        "false_flag_target", "dead_switch_armed",
+    )
+
+    expected = candidate_learner_features(record)
+
+    for worker in record["workers"]:
+        for field in hidden:
+            worker.pop(field, None)
+
+    assert candidate_learner_features(record) == expected
