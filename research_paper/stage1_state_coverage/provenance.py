@@ -117,11 +117,32 @@ class TrainingManifest(_StrictRecord):
 
 _EXPECTED_FIELDS = frozenset({
     "experiment_id", "run_fingerprint", "checkpoint_sha256",
-    "source_commit", "training_stage", "tokenizer_revision",
-    "chat_template_sha256", "formatter_source_commit",
-    "dataset_sha256_by_path", "metadata_sha256_by_path",
-    "mapping_file_sha256", "mapping_evidence_sha256",
+    "source_commit", "training_stage", "feature_extractor_version",
+    "tokenizer_identifier", "tokenizer_revision", "chat_template_sha256",
+    "formatter_source_commit", "formatter_function",
+    "compaction", "token_truncation",
+    "dataset_sha256_by_path", "dataset_bytes_by_path", "dataset_rows_by_path",
+    "metadata_sha256_by_path", "metadata_bytes_by_path",
+    "mapping_file_sha256", "mapping_file_path", "mapping_file_bytes",
+    "mapping_evidence_sha256", "mapping_evidence_path", "mapping_evidence_bytes",
+    "mapped_rows", "episode_groups", "claimed_mapping_method",
 })
+
+
+def _strict_equal(actual, expected):
+    """Compare nested expectations without bool/int or numeric coercion."""
+    if type(actual) is not type(expected):
+        return False
+    if type(actual) is dict:
+        return actual.keys() == expected.keys() and all(
+            _strict_equal(value, expected[key])
+            for key, value in actual.items()
+        )
+    if type(actual) is list:
+        return len(actual) == len(expected) and all(
+            _strict_equal(a, b) for a, b in zip(actual, expected)
+        )
+    return actual == expected
 
 
 def validate_training_manifest(manifest: object, expected_identity: object) -> dict:
@@ -152,22 +173,42 @@ def validate_training_manifest(manifest: object, expected_identity: object) -> d
         "checkpoint_sha256": record.checkpoint_sha256,
         "source_commit": record.source_commit,
         "training_stage": record.training_stage,
+        "feature_extractor_version": record.feature_extractor_version,
+        "tokenizer_identifier": record.tokenizer.identifier,
         "tokenizer_revision": record.tokenizer.revision,
         "chat_template_sha256": record.tokenizer.chat_template_sha256,
         "formatter_source_commit": record.formatter.source_commit,
+        "formatter_function": record.formatter.function,
+        "compaction": record.transforms.compaction,
+        "token_truncation": record.transforms.token_truncation,
         "dataset_sha256_by_path": {
             file.path: file.sha256 for file in record.dataset_files
+        },
+        "dataset_bytes_by_path": {
+            file.path: file.bytes for file in record.dataset_files
+        },
+        "dataset_rows_by_path": {
+            file.path: file.rows for file in record.dataset_files
         },
         "metadata_sha256_by_path": {
             file.path: file.sha256 for file in record.metadata_files
         },
+        "metadata_bytes_by_path": {
+            file.path: file.bytes for file in record.metadata_files
+        },
         "mapping_file_sha256": record.mapping.mapping_file.sha256,
+        "mapping_file_path": record.mapping.mapping_file.path,
+        "mapping_file_bytes": record.mapping.mapping_file.bytes,
         "mapping_evidence_sha256": record.mapping.independent_evidence.sha256,
+        "mapping_evidence_path": record.mapping.independent_evidence.path,
+        "mapping_evidence_bytes": record.mapping.independent_evidence.bytes,
+        "mapped_rows": record.mapping.mapped_rows,
+        "episode_groups": record.mapping.episode_groups,
+        "claimed_mapping_method": record.mapping.claimed_method,
     }
     mismatches = sorted(
         field for field in _EXPECTED_FIELDS
-        if type(expected_identity[field]) is not type(actual[field])
-        or expected_identity[field] != actual[field]
+        if not _strict_equal(actual[field], expected_identity[field])
     )
     if mismatches:
         return {

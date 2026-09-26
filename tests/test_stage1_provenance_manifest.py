@@ -61,13 +61,28 @@ def separate_expectations():
         "checkpoint_sha256": "2" * 64,
         "source_commit": "3" * 40,
         "training_stage": "synthetic-v5",
+        "feature_extractor_version": "synthetic-extractor-v1",
+        "tokenizer_identifier": "synthetic-tokenizer",
         "tokenizer_revision": "synthetic-tokenizer-revision",
         "chat_template_sha256": "d" * 64,
         "formatter_source_commit": "3" * 40,
+        "formatter_function": "train_trl_v2.format_observation",
+        "compaction": "unknown",
+        "token_truncation": "unknown",
         "dataset_sha256_by_path": {"training/synthetic.jsonl": "a" * 64},
+        "dataset_bytes_by_path": {"training/synthetic.jsonl": 123},
+        "dataset_rows_by_path": {"training/synthetic.jsonl": 6},
         "metadata_sha256_by_path": {"training/synthetic-metadata.json": "b" * 64},
+        "metadata_bytes_by_path": {"training/synthetic-metadata.json": 456},
         "mapping_file_sha256": "c" * 64,
+        "mapping_file_path": "training/synthetic-row-map.json",
+        "mapping_file_bytes": 345,
         "mapping_evidence_sha256": "e" * 64,
+        "mapping_evidence_path": "evidence/synthetic-independent-ledger.json",
+        "mapping_evidence_bytes": 567,
+        "mapped_rows": 6,
+        "episode_groups": 6,
+        "claimed_mapping_method": "independent_ledger",
     }
 
 
@@ -180,3 +195,58 @@ def test_boolean_row_count_and_missing_evidence_rejected():
     value = manifest()
     del value["mapping"]["independent_evidence"]
     assert validate_training_manifest(value, separate_expectations())["status"] == "rejected"
+
+
+
+@pytest.mark.parametrize("field,wrong", [
+    ("feature_extractor_version", "unexpected-extractor"),
+    ("tokenizer_identifier", "different-tokenizer"),
+    ("formatter_function", "other.formatter"),
+    ("compaction", "present"),
+    ("token_truncation", "present"),
+    ("dataset_bytes_by_path", {"training/synthetic.jsonl": 124}),
+    ("dataset_rows_by_path", {"training/synthetic.jsonl": 7}),
+    ("metadata_bytes_by_path", {"training/synthetic-metadata.json": 457}),
+    ("mapping_file_path", "training/other-map.json"),
+    ("mapping_file_bytes", 346),
+    ("mapping_evidence_path", "evidence/other-ledger.json"),
+    ("mapping_evidence_bytes", 568),
+    ("mapped_rows", 7),
+    ("episode_groups", 5),
+    ("claimed_mapping_method", "original_row_metadata"),
+])
+def test_new_expectation_fields_are_enforced(field, wrong):
+    independent = separate_expectations()
+    independent[field] = wrong
+    assert validate_training_manifest(manifest(), independent) == {
+        "status": "rejected",
+        "reasons": [field + "_mismatch"],
+    }
+
+
+def test_nested_numeric_type_coercion_is_not_allowed():
+    independent = separate_expectations()
+    independent["dataset_rows_by_path"] = {
+        "training/synthetic.jsonl": 6.0
+    }
+    assert validate_training_manifest(manifest(), independent) == {
+        "status": "rejected",
+        "reasons": ["dataset_rows_by_path_mismatch"],
+    }
+
+
+def test_matching_updated_row_totals_are_still_independently_checked():
+    value = manifest()
+    value["dataset_files"][0]["rows"] = 7
+    value["mapping"]["mapped_rows"] = 7
+
+    result = validate_training_manifest(
+        value, separate_expectations()
+    )
+    assert result == {
+        "status": "rejected",
+        "reasons": [
+            "dataset_rows_by_path_mismatch",
+            "mapped_rows_mismatch",
+        ],
+    }
