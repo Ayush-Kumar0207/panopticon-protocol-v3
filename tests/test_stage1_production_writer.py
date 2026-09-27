@@ -1,6 +1,8 @@
 """Synthetic regression test using the actual V5 training writer."""
 
 import ast
+import builtins
+import hashlib
 import json
 import os
 import runpy
@@ -77,15 +79,61 @@ def production_writer():
     return namespace["save_training_data_with_template"]
 
 
-def test_actual_writer_persists_two_turns_and_weighted_rows(tmp_path):
-    transformers = pytest.importorskip("transformers")
 
-    tokenizer = transformers.AutoTokenizer.from_pretrained(
-        MODEL_ID,
-        revision=MODEL_REVISION,
-        local_files_only=True,
-        trust_remote_code=False,
-    )
+class OfflineTemplateTokenizer:
+    """Exercise the unmodified writer with the exact pinned template.
+
+    The small synthetic observations require no compaction. This
+    fixture-specific length check is not Qwen tokenization; the
+    separate cached-tokenizer tests cover token-based transforms.
+    """
+
+    def __init__(self):
+        from jinja2.sandbox import ImmutableSandboxedEnvironment
+
+        path = (
+            ROOT / "tests/fixtures/stage1_state_coverage/"
+            "qwen_pinned_chat_template.jinja"
+        )
+        self.chat_template = path.read_text(encoding="utf-8")
+        assert hashlib.sha256(
+            self.chat_template.encode("utf-8")
+        ).hexdigest() == CHAT_TEMPLATE_SHA256
+
+        environment = ImmutableSandboxedEnvironment(
+            trim_blocks=True,
+            lstrip_blocks=True,
+            extensions=["jinja2.ext.loopcontrols"],
+        )
+        self.renderer = environment.from_string(self.chat_template)
+
+    def apply_chat_template(self, messages, tokenize=False):
+        assert tokenize is False
+        return self.renderer.render(
+            messages=messages,
+            tools=None,
+            add_generation_prompt=False,
+        )
+
+    def __call__(self, text, truncation=False):
+        assert truncation is False
+        count = len(text.split())
+        assert count <= 512, "Unexpected fixture length"
+        return {"input_ids": list(range(count))}
+
+    def encode(self, *args, **kwargs):
+        raise AssertionError(
+            "Unexpected compaction: real Qwen tokenizer required"
+        )
+
+    def decode(self, *args, **kwargs):
+        raise AssertionError(
+            "Unexpected truncation: real Qwen tokenizer required"
+        )
+
+
+def test_actual_writer_persists_two_turns_and_weighted_rows(tmp_path):
+    tokenizer = OfflineTemplateTokenizer()
 
     helpers = runpy.run_path(
         str(ROOT / "tests/test_stage1_feature_parity.py")
@@ -128,12 +176,39 @@ def test_actual_writer_persists_two_turns_and_weighted_rows(tmp_path):
 
     path = tmp_path / "production-synthetic.jsonl"
 
-    written = production_writer()(
+    actual_writer = production_writer()
+
+    # Reproduce the frozen Windows CRLF serialization on all CI hosts.
+    # The actual production-writer function remains unchanged.
+    def fixture_open(file, mode="r", *args, **kwargs):
+        assert mode == "w"
+        assert str(file).endswith(".jsonl.tmp")
+        assert "newline" not in kwargs
+        return builtins.open(
+            file, mode, *args, newline=chr(13) + chr(10), **kwargs
+        )
+
+    actual_writer.__globals__["open"] = fixture_open
+
+    written = actual_writer(
         trajectories,
         str(path),
         tokenizer,
         "level_4",
     )
+
+    expected_path = (
+        ROOT / "tests/fixtures/stage1_state_coverage/"
+        "production_pinned_two_turn_v1.jsonl"
+    )
+    expected_bytes = expected_path.read_bytes()
+    actual_bytes = path.read_bytes()
+    expected_hash = (
+        "fc92a78607dde094b32c84a5ba68a2db0ac7cc8411179b368495d6861d7d22e5"
+    )
+
+    assert actual_bytes == expected_bytes
+    assert hashlib.sha256(actual_bytes).hexdigest() == expected_hash
 
     rows = [
         json.loads(line)

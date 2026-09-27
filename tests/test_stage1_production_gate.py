@@ -1,5 +1,6 @@
 """Production JSONL regression through both synthetic gates."""
 
+import ast
 import hashlib
 import runpy
 
@@ -178,6 +179,28 @@ def test_pinned_source_matches_checkout():
     assert hashlib.sha256(
         source.encode("utf-8")
     ).hexdigest() == PINNED_PIPELINE["source_sha256"]
+
+    tree = ast.parse(source)
+
+    for name, expected_field in (
+        ("format_observation", "formatter_sha256"),
+        ("render_training_text", "renderer_sha256"),
+        ("save_training_data_with_template", "writer_sha256"),
+    ):
+        matches = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == name
+        ]
+        assert len(matches) == 1, name
+
+        function_source = ast.get_source_segment(
+            source, matches[0]
+        )
+
+        assert hashlib.sha256(
+            function_source.encode("utf-8")
+        ).hexdigest() == PINNED_PIPELINE[expected_field], name
 
 
 def test_production_manifest_requires_pipeline(tmp_path):
