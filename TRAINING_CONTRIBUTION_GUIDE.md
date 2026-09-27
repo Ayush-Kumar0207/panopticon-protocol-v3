@@ -34,10 +34,22 @@ final-refit seed; a reviewer must commit and freeze it before held-out access.
 Every candidate is derived from `security_first_v5.json`, so the frozen
 Ampere/native-BF16 runtime applies to development selection too: Python 3.11,
 NVIDIA compute capability 8.0 or newer, at least 14 GiB VRAM, and the exact CUDA
-12.1/PyTorch environment. Before the full campaign, run the repository installer,
-normal validation suite, and `tools/gpu_training_probe.py`. Stop after the probe
-and ask the maintainer to review its JSON evidence before spending substantial
-compute.
+12.1/PyTorch environment. Before the full campaign, run the repository installer
+and the one-command Track A qualification below. It runs the normal validation
+suite and real optimizer probe, then writes a hash-indexed evidence bundle without
+starting training. Stop after qualification and ask the maintainer to review the
+bundle before spending substantial compute.
+
+```bash
+python tools/install_canonical_training_env.py
+python tools/run_track_a_qualification.py \
+  --output-dir /persistent/path/panopticon-track-a
+```
+
+The output directory must be outside the clean source checkout. A failed
+qualification can be rerun in the same directory only while it contains the
+unchanged mechanically generated spec; successful or unrelated contents are never
+overwritten.
 
 Compatible compute may be local or cloud-based. A contributor who already owns a
 suitable NVIDIA workstation or gaming laptop may not need to purchase cloud GPU
