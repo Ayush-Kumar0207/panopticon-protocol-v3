@@ -8,6 +8,7 @@
   },
   "trajectory": {
     "schema_version": "curriculum-expert-v5-security-first",
+    "evidence_schema_version": "curriculum-expert-turn-evidence-v1",
     "levels": ["easy", "medium", "hard", "level_4", "level_5"],
     "episodes_per_level": 50,
     "training_seed": 42,
@@ -85,6 +86,7 @@
     "preflight_report": "preflight_report.json",
     "events": "training_events.jsonl",
     "curriculum_state": "curriculum_state.json",
+    "training_evidence_pattern": "training_evidence_{level}.jsonl",
     "merged_model_dir": "merged_model",
     "model_manifest": "merged_model_manifest.json",
     "canonical_base_evaluation": "evaluation_canonical_base.json",

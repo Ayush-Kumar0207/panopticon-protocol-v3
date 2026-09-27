@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import inspect
 import gc
 import json
@@ -140,6 +141,7 @@ CPU_BASIC_SAVE_STEPS = 5
 LOW_VRAM_GPU_SAVE_STEPS = 25
 LOW_VRAM_GPU_THRESHOLD_GB = 20
 TRAJECTORY_SCHEMA_VERSION = "curriculum-expert-v5-security-first"
+TRAINING_EVIDENCE_SCHEMA_VERSION = "curriculum-expert-turn-evidence-v1"
 LEVELS = ["easy", "medium", "hard", "level_4", "level_5"]
 
 # Default local/persistent root; HF worker Spaces override this via ENV TRAIN_ROOT.
@@ -355,6 +357,10 @@ def configure_canonical_spec(args):
     assert_research_stage_authorized(spec, operation="training")
     training = spec["training"]
     trajectory = spec["trajectory"]
+    if trajectory.get("schema_version") != TRAJECTORY_SCHEMA_VERSION:
+        raise ReproducibilityError("Training trajectory schema differs from this implementation")
+    if trajectory.get("evidence_schema_version") != TRAINING_EVIDENCE_SCHEMA_VERSION:
+        raise ReproducibilityError("Training evidence schema differs from this implementation")
     if args.epochs is not None and args.epochs != training["epochs"]:
         raise ReproducibilityError("--epochs differs from the canonical specification")
     if args.max_seq_length is not None and args.max_seq_length != training["max_sequence_length"]:
@@ -573,16 +579,20 @@ def save_data_meta(
     model_name: str,
     seed: int,
     data_path: Path,
+    evidence_path: Path,
     metrics_path: Path,
     episode_seeds: list[int],
+    num_logical_examples: int,
 ):
     tmp_path = meta_path.with_suffix(".tmp")
     payload = {
         "task_level": task_level,
         "num_episodes": num_episodes,
         "num_examples": num_examples,
+        "num_logical_examples": num_logical_examples,
         "max_seq_length": MAX_SEQ_LENGTH,
         "trajectory_schema_version": TRAJECTORY_SCHEMA_VERSION,
+        "training_evidence_schema_version": TRAINING_EVIDENCE_SCHEMA_VERSION,
         "model_name": artifact_ref(model_name),
         "seed": seed,
         "runtime_profile": current_runtime_profile_name(),
@@ -592,6 +602,7 @@ def save_data_meta(
         "episode_seeds": episode_seeds,
         "episode_seed_plan_sha256": __import__("hashlib").sha256(canonical_json(episode_seeds).encode()).hexdigest(),
         "training_data_sha256": sha256_file(data_path),
+        "training_evidence_sha256": sha256_file(evidence_path),
         "expert_metrics_sha256": sha256_file(metrics_path),
     }
     with open(tmp_path, "w", encoding="utf-8") as f:
@@ -601,7 +612,16 @@ def save_data_meta(
     os.replace(tmp_path, meta_path)
 
 
-def data_matches(meta, task_level: str, num_episodes: int, model_name: str, seed: int, data_path: Path, metrics_path: Path):
+def data_matches(
+    meta,
+    task_level: str,
+    num_episodes: int,
+    model_name: str,
+    seed: int,
+    data_path: Path,
+    evidence_path: Path,
+    metrics_path: Path,
+):
     expected_seeds = training_seed_plan(ACTIVE_SPEC)[task_level] if ACTIVE_SPEC else meta.get("episode_seeds") if meta else None
     return (
         meta is not None
@@ -609,6 +629,7 @@ def data_matches(meta, task_level: str, num_episodes: int, model_name: str, seed
         and meta.get("num_episodes") == num_episodes
         and meta.get("max_seq_length") == MAX_SEQ_LENGTH
         and meta.get("trajectory_schema_version") == TRAJECTORY_SCHEMA_VERSION
+        and meta.get("training_evidence_schema_version") == TRAINING_EVIDENCE_SCHEMA_VERSION
         and meta.get("model_name") == artifact_ref(model_name)
         and meta.get("seed") == seed
         and meta.get("runtime_profile") == current_runtime_profile_name()
@@ -617,8 +638,10 @@ def data_matches(meta, task_level: str, num_episodes: int, model_name: str, seed
         and meta.get("spec_sha256") == RUN_CONTEXT.get("spec_sha256")
         and meta.get("episode_seeds") == expected_seeds
         and data_path.is_file()
+        and evidence_path.is_file()
         and metrics_path.is_file()
         and meta.get("training_data_sha256") == sha256_file(data_path)
+        and meta.get("training_evidence_sha256") == sha256_file(evidence_path)
         and meta.get("expert_metrics_sha256") == sha256_file(metrics_path)
     )
 
@@ -732,19 +755,26 @@ def generate_expert_trajectories(task_level: str, num_episodes: int = 20, seed: 
             action = _choose_curriculum_expert_action(obs, task_level, expert_state)
 
             obs_text = format_observation(obs)
-            action_json = json.dumps(
-                {
-                    "action_type": action.action_type,
-                    "target": action.target,
-                    **(
-                        {"sub_action": action.sub_action}
-                        if action.sub_action and action.sub_action != "none"
-                        else {}
-                    ),
-                    "reason": action.reason,
-                }
-            )
-            trajectories.append({"observation": obs_text, "action": action_json})
+            action_payload = {
+                "action_type": action.action_type,
+                "target": action.target,
+                **(
+                    {"sub_action": action.sub_action}
+                    if action.sub_action and action.sub_action != "none"
+                    else {}
+                ),
+                "reason": action.reason,
+            }
+            action_json = json.dumps(action_payload)
+            trajectories.append({
+                "observation": obs_text,
+                "observation_before": obs.model_dump(mode="json"),
+                "action": action_json,
+                "episode": ep + 1,
+                "episode_id": f"{task_level}:{ep + 1}:{episode_seed}",
+                "seed": episode_seed,
+                "turn": int(obs.turn),
+            })
 
             result = env.step(action)
             obs = result.observation
@@ -1000,36 +1030,96 @@ def fit_training_text(tokenizer, observation: str, action: str) -> tuple[str, in
     return best_text, best_length, True
 
 
-def save_training_data_with_template(trajectories, output_path: str, tokenizer, task_level: str):
+def save_training_data_with_template(
+    trajectories,
+    output_path: str,
+    tokenizer,
+    task_level: str,
+    evidence_path: str | None = None,
+):
     tmp_path = f"{output_path}.tmp"
+    evidence_tmp_path = f"{evidence_path}.tmp" if evidence_path else None
     written = 0
     action_counts: dict[str, int] = {}
     weighted_action_counts: dict[str, int] = {}
     token_lengths: list[int] = []
     compacted_examples = 0
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        for t in trajectories:
-            try:
-                action_payload = json.loads(t["action"])
-                action_key = action_payload.get("action_type", "unknown")
-                sub_action = action_payload.get("sub_action", "none")
-                if sub_action and sub_action != "none":
-                    action_key = f"{action_key}/{sub_action}"
-            except (KeyError, TypeError, json.JSONDecodeError):
-                action_key = "unknown"
-            weight = trajectory_training_weight(t)
-            action_counts[action_key] = action_counts.get(action_key, 0) + 1
-            weighted_action_counts[action_key] = weighted_action_counts.get(action_key, 0) + weight
+    evidence_file = open(evidence_tmp_path, "w", encoding="utf-8") if evidence_tmp_path else None
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            for logical_row_index, t in enumerate(trajectories):
+                try:
+                    action_payload = json.loads(t["action"])
+                    action_key = action_payload.get("action_type", "unknown")
+                    sub_action = action_payload.get("sub_action", "none")
+                    if sub_action and sub_action != "none":
+                        action_key = f"{action_key}/{sub_action}"
+                except (KeyError, TypeError, json.JSONDecodeError):
+                    action_payload = None
+                    action_key = "unknown"
+                weight = trajectory_training_weight(t)
+                action_counts[action_key] = action_counts.get(action_key, 0) + 1
+                weighted_action_counts[action_key] = weighted_action_counts.get(action_key, 0) + weight
 
-            text, token_length, was_compacted = fit_training_text(tokenizer, t["observation"], t["action"])
-            token_lengths.append(token_length)
-            if was_compacted:
-                compacted_examples += 1
-            for _ in range(weight):
-                f.write(json.dumps({"text": text}) + "\n")
-                written += 1
+                text, token_length, was_compacted = fit_training_text(tokenizer, t["observation"], t["action"])
+                token_lengths.append(token_length)
+                if was_compacted:
+                    compacted_examples += 1
+                training_row_start = written
+                for _ in range(weight):
+                    f.write(json.dumps({"text": text}) + "\n")
+                    written += 1
 
-    os.replace(tmp_path, output_path)
+                if evidence_file is not None:
+                    required = {
+                        "observation_before", "episode", "episode_id", "seed", "turn",
+                    }
+                    missing = sorted(required - t.keys())
+                    if missing or not isinstance(action_payload, dict):
+                        raise ReproducibilityError(
+                            f"Cannot write complete training evidence for {task_level}: "
+                            f"missing={missing} valid_action={isinstance(action_payload, dict)}"
+                        )
+                    evidence = {
+                        "schema_version": TRAINING_EVIDENCE_SCHEMA_VERSION,
+                        "run_fingerprint": RUN_CONTEXT.get("run_fingerprint"),
+                        "source_commit": RUN_CONTEXT.get("source_commit"),
+                        "spec_sha256": RUN_CONTEXT.get("spec_sha256"),
+                        "task_level": task_level,
+                        "episode": t["episode"],
+                        "episode_id": t["episode_id"],
+                        "seed": t["seed"],
+                        "turn": t["turn"],
+                        "logical_row_index": logical_row_index,
+                        "training_row_start": training_row_start,
+                        "training_row_count": weight,
+                        "training_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                        "formatted_observation_sha256": hashlib.sha256(
+                            t["observation"].encode("utf-8")
+                        ).hexdigest(),
+                        "prompt_token_length": token_length,
+                        "prompt_compacted": was_compacted,
+                        "observation_before": t["observation_before"],
+                        "action": action_payload,
+                        "action_text": t["action"],
+                    }
+                    evidence_file.write(json.dumps(evidence, sort_keys=True) + "\n")
+
+            f.flush()
+            os.fsync(f.fileno())
+        if evidence_file is not None:
+            evidence_file.flush()
+            os.fsync(evidence_file.fileno())
+            evidence_file.close()
+            os.replace(evidence_tmp_path, evidence_path)
+            evidence_file = None
+        os.replace(tmp_path, output_path)
+    finally:
+        if evidence_file is not None:
+            evidence_file.close()
+        for temporary in (tmp_path, evidence_tmp_path):
+            if temporary and os.path.exists(temporary):
+                os.unlink(temporary)
     print(
         f"  Saved {written} weighted examples to {output_path} "
         f"from {len(trajectories)} trajectory steps"
@@ -1047,6 +1137,7 @@ def save_training_data_with_template(trajectories, output_path: str, tokenizer, 
         "dataset_written",
         level=task_level,
         output_path=output_path,
+        evidence_path=evidence_path,
         raw_examples=len(trajectories),
         weighted_examples=written,
         compacted_examples=compacted_examples,
@@ -1191,6 +1282,11 @@ def train_on_level(
 
     output_dir = RUN_ROOT / f"trl_model_{task_level}"
     data_path = RUN_ROOT / f"training_data_{task_level}.jsonl"
+    evidence_pattern = (
+        ACTIVE_SPEC["outputs"]["training_evidence_pattern"]
+        if ACTIVE_SPEC else "training_evidence_{level}.jsonl"
+    )
+    evidence_path = RUN_ROOT / evidence_pattern.format(level=task_level)
     data_meta_path = RUN_ROOT / f"training_data_{task_level}.meta.json"
     metrics_path = RUN_ROOT / f"expert_metrics_{task_level}.json"
 
@@ -1228,6 +1324,7 @@ def train_on_level(
         model_name,
         seed,
         data_path,
+        evidence_path,
         metrics_path,
     )
 
@@ -1258,11 +1355,18 @@ def train_on_level(
         print("\n[Phase 1] Generating expert trajectories...")
         sys.stdout.flush()
         trajectories, episode_metrics = generate_expert_trajectories(task_level, num_episodes, seed)
-        written_examples = save_training_data_with_template(trajectories, str(data_path), tokenizer, task_level)
+        written_examples = save_training_data_with_template(
+            trajectories,
+            str(data_path),
+            tokenizer,
+            task_level,
+            evidence_path=str(evidence_path),
+        )
         save_episode_metrics(episode_metrics, str(metrics_path))
         save_data_meta(
             data_meta_path, task_level, num_episodes, written_examples, model_name, seed,
-            data_path, metrics_path, [int(item["seed"]) for item in episode_metrics],
+            data_path, evidence_path, metrics_path,
+            [int(item["seed"]) for item in episode_metrics], len(trajectories),
         )
         log_event(
             "expert_generation_complete",
@@ -1272,6 +1376,8 @@ def train_on_level(
             weighted_examples=written_examples,
             metrics_path=str(metrics_path),
             data_path=str(data_path),
+            evidence_path=str(evidence_path),
+            evidence_sha256=sha256_file(evidence_path),
         )
 
     print("\n[Phase 2] Loading model...")

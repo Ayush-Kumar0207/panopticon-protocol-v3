@@ -485,13 +485,45 @@ def _valid_run(tmp_path: Path, *, accepted: bool = True) -> tuple[Path, dict]:
         _write_json(stage_dir / "adapter_config.json", {"r": spec["training"]["lora_r"]})
         _write_safetensors(stage_dir / "adapter_model.safetensors")
         data_path = tmp_path / f"training_data_{level}.jsonl"
+        evidence_path = tmp_path / outputs["training_evidence_pattern"].format(level=level)
         metrics_path = tmp_path / f"expert_metrics_{level}.json"
-        data_path.write_text(json.dumps({"text": "<|im_start|>assistant\nlabelled example"}) + "\n", encoding="utf-8")
-        _write_json(metrics_path, [{"seed": seed} for seed in seed_plan[level]])
+        action_text = '{"action_type":"noop"}'
+        training_text = f"<|im_start|>assistant\n{action_text}"
+        training_rows = []
+        evidence_rows = []
+        for episode, episode_seed in enumerate(seed_plan[level], start=1):
+            training_rows.append(json.dumps({"text": training_text}) + "\n")
+            observation = {
+                "workers": [], "active_leaks": [], "canary_traps": [], "intel_reports": [],
+                "double_agents": [], "enterprise_revenue": 100.0, "security_score": 100.0,
+                "turn": 0, "max_turns": 160, "phase": "orientation", "phase_number": 1,
+                "messages": [], "entities": [], "tasks": [], "relationships": [],
+            }
+            evidence_rows.append({
+                "schema_version": spec["trajectory"]["evidence_schema_version"],
+                "run_fingerprint": fingerprint, "source_commit": commit,
+                "spec_sha256": lock["spec_sha256"], "task_level": level,
+                "episode": episode, "episode_id": f"{level}:{episode}:{episode_seed}",
+                "seed": episode_seed, "turn": 0, "logical_row_index": episode - 1,
+                "training_row_start": episode - 1, "training_row_count": 1,
+                "training_text_sha256": __import__("hashlib").sha256(training_text.encode()).hexdigest(),
+                "formatted_observation_sha256": "0" * 64,
+                "prompt_token_length": 10, "prompt_compacted": False,
+                "observation_before": observation,
+                "action": {"action_type": "noop"}, "action_text": action_text,
+            })
+        data_path.write_text("".join(training_rows), encoding="utf-8")
+        evidence_path.write_text(
+            "".join(json.dumps(item, sort_keys=True) + "\n" for item in evidence_rows),
+            encoding="utf-8",
+        )
+        _write_json(metrics_path, [{"seed": seed, "steps": 1} for seed in seed_plan[level]])
         _write_json(tmp_path / f"training_data_{level}.meta.json", {
             "task_level": level, "num_episodes": spec["trajectory"]["episodes_per_level"],
-            "num_examples": 1, "max_seq_length": spec["training"]["max_sequence_length"],
+            "num_examples": len(training_rows), "num_logical_examples": len(evidence_rows),
+            "max_seq_length": spec["training"]["max_sequence_length"],
             "trajectory_schema_version": spec["trajectory"]["schema_version"], "model_name": previous_model,
+            "training_evidence_schema_version": spec["trajectory"]["evidence_schema_version"],
             "seed": spec["trajectory"]["training_seed"], "runtime_profile": spec["runtime"]["profile"],
             "run_fingerprint": fingerprint, "source_commit": commit, "spec_sha256": lock["spec_sha256"],
             "episode_seeds": seed_plan[level],
@@ -499,6 +531,7 @@ def _valid_run(tmp_path: Path, *, accepted: bool = True) -> tuple[Path, dict]:
                 json.dumps(seed_plan[level], sort_keys=True, separators=(",", ":")).encode("utf-8")
             ).hexdigest(),
             "training_data_sha256": sha256_file(data_path),
+            "training_evidence_sha256": sha256_file(evidence_path),
             "expert_metrics_sha256": sha256_file(metrics_path),
         })
         common = {"run_fingerprint": fingerprint, "source_commit": commit, "stage": "training", "level": level}
@@ -609,7 +642,10 @@ def test_noisy_mean_improvement_fails_paired_confidence_gate(tmp_path):
     assert report["accepted"] is False
 
 
-@pytest.mark.parametrize("target", ["model", "model_tamper", "results", "data", "event", "raw_evidence"])
+@pytest.mark.parametrize(
+    "target",
+    ["model", "model_tamper", "results", "data", "training_evidence", "event", "raw_evidence"],
+)
 def test_artifact_validator_rejects_missing_or_corrupt_artifacts(tmp_path, target):
     run, spec = _valid_run(tmp_path)
     if target == "model":
@@ -621,6 +657,18 @@ def test_artifact_validator_rejects_missing_or_corrupt_artifacts(tmp_path, targe
         (run / spec["outputs"]["canonical_candidate_evaluation"]).unlink()
     elif target == "data":
         (run / "training_data_easy.jsonl").write_text("tampered\n", encoding="utf-8")
+    elif target == "training_evidence":
+        evidence_path = run / spec["outputs"]["training_evidence_pattern"].format(level="easy")
+        rows = [json.loads(line) for line in evidence_path.read_text(encoding="utf-8").splitlines()]
+        rows[0]["training_row_start"] = 1
+        evidence_path.write_text(
+            "".join(json.dumps(item, sort_keys=True) + "\n" for item in rows),
+            encoding="utf-8",
+        )
+        meta_path = run / "training_data_easy.meta.json"
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["training_evidence_sha256"] = sha256_file(evidence_path)
+        _write_json(meta_path, meta)
     elif target == "event":
         events_path = run / spec["outputs"]["events"]
         first_evaluation = next(

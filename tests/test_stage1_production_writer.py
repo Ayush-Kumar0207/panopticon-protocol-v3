@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from models import ActionType, SubAction
+from research_repro import ReproducibilityError
 from research_paper.stage1_state_coverage.persisted_text import (
     CHAT_TEMPLATE_SHA256,
     MODEL_ID,
@@ -66,6 +67,14 @@ def production_writer():
         "MAX_SEQ_LENGTH": spec["training"]["max_sequence_length"],
         "ActionType": ActionType,
         "SubAction": SubAction,
+        "TRAINING_EVIDENCE_SCHEMA_VERSION": spec["trajectory"]["evidence_schema_version"],
+        "RUN_CONTEXT": {
+            "run_fingerprint": "f" * 64,
+            "source_commit": "c" * 40,
+            "spec_sha256": "s" * 64,
+        },
+        "ReproducibilityError": ReproducibilityError,
+        "hashlib": hashlib,
         "json": json,
         "os": os,
         "sys": sys,
@@ -161,20 +170,31 @@ def test_actual_writer_persists_two_turns_and_weighted_rows(tmp_path):
     trajectories = [
         {
             "observation": observations[0],
+            "observation_before": first.model_dump(mode="json"),
             "action": json.dumps({
                 "action_type": "canary",
                 "target": "engineering",
             }),
+            "episode": 1,
+            "episode_id": "level_4:1:1234",
+            "seed": 1234,
+            "turn": 0,
         },
         {
             "observation": observations[1],
+            "observation_before": second.model_dump(mode="json"),
             "action": json.dumps({
                 "action_type": "noop",
             }),
+            "episode": 1,
+            "episode_id": "level_4:1:1234",
+            "seed": 1234,
+            "turn": 1,
         },
     ]
 
     path = tmp_path / "production-synthetic.jsonl"
+    evidence_path = tmp_path / "production-synthetic.evidence.jsonl"
 
     actual_writer = production_writer()
 
@@ -195,6 +215,7 @@ def test_actual_writer_persists_two_turns_and_weighted_rows(tmp_path):
         str(path),
         tokenizer,
         "level_4",
+        evidence_path=str(evidence_path),
     )
 
     expected_path = (
@@ -220,6 +241,20 @@ def test_actual_writer_persists_two_turns_and_weighted_rows(tmp_path):
     assert len(rows) == 3
     assert rows[0] == rows[1]
     assert rows[1] != rows[2]
+
+    evidence = [
+        json.loads(line)
+        for line in evidence_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(evidence) == 2
+    assert [row["training_row_start"] for row in evidence] == [0, 2]
+    assert [row["training_row_count"] for row in evidence] == [2, 1]
+    assert [row["turn"] for row in evidence] == [0, 1]
+    assert evidence[0]["observation_before"] == first.model_dump(mode="json")
+    assert evidence[1]["observation_before"] == second.model_dump(mode="json")
+    assert evidence[0]["training_text_sha256"] == hashlib.sha256(
+        rows[0]["text"].encode("utf-8")
+    ).hexdigest()
 
     for row, observation in zip(
         [rows[0], rows[2]], observations

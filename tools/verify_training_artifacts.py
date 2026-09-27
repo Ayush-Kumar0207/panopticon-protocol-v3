@@ -368,6 +368,143 @@ def validate_evaluation(
     return payload
 
 
+def _verify_training_evidence(
+    data_path: Path,
+    evidence_path: Path,
+    *,
+    level: str,
+    spec: dict[str, Any],
+    lock: dict[str, Any],
+    expected_seeds: list[int],
+) -> tuple[int, int, dict[int, int]]:
+    required_observation_fields = {
+        "workers", "active_leaks", "canary_traps", "intel_reports",
+        "double_agents", "enterprise_revenue", "security_score", "turn",
+        "max_turns", "phase", "phase_number", "messages", "entities",
+        "tasks", "relationships",
+    }
+    nested_fields = {
+        "workers": {"id", "name", "department", "state", "hire_turn", "suspicion_level", "turning_in_progress"},
+        "active_leaks": {"id", "department", "is_canary", "verified", "turn_detected"},
+        "canary_traps": {"id", "department", "triggered"},
+        "double_agents": {"worker_id", "active", "hydra_trust", "effectiveness", "disinfo_fed_count"},
+    }
+    expected_training_row = 0
+    expected_logical_row = 0
+    episode_turns: dict[int, int] = {}
+
+    try:
+        training_handle = data_path.open("r", encoding="utf-8")
+        evidence_handle = evidence_path.open("r", encoding="utf-8")
+    except OSError as exc:
+        raise ReproducibilityError(f"training data/evidence is missing: {level}") from exc
+
+    with training_handle, evidence_handle:
+        for evidence_line_number, evidence_line in enumerate(evidence_handle, start=1):
+            try:
+                row = json.loads(evidence_line)
+            except json.JSONDecodeError as exc:
+                raise ReproducibilityError(
+                    f"corrupt training evidence for {level} at line {evidence_line_number}"
+                ) from exc
+            if not isinstance(row, dict):
+                raise ReproducibilityError(f"invalid training evidence row for {level}")
+
+            expected_identity = {
+                "schema_version": spec["trajectory"]["evidence_schema_version"],
+                "run_fingerprint": lock["run_fingerprint"],
+                "source_commit": lock["source_commit"],
+                "spec_sha256": lock["spec_sha256"],
+                "task_level": level,
+                "logical_row_index": expected_logical_row,
+                "training_row_start": expected_training_row,
+            }
+            if any(row.get(key) != value for key, value in expected_identity.items()):
+                raise ReproducibilityError(
+                    f"training evidence identity/mapping mismatch for {level} at logical row {expected_logical_row}"
+                )
+
+            episode = row.get("episode")
+            turn = row.get("turn")
+            if type(episode) is not int or not 1 <= episode <= len(expected_seeds):
+                raise ReproducibilityError(f"invalid training evidence episode for {level}")
+            if type(turn) is not int or turn != episode_turns.get(episode, 0):
+                raise ReproducibilityError(f"non-contiguous training evidence turns for {level} episode {episode}")
+            seed = expected_seeds[episode - 1]
+            if row.get("seed") != seed or row.get("episode_id") != f"{level}:{episode}:{seed}":
+                raise ReproducibilityError(f"training evidence seed mapping mismatch for {level} episode {episode}")
+
+            observation = row.get("observation_before")
+            if not isinstance(observation, dict) or not required_observation_fields.issubset(observation):
+                raise ReproducibilityError(f"incomplete observation evidence for {level} episode {episode} turn {turn}")
+            if observation.get("turn") != turn:
+                raise ReproducibilityError(f"observation turn mismatch for {level} episode {episode} turn {turn}")
+            for collection, required in nested_fields.items():
+                records = observation.get(collection)
+                if not isinstance(records, list) or any(
+                    not isinstance(item, dict) or not required.issubset(item) for item in records
+                ):
+                    raise ReproducibilityError(
+                        f"incomplete {collection} evidence for {level} episode {episode} turn {turn}"
+                    )
+
+            action = row.get("action")
+            action_text = row.get("action_text")
+            try:
+                decoded_action = json.loads(action_text)
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise ReproducibilityError(f"invalid action evidence for {level}") from exc
+            if not isinstance(action, dict) or decoded_action != action:
+                raise ReproducibilityError(f"action evidence mismatch for {level}")
+
+            row_count = row.get("training_row_count")
+            if type(row_count) is not int or row_count < 1:
+                raise ReproducibilityError(f"invalid training-row weight for {level}")
+            if (
+                type(row.get("prompt_token_length")) is not int
+                or not 0 < row["prompt_token_length"] <= int(spec["training"]["max_sequence_length"])
+                or type(row.get("prompt_compacted")) is not bool
+            ):
+                raise ReproducibilityError(f"invalid prompt transform evidence for {level}")
+            for digest_key in ("training_text_sha256", "formatted_observation_sha256"):
+                digest = row.get(digest_key)
+                if not isinstance(digest, str) or len(digest) != 64:
+                    raise ReproducibilityError(f"invalid {digest_key} for {level}")
+
+            for _ in range(row_count):
+                training_line = training_handle.readline()
+                if not training_line:
+                    raise ReproducibilityError(f"training evidence maps past data EOF for {level}")
+                try:
+                    training_row = json.loads(training_line)
+                except json.JSONDecodeError as exc:
+                    raise ReproducibilityError(
+                        f"corrupt training JSONL for {level} at line {expected_training_row + 1}"
+                    ) from exc
+                text = training_row.get("text") if isinstance(training_row, dict) else None
+                if (
+                    not isinstance(text, str)
+                    or set(training_row) != {"text"}
+                    or "<|im_start|>assistant" not in text
+                    or action_text not in text
+                    or sha256_bytes(text.encode("utf-8")) != row["training_text_sha256"]
+                ):
+                    raise ReproducibilityError(
+                        f"training evidence/data binding mismatch for {level} at line {expected_training_row + 1}"
+                    )
+                expected_training_row += 1
+
+            episode_turns[episode] = turn + 1
+            expected_logical_row += 1
+
+        if training_handle.readline():
+            raise ReproducibilityError(f"training data contains unmapped rows: {level}")
+
+    if expected_logical_row == 0 or set(episode_turns) != set(range(1, len(expected_seeds) + 1)):
+        raise ReproducibilityError(f"training evidence episode coverage is incomplete: {level}")
+    return expected_training_row, expected_logical_row, episode_turns
+
+
 def _validate_training(root: Path, spec: dict[str, Any], lock: dict[str, Any]) -> tuple[list[Path], int]:
     outputs = spec["outputs"]
     fingerprint = lock["run_fingerprint"]
@@ -496,6 +633,7 @@ def _validate_training(root: Path, spec: dict[str, Any], lock: dict[str, Any]) -
             if any(checkpoint_metadata.get(key) != value for key, value in checkpoint_expected.items()):
                 raise ReproducibilityError(f"checkpoint belongs to another experiment: {checkpoint}")
         data_path = root / f"training_data_{level}.jsonl"
+        evidence_path = root / outputs["training_evidence_pattern"].format(level=level)
         metrics_path = root / f"expert_metrics_{level}.json"
         meta_path = root / f"training_data_{level}.meta.json"
         meta = read_json(meta_path)
@@ -504,6 +642,7 @@ def _validate_training(root: Path, spec: dict[str, Any], lock: dict[str, Any]) -
             "num_episodes": spec["trajectory"]["episodes_per_level"],
             "max_seq_length": spec["training"]["max_sequence_length"],
             "trajectory_schema_version": spec["trajectory"]["schema_version"],
+            "training_evidence_schema_version": spec["trajectory"]["evidence_schema_version"],
             "model_name": previous_model,
             "seed": spec["trajectory"]["training_seed"],
             "runtime_profile": spec["runtime"]["profile"],
@@ -517,26 +656,32 @@ def _validate_training(root: Path, spec: dict[str, Any], lock: dict[str, Any]) -
             raise ReproducibilityError(f"expert-data identity/seed plan mismatch: {level}")
         if meta.get("training_data_sha256") != sha256_file(data_path) or meta.get("expert_metrics_sha256") != sha256_file(metrics_path):
             raise ReproducibilityError(f"expert-data artifact hash mismatch: {level}")
+        if not evidence_path.is_file():
+            raise ReproducibilityError(f"expert-evidence artifact is missing: {level}")
+        if meta.get("training_evidence_sha256") != sha256_file(evidence_path):
+            raise ReproducibilityError(f"expert-evidence artifact hash mismatch: {level}")
         metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
         if not isinstance(metrics, list) or [int(item.get("seed", -1)) for item in metrics] != expected_training_seeds[level]:
             raise ReproducibilityError(f"expert-metrics episode plan mismatch: {level}")
-        line_count = 0
-        try:
-            with data_path.open("r", encoding="utf-8") as handle:
-                for line_number, line in enumerate(handle, start=1):
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError as exc:
-                        raise ReproducibilityError(f"corrupt training JSONL for {level} at line {line_number}") from exc
-                    if not isinstance(row.get("text"), str) or "<|im_start|>assistant" not in row["text"]:
-                        raise ReproducibilityError(f"missing assistant-labelled training example for {level} at line {line_number}")
-                    line_count += 1
-        except OSError as exc:
-            raise ReproducibilityError(f"training JSONL is missing: {level}") from exc
+        line_count, logical_count, episode_turns = _verify_training_evidence(
+            data_path,
+            evidence_path,
+            level=level,
+            spec=spec,
+            lock=lock,
+            expected_seeds=expected_training_seeds[level],
+        )
         if line_count != meta.get("num_examples") or line_count == 0:
             raise ReproducibilityError(f"training example count mismatch: {level}")
+        if logical_count != meta.get("num_logical_examples"):
+            raise ReproducibilityError(f"training logical-example count mismatch: {level}")
+        if any(
+            type(item.get("steps")) is not int or episode_turns.get(index) != item["steps"]
+            for index, item in enumerate(metrics, start=1)
+        ):
+            raise ReproducibilityError(f"training evidence/metrics turn count mismatch: {level}")
         important.extend(item for item in stage_dir.rglob("*") if item.is_file())
-        important.extend([data_path, metrics_path, meta_path])
+        important.extend([data_path, evidence_path, metrics_path, meta_path])
         previous_model = f"trl_model_{level}"
 
     model_dir = root / outputs["merged_model_dir"]
