@@ -26,10 +26,25 @@ versioned training namespace; seeds are unique and disjoint from development,
 canonical, and confirmation evaluation. The generator records the exact seed
 list, per-episode metrics, example count, and content hashes.
 
+Each logical expert turn is also written once to a versioned evidence sidecar.
+The sidecar preserves the complete learner-visible `observation_before`, executed
+action, episode/seed/turn identity, prompt-transform status, and the exact span of
+weighted JSONL rows produced from that turn. A SHA-256 digest of the rendered
+training text binds every weighted row back to its logical turn. Prompt compaction
+can therefore keep model inputs within the frozen token budget without discarding
+the structured state needed for later audit. Resume and final artifact verification
+fail closed if this sidecar is missing, changed, incomplete, or inconsistent with
+the training JSONL or episode metrics.
+
 The security-first expert must pass the environment's security regression tests.
 Chat-formatted examples train only assistant response tokens. Canonical execution
 must stop if the response boundary cannot be identified, the first batch contains
 no assistant labels, or data identity/content differs on resume.
+
+The evidence sidecar records only the learner-visible observation; it does not add
+hidden environment truth to the training corpus. Its presence establishes data
+completeness and traceability, but does not itself authorize real-artifact Stage 1
+analysis, retraining, GPU execution, or held-out evaluation.
 
 ## Optimization
 
