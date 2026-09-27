@@ -1,0 +1,1 @@
+tests/fixtures/stage1_state_coverage/production_pinned_two_turn_v1.jsonl -text whitespace=cr-at-eol

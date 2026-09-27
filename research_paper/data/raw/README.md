@@ -10,5 +10,9 @@ Large files remain at the repository root to avoid duplicating them in the paper
 | `evaluation_snapshot_apr26.json` | 6.9 KB | Older April snapshot; not interchangeable with the current V5 comparison. |
 | `plots/training_statistics.json` | compact | Training and comparison summary supporting existing plots. |
 | `research_paper/data/raw/v5_drive_seed_evidence.json` | compact | Read-only extraction of 250 ordered seeds and source identities from the five original Drive expert-metrics artifacts. |
+| `research_paper/data/raw/v6_executed_notebook_provenance.json` | compact | Commit, archive, and SHA-256 record for the historical executed V6 notebook; the executed copy is evidence, not the canonical reusable notebook. |
+| `research_paper/data/raw/historical/Panopticon_V6_Research_Colab.executed.2a5f59d.zip` | 199 KB | Byte-preserving archive of the historical executed V6 notebook identified by the provenance record. |
 
 `scripts/extract_metrics.py` writes `SHA256SUMS.txt` for repository-root evidence files. The compact Drive seed snapshot is integrity-bound inside `training_seed_ledger.drive_verified.json` through a canonical SHA-256 digest and per-level ordered-seed digests. A paper release should archive raw logs in an immutable repository and record a DOI/URL. Do not combine the older April snapshot with current V5 numbers without labeling the experiment/version change.
+
+The canonical repository-root V6 notebook is generated, output-free, and final-split locked. The exact historical executed notebook remains preserved in the checked-in ZIP archive and at the commit and digest recorded in `v6_executed_notebook_provenance.json`; do not use that historical state as a fresh-run template.

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import re
 import sys
+import zipfile
 from pathlib import Path
 
 
@@ -46,6 +48,8 @@ REQUIRED = [
     "data/training_seed_ledger.reconstructed.json",
     "data/training_seed_ledger.drive_verified.json",
     "data/raw/v5_drive_seed_evidence.json",
+    "data/raw/v6_executed_notebook_provenance.json",
+    "data/raw/historical/Panopticon_V6_Research_Colab.executed.2a5f59d.zip",
     "data/seed_plans/v6_training_separation_report.json",
     "assets/tables/macro_results.csv",
     "assets/tables/macro_results.tex",
@@ -90,6 +94,26 @@ def main() -> int:
         path = PACKAGE / rel
         if not path.is_file() or path.stat().st_size == 0:
             fail(f"missing or empty required file: {rel}", errors)
+
+    provenance_path = PACKAGE / "data" / "raw" / "v6_executed_notebook_provenance.json"
+    if provenance_path.is_file():
+        try:
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+            archive_path = ROOT / provenance["archive_path"]
+            archive_sha256 = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+            if archive_sha256 != provenance["archive_sha256"]:
+                fail("historical V6 notebook archive digest mismatch", errors)
+            with zipfile.ZipFile(archive_path) as archive:
+                member = archive.read(provenance["archive_member"])
+            if len(member) != provenance["archive_member_size_bytes"]:
+                fail("historical V6 notebook byte count mismatch", errors)
+            if hashlib.sha256(member).hexdigest() != provenance["archive_member_sha256"]:
+                fail("historical V6 notebook content digest mismatch", errors)
+            historical_notebook = json.loads(member)
+            if len(historical_notebook.get("cells", [])) != provenance["historical_cell_count"]:
+                fail("historical V6 notebook cell count mismatch", errors)
+        except Exception as exc:
+            fail(f"invalid historical V6 notebook provenance: {exc}", errors)
 
     notebook_path = ROOT / "Panopticon_V6_Research_Colab.ipynb"
     if not notebook_path.is_file():

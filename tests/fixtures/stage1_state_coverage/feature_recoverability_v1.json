@@ -1,0 +1,19 @@
+{
+  "schema_version": "stage1-feature-parity-synthetic-v1",
+  "synthetic": true,
+  "formatter_functions_sha256": "fad30987077d3f815fbbc580646bffede66a99ca220ede7d49dc73e407e5a3f6",
+  "expected_header": {
+    "turn": 7,
+    "max_turns": 150,
+    "phase": "orientation",
+    "phase_number": 1,
+    "displayed_revenue": 102,
+    "displayed_security": 98
+  },
+  "expected_triggered_canaries": 2,
+  "text": {
+    "original": "Turn 7/150 | Phase: orientation (1) | Revenue: 102 | Security: 98\nAllowed Departments: engineering, finance, operations\nWorkers (3):\n  w-001 Synthetic A dept=engineering state=suspected suspicion=87%\n  w-002 Synthetic B dept=finance state=loyal clean\n  w-003 Synthetic C dept=operations state=loyal clean\nActive Leaks (1):\n  leak-001 dept=engineering channel=dark_web [CANARY MATCH]\nCanary Traps (8):\n  canary-001 dept=engineering triggered=True\n  canary-002 dept=operations triggered=True\n  canary-003 dept=engineering triggered=False\n  canary-004 dept=operations triggered=False\n  canary-005 dept=engineering triggered=False\n  canary-006 dept=operations triggered=False\n  canary-007 dept=engineering triggered=False\n  canary-008 dept=operations triggered=False\nRecent Intel Reports (0):\n  (none)\nActive Double Agents (1):\n  w-004 active=True trust=100% eff=100% disinfo=0",
+    "compacted": "Turn 7/150 | Phase: orientation (1) | Revenue: 102 | Security: 98\nAllowed Departments: engineering, finance, operations\nWorkers (3):\n  w-001 Synthetic A dept=engineering state=suspected suspicion=87%\nActive Leaks (1):\n  leak-001 dept=engineering channel=dark_web [CANARY MATCH]\nCanary Traps (8):\nRecent Intel Reports (0):\n  (none)\nActive Double Agents (1):\n  w-004 active=True trust=100% eff=100% disinfo=0\n  clean loyal workers omitted: 2\nRecent Canary Traps:\n  canary-003 dept=engineering triggered=False\n  canary-004 dept=operations triggered=False\n  canary-005 dept=engineering triggered=False\n  canary-006 dept=operations triggered=False\n  canary-007 dept=engineering triggered=False\n  canary-008 dept=operations triggered=False",
+    "character_token_truncated": "Turn 7/150 | Phase: orientation (\n[... compacted for training context ...]\ntions triggered=False"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "schema_version": "panopticon-v6-executed-notebook-provenance-v1",
+  "artifact_path": "Panopticon_V6_Research_Colab.ipynb",
+  "historical_git_commit": "2a5f59d957bb69385170e76af23871387e09c294",
+  "historical_git_blob_sha256": "e4eb99f74e32bc46ad16d1bb8519018ede7874dad9dc1662241707bc5dd939e2",
+  "historical_cell_count": 25,
+  "archive_path": "research_paper/data/raw/historical/Panopticon_V6_Research_Colab.executed.2a5f59d.zip",
+  "archive_sha256": "ffef543f62efb1469dc72954ae7ac5eae98107472d27136410ba71b706b10fe6",
+  "archive_member": "Panopticon_V6_Research_Colab.ipynb",
+  "archive_member_sha256": "114e6162726cce099ad1d376a54f2995d6b3f50c62c7323e2d9d628c89be0e77",
+  "archive_member_size_bytes": 625633,
+  "preservation": "The exact executed notebook is stored in the checked-in ZIP archive and remains recoverable from the immutable Git object named by historical_git_commit.",
+  "retrieval": "Extract Panopticon_V6_Research_Colab.ipynb from the archive_path ZIP; its checkout-form bytes must match archive_member_sha256.",
+  "status": "historical-executed-noncanonical",
+  "safety_note": "The historical notebook contains execution outputs and a final-evaluation cell saved in an authorized state. It is evidence, not a reusable run template.",
+  "canonical_notebook": "The repository-root notebook is regenerated from research_paper/scripts/build_colab_v6_notebook.py with outputs cleared and the final-evaluation gate locked."
+}

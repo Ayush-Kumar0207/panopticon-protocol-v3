@@ -51,6 +51,8 @@
 | `data/seed_plans/v6_seed_plan.json` | `scripts/create_seed_plan.py` | master seed plus optional training ledger |
 | `data/training_seed_ledger.reconstructed.json` | `scripts/reconstruct_training_seed_ledger.py` | V5 compact metadata plus deterministic generator code |
 | `data/raw/v5_drive_seed_evidence.json` | Authenticated read-only Drive extraction | ordered seeds and identities from five original expert-metrics files |
+| `data/raw/v6_executed_notebook_provenance.json` | Immutable commit/archive metadata plus SHA-256 | preservation record for the historical executed, noncanonical V6 notebook |
+| `data/raw/historical/Panopticon_V6_Research_Colab.executed.2a5f59d.zip` | Archived historical artifact | exact executed notebook bytes referenced by the provenance record |
 | `data/training_seed_ledger.drive_verified.json` | `scripts/verify_drive_seed_ledger.py` | exact Drive-versus-reconstruction comparison |
 | `data/seed_plans/v6_training_separation_report.json` | `scripts/verify_seed_separation.py` | frozen V6 plan plus directly verified V5 ledger |
 | `../Panopticon_V6_Research_Colab.ipynb` | `scripts/build_colab_v6_notebook.py` | complete pinned, resume-safe pilot/training/final Colab workflow |
