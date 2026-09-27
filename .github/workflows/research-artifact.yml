@@ -85,5 +85,7 @@ jobs:
             research_paper/data/training_seed_ledger.reconstructed.json
             research_paper/data/training_seed_ledger.drive_verified.json
             research_paper/data/raw/v5_drive_seed_evidence.json
+            research_paper/data/raw/v6_executed_notebook_provenance.json
+            research_paper/data/raw/historical/Panopticon_V6_Research_Colab.executed.2a5f59d.zip
             Panopticon_V6_Research_Colab.ipynb
             research_paper/COLAB_V6_BEGINNER_RUNBOOK.md
