@@ -1,0 +1,128 @@
+{
+  "schema": "panopticon-training-provenance-audit-v1",
+  "audit_date": "2026-09-27",
+  "issue": "https://github.com/Ayush-Kumar0207/panopticon-protocol-v3/issues/8",
+  "decision": {
+    "status": "blocked",
+    "authorized_operations": [],
+    "blocked_operations": [
+      "stage1-real-artifact-analysis",
+      "retraining",
+      "new-rollouts",
+      "gpu-work",
+      "held-out-evaluation",
+      "final-evaluation"
+    ],
+    "reasons": [
+      "historical-base-model-revision-unavailable",
+      "complete-stage1-feature-set-unavailable-for-all-episodes",
+      "merged-model-content-digest-unavailable",
+      "source-checkout-not-recorded-contemporaneously"
+    ]
+  },
+  "source": {
+    "drive_folder_id": "1OXQgw1OA-cAAXxLp9t8YbOsjv9dIBB_-",
+    "run_name": "panopticon-security-v5-ep50",
+    "recorded_source_commit": "4c1f2db6a7a3d3c88136d5b51fbcdfe4058ad818",
+    "recorded_source_commit_time_utc": "2026-06-15T15:40:45Z",
+    "first_run_start_utc": "2026-06-15T09:13:10.741Z",
+    "training_program_sha256": "0195fea711afa866ba850b7e632df425eb23324db9b446cf17ba22b9503efcbb",
+    "training_program_note": "train_trl_v2.py is byte-identical at recorded commit and its pre-run parent fc737fcc5654d548ed75a764fd376c49d376fee6; the actual checkout is not logged"
+  },
+  "representation": {
+    "model_identifier": "Qwen/Qwen2.5-1.5B-Instruct",
+    "historical_model_revision": null,
+    "current_stage1_model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "chat_template_sha256": "cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f",
+    "system_prompt_sha256": "97b895a4c79c9c721634751bd3ecbce4a5c57cf288e4445163d8924275b89f76",
+    "logical_turns": 29000,
+    "logical_turns_with_truncation_marker": 28150,
+    "logical_turns_with_partial_workforce_features": 850,
+    "logical_turns_with_complete_candidate_features": 0,
+    "episodes_with_complete_candidate_features": 0
+  },
+  "datasets": [
+    {
+      "level": "easy",
+      "drive_file_id": "1PUSLgjC3SqeOh7Kz1BQ8IBL4HT9Dsv3q",
+      "sha256": "a7681c548f308480767f0b61959cc9f87c2fe915433b11015b591b7ff2c34757",
+      "bytes": 16832673,
+      "physical_rows": 7430,
+      "logical_turns": 3000,
+      "episodes": 50,
+      "row_map_sha256": "96128b3afcf02c4570d4293257874f7d42531618eb1e347695e158af3b9a6482",
+      "seed_order_sha256": "7455f94736900fedc5a59bb9801ae43c8fef087afb8f0d20617fe036214ca3d7"
+    },
+    {
+      "level": "medium",
+      "drive_file_id": "1IeQTUwUtqW6cdfDEXvQ7SWyS-zCtaxOg",
+      "sha256": "81419946862687f5f1a1b8d0ce61727d8a1b01fc14e2e38c4761d1a23b09f4ab",
+      "bytes": 29739154,
+      "physical_rows": 13166,
+      "logical_turns": 4500,
+      "episodes": 50,
+      "row_map_sha256": "269ad93f74023edf013e6cee4b96797a7979414dc22151fae64fd7d469c1159d",
+      "seed_order_sha256": "f0d68faa1d1286fa22ab5b90888a17a1fc74e578d290b226999ffe7320623ddf"
+    },
+    {
+      "level": "hard",
+      "drive_file_id": "1PMHV0-mUECJ0S4mtTKx7rCHOPyCwLfhj",
+      "sha256": "92ba629d7b581da454193d78ff4e74fa83f3c0415f05c71fb516f55afefe8b81",
+      "bytes": 41652003,
+      "physical_rows": 18414,
+      "logical_turns": 6000,
+      "episodes": 50,
+      "row_map_sha256": "c4f2100c4a5e9eeb1f41cbded892e688f255608b3830ea88973caf3b2d0338aa",
+      "seed_order_sha256": "f43b7fddbd3612e6183361facc2cbb7ee12c4e1c399fd809143ffe298a0ac59c"
+    },
+    {
+      "level": "level_4",
+      "drive_file_id": "11AntK3ih3dZnYcZqux1CxCLEj3u8aDxm",
+      "sha256": "8b641e8028ddb29c52bfcc49841b70d40d925d78b4d15eaf1cb5b9c2df5c2a60",
+      "bytes": 54056494,
+      "physical_rows": 23889,
+      "logical_turns": 7500,
+      "episodes": 50,
+      "row_map_sha256": "d02eed7f5b3070f9404feea47cdd62459bc44b8920a3994dd113137a0746faf3",
+      "seed_order_sha256": "b5cafb98110a7efba7e6e0ea2ad75bf4258cb349e022516cfade4bc6e31e4f19"
+    },
+    {
+      "level": "level_5",
+      "drive_file_id": "1CsurFnPXDYs-udj-zx7o32ABkogvFSEY",
+      "sha256": "4b20f6bf3a6622de029fe6609bc82cdd982abb731fc56d0ea9f7ca3adadef9ff",
+      "bytes": 58775714,
+      "physical_rows": 25997,
+      "logical_turns": 8000,
+      "episodes": 50,
+      "row_map_sha256": "df2a72e6ac3eaef8d27338806b38fc2b58134b78a140f6bec378ea5ae98855c7",
+      "seed_order_sha256": "269466fc100a85ce40fd276d5d0d30cac45b308e22822137edbc74b82be36cc8"
+    }
+  ],
+  "combined_row_mapping_sha256": "9165245171110c4969b16d653230e9c3efe958e4db2a8e4724847d68576575aa",
+  "checkpoints": {
+    "final_level5_adapter": {
+      "drive_file_id": "1knAxoGR_uudgJlicw92pmZhveuopTzhZ",
+      "bytes": 73911112,
+      "sha256": "66606d1a60cfca2a189eab6a55b4b2b492d358bfac9a021f408aff3c8af2aec4"
+    },
+    "merged_model": {
+      "drive_file_id": "10XNLjK06sGWc7SLOmUM6z22ZsHjCu5Rb",
+      "bytes": 3087467144,
+      "sha256": null,
+      "digest_status": "unavailable: connector download limit is 268435456 bytes"
+    }
+  },
+  "event_log": {
+    "drive_file_id": "1hh93EmYyeksYI8KQIjPLMAh8aHoSOUf8",
+    "bytes": 23640133,
+    "sha256": "8401536f2af2dd9ef865f6df3594545fd6e4ef8ff434ba38822fc875cd51c756",
+    "run_start_events": 70,
+    "dataset_written_events": 5,
+    "train_complete_events": 5,
+    "merge_complete_events": 3,
+    "malformed_lines": 1,
+    "malformed_line": 42506,
+    "latest_merge_complete_utc": "2026-07-04T03:35:43.313Z"
+  }
+}
+
