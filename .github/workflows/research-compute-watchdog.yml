@@ -1,0 +1,37 @@
+name: Research compute watchdog
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: research-compute-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      COMPUTE_SITE_SERVICE_TOKEN: ${{ secrets.COMPUTE_SITE_SERVICE_TOKEN }}
+      COMPUTE_WORKER_KEY: ${{ secrets.COMPUTE_WORKER_KEY }}
+    steps:
+      - name: Check quota and resume when enabled
+        if: env.COMPUTE_SITE_SERVICE_TOKEN != '' && env.COMPUTE_WORKER_KEY != ''
+        shell: python
+        run: |
+          import json, os, urllib.request
+          request = urllib.request.Request(
+              'https://ayush-research-compute.krayush70049.chatgpt.site/api/watchdog/tick',
+              data=b'{}', method='POST', headers={
+                  'Content-Type': 'application/json',
+                  'OAI-Sites-Authorization': 'Bearer ' + os.environ['COMPUTE_SITE_SERVICE_TOKEN'],
+                  'X-Compute-Worker-Key': os.environ['COMPUTE_WORKER_KEY'],
+              })
+          with urllib.request.urlopen(request, timeout=65) as response:
+              result = json.load(response)
+          print(result.get('message', 'Controller checked.'))
+
